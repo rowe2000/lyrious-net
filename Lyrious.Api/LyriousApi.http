@@ -1,0 +1,6 @@
+@LyriousApi_HostAddress = http://localhost:5261
+
+GET {{LyriousApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
