@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Lyrious.DataAccessLayer\Lyrious.DataAccessLayer.csproj" />
+    <ProjectReference Include="..\Lyrious.CoreLib\Lyrious.CoreLib.csproj" />
     <ProjectReference Include="..\Lyrious.Server\Lyrious.Server.csproj" />
   </ItemGroup>
 

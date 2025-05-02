@@ -1,28 +1,51 @@
-﻿using Lyrious.CoreLib.Attributes;
+﻿using System.ComponentModel.DataAnnotations;
+using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
 
 namespace Lyrious.CoreLib.Models;
 
-public class Song : EntityBase, IName
+public sealed class Song : Entity, IName
 {
-    [Member] public virtual string Name { get; set; } = "";
-    [Member] public string Key { get; set; } = "";
-    [Member] public float Tempo { get; set; } = 120;
-    [Member] public string Beat { get; set; } = "4/4";
-    [Member] public TimeSpan Length { get; set; } = TimeSpan.FromMinutes(3);
-    [Member] public string Lyrics { get; set; } = "";
+	[MaxLength(100)]
+    [DataMember] public string Name { get; set; } = "";
+	[MaxLength(10)]
+    [DataMember] public string Key { get; set; } = "";
+    [DataMember] public float Tempo { get; set; } = 120;
+	[MaxLength(10)]
+    [DataMember] public string Beat { get; set; } = "4/4";
+    [DataMember] public int LengthMilliSeconds { get; set; } = TimeSpan.FromMinutes(3).Milliseconds;
+    [MaxLength(5000)]
+    [DataMember] public string Lyrics { get; set; } = "";
 
-    [Member] public Guid SongbookId { get; set; }
+    [DataMember] public Guid SongbookId { get; set; }
+    [JsonIgnore] public Songbook? Songbook { get; set; }
 
-    public Songbook Songbook { get; set; }
+	[JsonIgnore] public TimeSpan Length
+	{
+		get => TimeSpan.FromMilliseconds(LengthMilliSeconds);
+		set => LengthMilliSeconds = (int)value.TotalMilliseconds;
+	}
 
-    public ObservableList<SetlistItem> SetlistItems { get; set; } = [];
+	[JsonIgnore] public ObservableList<SetlistItem> SetlistItems { get; set; } = [];
 
+	public SetlistItem AddToSetlist(Setlist setlist)
+	{
+		var setlistItem = SetlistItem.Create(this, setlist, SetlistItems.Count);
+		SetlistItems.Add(setlistItem);
+		setlist.SetlistItems.Add(setlistItem);
 
-    public static Song Create(Songbook songbook, string name, string key = "", int tempo = 120, TimeSpan? length = null)
+		return setlistItem;
+	}
+    public static Song Create(Songbook songbook, string name, string key = "", float tempo = 120, TimeSpan? length = null)
     {
-        length ??= TimeSpan.FromMinutes(3);
-        var song = new Song { Songbook = songbook, Name = name, Key = key, Tempo = tempo, Length = length.Value };
-
-        return song;
+	    return new Song
+        {
+	        Songbook = songbook, 
+	        SongbookId = songbook.Id,
+	        Name = name, 
+	        Key = key, 
+	        Tempo = tempo, 
+	        Length = length ?? TimeSpan.FromMinutes(3)
+        };
     }
 }

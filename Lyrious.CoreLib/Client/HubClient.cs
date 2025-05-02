@@ -7,9 +7,12 @@ public class HubClient
 {
     private readonly HubConnection connection;
 
-    public HubClient(string url)
+    private readonly Cache cache;
+
+	public HubClient(string url, Cache cache)
     {
-        connection = new HubConnectionBuilder()
+	    this.cache = cache;
+	    connection = new HubConnectionBuilder()
             .WithUrl(url)
             .WithAutomaticReconnect()
             .Build();
@@ -19,14 +22,14 @@ public class HubClient
         connection.Closed += OnClosed;
     }
 
-    public IDisposable OnRemoteUpdates<TEntity>() where TEntity : EntityBase
+    public IDisposable OnRemoteUpdates<TEntity>() where TEntity : class, IEntity, new()
     {
         return connection.On<TEntity[]>($"Update{typeof(TEntity).Name}", UpdateCache);
     }
 
-    private void UpdateCache<TEntity>(TEntity[] entities) where TEntity : EntityBase
+    private void UpdateCache<TEntity>(TEntity[] entities) where TEntity : class, IEntity, new()
     {
-        Cache.Update(entities);
+        cache.Update(entities);
         Console.WriteLine($"Cache {typeof(TEntity).Name} updated with {entities.Length} items");
     }
 
@@ -58,14 +61,14 @@ public class HubClient
     public event Action<object, string?>? Reconnected;
     public event Action<object, Exception?>? Closed;
 
-    public void BindCache<TEntity>() where TEntity : EntityBase
+    public void BindCache<TEntity>() where TEntity : class, IEntity, new()
     {
-        Cache<TEntity>.Changed += Update;
+        CacheSet<TEntity>.Changed += Update;
         OnRemoteUpdates<TEntity>();
     }
 
-    public void UnbindCache<TEntity>() where TEntity : EntityBase
+    public void UnbindCache<TEntity>() where TEntity : class, IEntity, new()
     {
-        Cache<TEntity>.Changed -= Update;
+        CacheSet<TEntity>.Changed -= Update;
     }
 }

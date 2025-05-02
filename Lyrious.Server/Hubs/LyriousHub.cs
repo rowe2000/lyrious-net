@@ -1,6 +1,5 @@
 ﻿using Lyrious.CoreLib;
 using Lyrious.CoreLib.Models;
-using Lyrious.DataAccessLayer;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Lyrious.Server.Hubs;
@@ -8,21 +7,23 @@ namespace Lyrious.Server.Hubs;
 public class LyriousHub : Hub
 {
     private static readonly BiDictionary<string, Member> ConnectionIdToMember = new();
-    public LyriousHub()
+    private readonly Cache cache;
+    public LyriousHub(Cache cache)
     {
-        Cache<Group>.Changed += Changed;
-        Cache<Member>.Changed += Changed;
-        Cache<Membership>.Changed += Changed;
-        Cache<Play>.Changed += Changed;
-        Cache<Playlog>.Changed += Changed;
-        Cache<Setlist>.Changed += Changed;
-        Cache<SetlistItem>.Changed += Changed;
-        Cache<Song>.Changed += Changed;
-        Cache<Songbook>.Changed += Changed;
+	    this.cache = cache;
+        CacheSet<Group>.Changed += Changed;
+        CacheSet<Member>.Changed += Changed;
+        CacheSet<Membership>.Changed += Changed;
+        CacheSet<Play>.Changed += Changed;
+        CacheSet<Playlog>.Changed += Changed;
+        CacheSet<Setlist>.Changed += Changed;
+        CacheSet<SetlistItem>.Changed += Changed;
+        CacheSet<Song>.Changed += Changed;
+        CacheSet<Songbook>.Changed += Changed;
     }
 
     private static string UpdateName<TEntity>() 
-        where TEntity : EntityBase
+        where TEntity : IEntity
     {
         return $"Update{typeof(TEntity).Name}";
     }
@@ -34,7 +35,7 @@ public class LyriousHub : Hub
         return Task.CompletedTask;
     }
 
-    private void Changed<T>(object sender, ChangedArgs<T> args) where T : EntityBase
+    private void Changed<T>(object sender, ChangedArgs<T> args) where T : IEntity
     {
         Clients.Caller.SendAsync(UpdateName<T>(), args.Values);
     }
@@ -43,15 +44,15 @@ public class LyriousHub : Hub
     {
         if (disposing)
         {
-            Cache<Group>.Changed -= Changed;
-            Cache<Member>.Changed -= Changed;
-            Cache<Membership>.Changed -= Changed;
-            Cache<Play>.Changed -= Changed;
-            Cache<Playlog>.Changed -= Changed;
-            Cache<Setlist>.Changed -= Changed;
-            Cache<SetlistItem>.Changed -= Changed;
-            Cache<Song>.Changed -= Changed;
-            Cache<Songbook>.Changed -= Changed;
+            CacheSet<Group>.Changed -= Changed;
+            CacheSet<Member>.Changed -= Changed;
+            CacheSet<Membership>.Changed -= Changed;
+            CacheSet<Play>.Changed -= Changed;
+            CacheSet<Playlog>.Changed -= Changed;
+            CacheSet<Setlist>.Changed -= Changed;
+            CacheSet<SetlistItem>.Changed -= Changed;
+            CacheSet<Song>.Changed -= Changed;
+            CacheSet<Songbook>.Changed -= Changed;
         }
         base.Dispose(disposing);
     }
@@ -59,7 +60,7 @@ public class LyriousHub : Hub
 
     public async Task LogMeIn(Guid memberId)
     {
-        var member = Cache.Get<Member>(memberId);
+        var member = cache.Get<Member>(memberId);
         if (member is null)
             return;
 
@@ -91,7 +92,7 @@ public class LyriousHub : Hub
     public async Task JoinGroupAsync(Guid groupId)
     {
         var member = ConnectionIdToMember[Context.ConnectionId];
-        var group = Cache.Get<Group>(groupId);
+        var group = cache.Get<Group>(groupId);
 
         if (!group.Memberships.Any(o => o.Member.Equals(member)))
             return;
@@ -104,7 +105,8 @@ public class LyriousHub : Hub
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, member.JoinedGroupId.ToString());
 
             member.JoinedGroup = group;
-            Cache.Update([member]);
+			member.JoinedGroupId = group.Id;
+            cache.Update([member]);
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, groupId.ToString());
@@ -116,30 +118,28 @@ public class LyriousHub : Hub
 
     public async Task SelectSetlistAsync(Guid setlistId, Guid groupId, DateTime timestamp)
     {
-        var group = Cache.Get<Group>(groupId);
-        var setlist = Cache.Get<Setlist>(setlistId);
-        var state = group.GroupState;
-        state.CurrentSetlist = setlist;
-        
-        Cache.Update([state]);
-        
-        await Clients
+        var group = cache.Get<Group>(groupId);
+        var setlist = cache.Get<Setlist>(setlistId);
+        group.CurrentSetlist = setlist;
+
+		cache.Update([group]);
+
+		await Clients
             .OthersInGroup(groupId.ToString())
             .SendAsync("SetlistSelected", setlist.Id);
     }
 
     public async Task SelectSongAsync(Guid setlistItemId, Guid groupId)
     {
-        var group = Cache.Get<Group>(groupId);
-        var setlistItem = Cache.Get<SetlistItem>(setlistItemId);
+        var group = cache.Get<Group>(groupId);
+        var setlistItem = cache.Get<SetlistItem>(setlistItemId);
         if (group is null)
             return;
 
-        var state = group.GroupState;
-        
-        state.CurrentSetlistItem = setlistItem;
-        
-        Cache.Update([state]);
+        group.CurrentSetlistItem = setlistItem;
+        group.CurrentSetlistItemId = setlistItem?.Id;
+
+		cache.Update([group]);
 
         await Clients
             .OthersInGroup(groupId.ToString())
@@ -148,33 +148,36 @@ public class LyriousHub : Hub
 
     public async Task StartSongAsync(Guid groupId, Guid conductorId)
     {
-        var group = Cache.Get<Group>(groupId);
-        var conductor = Cache.Get<Member>(conductorId);
+        var group = cache.Get<Group>(groupId);
+        var conductor = cache.Get<Member>(conductorId);
         if (group is null)
             return;
         
-        var state = group.GroupState;
-        if (conductor is null ||  state?.CurrentSetlistItem is null)
+        if (conductor is null ||  group?.CurrentSetlistItem is null)
             return;
 
-        var song = state.CurrentSetlistItem.Song;
+        var song = group.CurrentSetlistItem.Song;
         var playlog = group.Playlogs.Last();
-        
-        state.CurrentPlay = Play.Create(conductor, playlog, song);
 
-        Cache.Update([state]);
+        var play = Play.Create(conductor, playlog, song);
+		playlog.Plays.Add(play);
+
+		group.CurrentPlay = play;
+		group.CurrentPlayId = play.Id;
+
+		cache.Update([group]);
 
         await Clients
             .OthersInGroup(groupId.ToString())
-            .SendAsync("PlayStarted", state.CurrentPlay);
+            .SendAsync("PlayStarted", group.CurrentPlay);
     }
     
     private async Task Update<TEntity>(IEnumerable<TEntity> entities)
-        where TEntity : EntityBase
+        where TEntity : class, IEntity, new()
     {
-        Cache.Update(entities.AsArray(), true);
+        cache.Update(entities.AsArray(), true);
 
-        var dbContext = new LyriousContext(DbContextType.Sqllite);
+        var dbContext = new LyriousContext(cache);
         var updatedEntities = new List<TEntity>();
         var returnEntities = new List<TEntity>();
             
@@ -226,9 +229,9 @@ public class LyriousHub : Hub
         await UpdateCallerClientFrom<Songbook>(from);
     }
 
-    private Task UpdateCallerClientFrom<TEntity>(DateTime from) where TEntity : EntityBase
+    private Task UpdateCallerClientFrom<TEntity>(DateTime from) where TEntity : class, IEntity, new()
     {
-        var entities = Cache.GetAllFrom<TEntity>(from);
+        var entities = cache.Get<TEntity>(from);
         var updateMethodName = UpdateName<TEntity>();
         return Clients.Caller.SendAsync(updateMethodName, entities);
     }

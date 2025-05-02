@@ -1,6 +1,6 @@
 ﻿namespace Lyrious.CoreLib.Enums;
 
-public enum Role
+public enum RoleEnum
 {
     Member,
     Conductor,

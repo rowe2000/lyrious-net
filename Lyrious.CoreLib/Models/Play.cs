@@ -1,45 +1,57 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
-using Lyrious.CoreLib.Attributes;
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
 
 namespace Lyrious.CoreLib.Models;
 
-public class Play : EntityBase
+public sealed class Play : Entity
 {
-    [Member] public string KeyString { get; set; } = "";
-    [Member] public float Tempo { get; set; } = 0;
-    [Member] public TimeSpan Duration { get; set; } = TimeSpan.Zero;
+	[MaxLength(10)]
+    [DataMember] public string KeyString { get; set; } = "";
+    [DataMember] public float Tempo { get; set; }
+    [DataMember] public int DurationMilliSeconds { get; set; }
 
-    [Member] public Guid ConductorId { get; set; }
-    [Member] public Guid PlaylogId { get; set; }
-    [Member] public Guid SongId { get; set; }
+    [DataMember] public Guid ConductorId { get; set; }
+    [DataMember] public Guid PlaylogId { get; set; }
+    [DataMember] public Guid SongId { get; set; }
 
-    public Member Conductor { get; set; }
-    public Playlog Playlog { get; set; }
-    public Song Song { get; set; }
-
-    [NotMapped] private Key? key;
+    [JsonIgnore] public Member? Conductor { get; set; }
+    [JsonIgnore] public Playlog? Playlog { get; set; }
+	[JsonIgnore] public Song? Song { get; set; }
 
     [NotMapped]
+	[JsonIgnore]
     public Key Key
     {
-        get => key ?? new Key(KeyString);
-        set => throw new NotImplementedException();
+	    get => new(KeyString);
+	    set => KeyString = value.ToString();
     }
 
 
-    public static Play Create(Member conductor, Playlog playlog, Song song, string? key = null, float? tempo = null,
-        TimeSpan? duration = null)
+    [NotMapped]
+    [JsonIgnore]
+    public TimeSpan Duration
+    {
+	    get => TimeSpan.FromMilliseconds(DurationMilliSeconds);
+	    set => DurationMilliSeconds = (int)value.TotalMilliseconds;
+    }
+
+    public static Play Create(Member conductor, Playlog playlog, Song song, string? key = null, float? tempo = null, TimeSpan? duration = null)
     {
         var play = new Play
         {
             Conductor = conductor,
+            ConductorId = conductor.Id,
             Playlog = playlog,
+            PlaylogId = playlog.Id,
             Song = song,
+            SongId = song.Id,
             KeyString = key ?? song.Key,
             Tempo = tempo ?? song.Tempo
         };
 
-        if (duration is not null)
+		if (duration != null)
         {
             play.Duration = duration.Value;
         }

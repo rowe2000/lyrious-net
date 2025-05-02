@@ -1,18 +1,13 @@
 ﻿using Lyrious.CoreLib.Enums;
 
-namespace Lyrious.CoreLib;
+namespace Lyrious.CoreLib.Models;
 
 public class Key
 {
     public NoteLetter NoteLetter { get; set; }
-    public Accidental Accidental { get; set; }
+    public AccidentalEnum AccidentalEnum { get; set; }
     public bool Minor { get; set; }
-
     public int Octave { get; set; }
-
-    public Key()
-    {
-    }
 
     public Key(string keyString)
     {
@@ -37,11 +32,11 @@ public class Key
 
         Minor = value.Contains('m');
 
-        Accidental = value.Contains('#') ? Accidental.Sharp : value.Contains('b') ? Accidental.Flat : Accidental.None;
+        AccidentalEnum = value.Contains('#') ? AccidentalEnum.Sharp : value.Contains('b') ? AccidentalEnum.Flat : AccidentalEnum.None;
     }
 
     public override string ToString()
     {
-        return NoteLetter + Accidental.ToCustomString() + (Minor ? "m" : "");
+        return NoteLetter + AccidentalEnum.ToCustomString() + (Minor ? "m" : "");
     }
 }

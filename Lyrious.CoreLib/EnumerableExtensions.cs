@@ -34,4 +34,43 @@ public static class EnumerableExtensions
     {
         return items as ICollection<T> ?? items?.ToArray();
     }
+
+    public static void ForEach<T>(this IEnumerable<T> items, Action<T> action)
+    {
+	    foreach (var item in items)
+	    {
+		    action(item);
+	    }
+    }
+
+    public static T OneOrDefault<T>(this IEnumerable<T> items)
+    {
+	    return items.OneOrDefault(o => true);
+    }
+
+    public static T OneOrDefault<T>(this IEnumerable<T> items, Func<T, bool> predicate)
+    {
+	    if (items == null)
+	    {
+		    return default;
+	    }
+
+	    var result = default(T);
+	    var count = 0;
+
+	    foreach (var item in items.Where(predicate))
+	    {
+		    if (count == 1)
+		    {
+			    return default;
+		    }
+
+		    result = item;
+		    count++;
+	    }
+
+	    return result;
+    }
+
+
 }

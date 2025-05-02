@@ -1,6 +1,6 @@
 ﻿namespace Lyrious.CoreLib.Enums;
 
-public enum Changed
+public enum ChangedEnum
 {
     Add,
     Insert,

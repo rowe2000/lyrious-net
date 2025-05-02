@@ -18,9 +18,9 @@ public sealed class ObservableList<T> : IList<T>
         return GetEnumerator();
     }
 
-    public void OnChanged(Changed changed, IEnumerable<T> items, int index = -1)
+    public void OnChanged(ChangedEnum changedEnum, IEnumerable<T> items, int index = -1)
     {
-        Changed?.Invoke(new ChangedArgs<T>(changed, items, index));
+        Changed?.Invoke(new ChangedArgs<T>(changedEnum, items, index));
     }
 
     public void Add(T item)
@@ -32,14 +32,14 @@ public sealed class ObservableList<T> : IList<T>
     {
         var array = items.AsArray();
         list.AddRange(array);
-        OnChanged(Enums.Changed.Add, array);
+        OnChanged(Enums.ChangedEnum.Add, array);
     }
 
     public void Clear()
     {
         var array = list.ToArray();
         list.Clear();
-        OnChanged(Enums.Changed.Clear, array);
+        OnChanged(Enums.ChangedEnum.Clear, array);
     }
 
     public bool Contains(T item)
@@ -71,7 +71,7 @@ public sealed class ObservableList<T> : IList<T>
             }
         }
 
-        OnChanged(Enums.Changed.Remove, removedItems);
+        OnChanged(Enums.ChangedEnum.Remove, removedItems);
         return removeSuccesses;
     }
 
@@ -80,7 +80,7 @@ public sealed class ObservableList<T> : IList<T>
         var item = list[oldIndex];
         list.RemoveAt(oldIndex);
         list.Insert(newIndex, item);
-        OnChanged(Enums.Changed.Move, [item], newIndex);
+        OnChanged(Enums.ChangedEnum.Move, [item], newIndex);
     }
     
     public int Count => list.Count;
@@ -105,14 +105,14 @@ public sealed class ObservableList<T> : IList<T>
             list.Insert(index++, item);
         }
 
-        OnChanged(Enums.Changed.Insert, array, index);
+        OnChanged(Enums.ChangedEnum.Insert, array, index);
     }
 
     public void RemoveAt(int index)
     {
         var item = list[index];
         list.RemoveAt(index);
-        OnChanged(Enums.Changed.Remove, [item], index);
+        OnChanged(Enums.ChangedEnum.Remove, [item], index);
     }
 
     public T this[int index]
@@ -121,7 +121,7 @@ public sealed class ObservableList<T> : IList<T>
         set
         {
             list[index] = value;
-            OnChanged(Enums.Changed.Update, [value], index);
+            OnChanged(Enums.ChangedEnum.Update, [value], index);
         }
     }
 }

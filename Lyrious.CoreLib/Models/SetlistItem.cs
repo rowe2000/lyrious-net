@@ -1,24 +1,26 @@
-﻿using Lyrious.CoreLib.Attributes;
+﻿using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
 
 namespace Lyrious.CoreLib.Models;
 
-public class SetlistItem : EntityBase
+public sealed class SetlistItem : Entity
 {
-    [Member] public int Position { get; set; } = -1;
+    [DataMember] public int Position { get; set; } = -1;
 
-    [Member] public Guid SongId { get; set; }
-    [Member] public Guid SetlistId { get; set; }
+    [DataMember] public Guid SongId { get; set; }
+    [DataMember] public Guid SetlistId { get; set; }
 
-    public Song Song { get; set; }
-    public Setlist Setlist { get; set; }
-
+    [JsonIgnore] public Song? Song { get; set; }
+    [JsonIgnore] public Setlist? Setlist { get; set; }
 
     public static SetlistItem Create(Song song, Setlist setlist, int position = -1)
     {
         return new SetlistItem
         {
-            Song = song,
-            Setlist = setlist,
+            SongId = song.Id,
+	        Song = song,
+            SetlistId = setlist.Id,
+			Setlist = setlist,
             Position = position
         };
     }

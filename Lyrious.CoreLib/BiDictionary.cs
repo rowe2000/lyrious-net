@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Concurrent;
+using System.Reflection;
 
 namespace Lyrious.CoreLib;
 
@@ -112,4 +113,31 @@ public class BiDictionary<TKey, TValue> : IDictionary<TKey, TValue> where TKey :
 
     public int Count => keyToValue.Count;
     public bool IsReadOnly => false;
+}
+
+public abstract class PropertyAccessor<TTarget> : PropertyAccessor
+{
+	/// <summary>
+	/// Returns the property value of a specified object.
+	/// </summary>
+	/// <param name="obj">The object whose property value will be returned.</param>
+	/// <returns></returns>
+	public abstract object Get(TTarget obj);
+
+	/// <summary>
+	/// Sets the property value of a specified object.
+	/// </summary>
+	/// <param name="obj">The object whose property value will be set.</param>
+	/// <param name="value">The new property value.</param>
+	public abstract void Set(TTarget obj, object value);
+
+	/// <summary>
+	/// Generates an PropertyAccessor object for optimized accessing of a property.
+	/// </summary>
+	/// <param name="pInfo">The property info of the property.</param>
+	/// <returns></returns>
+	public static PropertyAccessor<TTarget> CreateAccessor(PropertyInfo pInfo)
+	{
+		return (PropertyAccessor<TTarget>)Activator.CreateInstance(typeof(TypedPropertyAccessor<,>).MakeGenericType(typeof(TTarget), pInfo.PropertyType), pInfo);
+	}
 }

@@ -1,28 +1,34 @@
-﻿using Lyrious.CoreLib.Attributes;
+﻿using System.ComponentModel.DataAnnotations;
+using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
 
 namespace Lyrious.CoreLib.Models;
 
-public class Songbook : EntityBase, IName
+public sealed class Songbook : Entity, IName
 {
-    [Member] public virtual string Name { get; set; } = "";
+	[MaxLength(100)]
+    [DataMember] public string Name { get; set; } = "";
 
-    [Member] public Guid? GroupId { get; set; }
+    [DataMember] public Guid? GroupId { get; set; }
 
-    public Group? Group { get; set; }
+	[JsonIgnore] public Group? Group { get; set; }
 
-    public ObservableList<Song> Songs { get; } = [];
+	[JsonIgnore] public ObservableList<Song> Songs { get; } = [];
 
-    public static Songbook Create(string name, Group group, params Song[] songs)
+    public Song CreateSong(string songName, string key, float tempo = 120, TimeSpan? length = null)
     {
-        var songbook = new Songbook { Name = name, Group = group };
-        group.Songbooks.Add(songbook);
+	    var song = Song.Create(this, songName, key, tempo, length);
+	    Songs.Add(song);
+	    return song;
+    }
 
-        foreach (var song in songs)
-        {
-            songbook.Songs.Add(song);
-            song.Songbook = songbook;
-        }
-
-        return songbook;
+    public static Songbook Create(Group group, string name)
+    {
+	    return new Songbook
+	    {
+		    Name = name,
+		    Group = group,
+		    GroupId = group.Id,
+	    };
     }
 }

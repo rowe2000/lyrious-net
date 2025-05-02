@@ -1,30 +1,63 @@
-﻿using Lyrious.CoreLib.Attributes;
+﻿using System.ComponentModel.DataAnnotations;
+using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Identity;
 
 namespace Lyrious.CoreLib.Models;
 
-public class Member : EntityBase, IName
+public sealed class Member : IdentityUser<Guid>, IEntity, IName
 {
-    [Member] public virtual string Name { get; set; } = "";
-    [Member] public string Password { get; set; } = "";
-    [Member] public string Email { get; set; } = "";
-    [Member] public string Phone { get; set; } = "";
+    [Key][DataMember] public override Guid Id { get; set; } = Guid.NewGuid();
+    [DataMember] public DateTime CreatedAt { get; set; } = DateTime.Now;
+	[DataMember] public DateTime ChangedAt { get; set; } = DateTime.Now;
+	[DataMember] public bool Removed { get; set; }
+	public long Checksum { get; set; }
 
-    [Member] public Guid? JoinedGroupId { get; set; }
+	[MaxLength(100)]
+	[DataMember] public string Name { get; set; } = "";
 
-    public Group? JoinedGroup { get; set; }
+    [DataMember] public Guid? JoinedGroupId { get; set; }
+    [JsonIgnore] public Group? JoinedGroup { get; set; }
 
-    public ObservableList<Membership> Memberships { get; set; } = [];
+	[JsonIgnore] public ObservableList<Membership> Memberships { get; set; } = [];
 
-    public static Member Create(string name, string password, string email, string phone)
+    public override bool Equals(object? obj)
     {
-        var member = new Member
-        {
-            Name = name,
-            Password = password,
-            Email = email,
-            Phone = phone
-        };
+	    if (obj is null)
+	    {
+		    return false;
+	    }
 
-        return member;
+	    if (ReferenceEquals(this, obj))
+	    {
+		    return true;
+	    }
+
+	    if (obj.GetType() != GetType())
+	    {
+		    return false;
+	    }
+
+	    return obj is IEntity entity && entity.Id == Id;
+    }
+
+    public override int GetHashCode()
+    {
+	    return Id.GetHashCode();
+    }
+
+    public override string ToString()
+    {
+	    return $"{(string.IsNullOrWhiteSpace(Name) ? "" : Name + ", ")} {Id}";
+    }
+    public static Member Create(string userName, string name, string email, string phone)
+    {
+	    return new Member
+	    {
+		    UserName = userName,
+		    Name = name,
+		    Email = email,
+		    PhoneNumber = phone
+	    };
     }
 }

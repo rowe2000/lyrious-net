@@ -1,15 +1,16 @@
-﻿using Lyrious.CoreLib.Attributes;
+﻿
+using System.Runtime.Serialization;
 
 namespace Lyrious.CoreLib.Models;
 
-public class Commit : EntityBase
+public class Commit : Entity
 {
-    [Member] public Guid? ParentCommitId { get; set; }
-    [Member] public Guid ObjectId { get; set; }
+    [DataMember] public Guid? ParentCommitId { get; set; }
+    [DataMember] public Guid ObjectId { get; set; }
 
-    [Member] public string Type { get; set; } = "";
-    [Member] public string Value { get; set; } = "";
+    [DataMember] public string Type { get; set; } = "";
+    [DataMember] public string Value { get; set; } = "";
 
-    [Member] public Commit? ParentCommit { get; set; } = null;
-    [Member] public Guid ChangedBy { get; set; } = Guid.Empty;
+    [DataMember] public Commit? ParentCommit { get; set; } = null;
+    [DataMember] public Guid ChangedBy { get; set; } = Guid.Empty;
 }

@@ -1,25 +1,40 @@
-﻿using Lyrious.CoreLib.Attributes;
+﻿using System.ComponentModel.DataAnnotations;
+using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
 
 namespace Lyrious.CoreLib.Models;
 
-public class Setlist : EntityBase, IName
+public sealed class Setlist : Entity, IName
 {
-    [Member] public virtual string Name { get; set; } = "";
-    [Member] public Guid GroupId { get; set; }
+	[MaxLength(100)]
+	[DataMember] public string Name { get; set; } = "";
+	[DataMember] public Guid GroupId { get; set; }
 
-    public Group Group { get; set; }
+	[JsonIgnore] public Group? Group { get; set; }
 
-    public ObservableList<SetlistItem> SetlistItems { get; set; } = [];
+	[JsonIgnore] public ObservableList<SetlistItem> SetlistItems { get; set; } = [];
 
-    public static Setlist Create(string name, Group group, params Song[] songs)
-    {
-        var setlist = new Setlist { Name = name, Group = group };
-        foreach (var song in songs)
-        {
-            var setlistItem = new SetlistItem { Song = song, Setlist = setlist };
-            setlist.SetlistItems.Add(setlistItem);
-        }
+	public SetlistItem AddSong(Song song)
+	{
+		var setlistItem = SetlistItem.Create(song, this, SetlistItems.Count);
+		SetlistItems.Add(setlistItem);
+		song.SetlistItems.Add(setlistItem);
 
-        return setlist;
-    }
+		return setlistItem;
+	}
+
+	public IEnumerable<SetlistItem> AddSongs(IEnumerable<Song> songs)
+	{
+		return songs.Select(AddSong);
+	}
+
+	public static Setlist Create(Group group, string name)
+	{
+		return new Setlist
+		{
+			Name = name,
+			Group = group,
+			GroupId = group.Id,
+		};
+	}
 }

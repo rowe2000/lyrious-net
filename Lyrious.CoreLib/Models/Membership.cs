@@ -1,29 +1,31 @@
-﻿using Lyrious.CoreLib.Attributes;
+﻿using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
 using Lyrious.CoreLib.Enums;
 
 namespace Lyrious.CoreLib.Models;
 
-public class Membership : EntityBase
+public class Membership : Entity
 {
-    [Member] public Role Role { get; set; }
-    [Member] public MembershipStatus MembershipStatus { get; set; }
+    [DataMember] public RoleEnum RoleEnum { get; set; }
+    [DataMember] public MembershipStatusEnum MembershipStatusEnum { get; set; }
 
-    [Member] public Guid GroupId { get; set; }
-    [Member] public Guid MemberId { get; set; }
+    [DataMember] public Guid GroupId { get; set; }
+    [DataMember] public Guid MemberId { get; set; }
 
-    public Group Group { get; set; }
-    public Member Member { get; set; }
+    [JsonIgnore] public Group? Group { get; set; }
+    [JsonIgnore] public Member? Member { get; set; }
 
-
-    public static Membership Create(Member member, Group group, Role role = default,
-        MembershipStatus membershipStatus = default)
+    public static Membership Create(Member member, Group group, RoleEnum role = default, MembershipStatusEnum membershipStatusEnum = default)
     {
-        return new Membership
-        {
-            Member = member,
-            Group = group,
-            Role = role,
-            MembershipStatus = membershipStatus
-        };
+	    return new Membership
+		{
+			Member = member,
+			MemberId = member.Id,
+			Group = group,
+			GroupId = group.Id,
+            
+			RoleEnum = role,
+			MembershipStatusEnum = membershipStatusEnum
+		};
     }
 }
