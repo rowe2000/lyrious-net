@@ -28,6 +28,11 @@ public sealed class Song : Entity, IName
 
 	[JsonIgnore] public ObservableList<SetlistItem> SetlistItems { get; set; } = [];
 
+	public override string ToString()
+	{
+		return $"{Name} ({Key}, {Beat}, {Tempo})";
+	}
+
 	public SetlistItem AddToSetlist(Setlist setlist)
 	{
 		var setlistItem = SetlistItem.Create(this, setlist, SetlistItems.Count);

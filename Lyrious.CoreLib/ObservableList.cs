@@ -32,14 +32,14 @@ public sealed class ObservableList<T> : IList<T>
     {
         var array = items.AsArray();
         list.AddRange(array);
-        OnChanged(Enums.ChangedEnum.Add, array);
+        OnChanged(ChangedEnum.Add, array);
     }
 
     public void Clear()
     {
         var array = list.ToArray();
         list.Clear();
-        OnChanged(Enums.ChangedEnum.Clear, array);
+        OnChanged(ChangedEnum.Clear, array);
     }
 
     public bool Contains(T item)
@@ -71,7 +71,7 @@ public sealed class ObservableList<T> : IList<T>
             }
         }
 
-        OnChanged(Enums.ChangedEnum.Remove, removedItems);
+        OnChanged(ChangedEnum.Remove, removedItems);
         return removeSuccesses;
     }
 
@@ -80,7 +80,7 @@ public sealed class ObservableList<T> : IList<T>
         var item = list[oldIndex];
         list.RemoveAt(oldIndex);
         list.Insert(newIndex, item);
-        OnChanged(Enums.ChangedEnum.Move, [item], newIndex);
+        OnChanged(ChangedEnum.Move, [item], newIndex);
     }
     
     public int Count => list.Count;
@@ -105,14 +105,14 @@ public sealed class ObservableList<T> : IList<T>
             list.Insert(index++, item);
         }
 
-        OnChanged(Enums.ChangedEnum.Insert, array, index);
+        OnChanged(ChangedEnum.Insert, array, index);
     }
 
     public void RemoveAt(int index)
     {
         var item = list[index];
         list.RemoveAt(index);
-        OnChanged(Enums.ChangedEnum.Remove, [item], index);
+        OnChanged(ChangedEnum.Remove, [item], index);
     }
 
     public T this[int index]
@@ -121,7 +121,7 @@ public sealed class ObservableList<T> : IList<T>
         set
         {
             list[index] = value;
-            OnChanged(Enums.ChangedEnum.Update, [value], index);
+            OnChanged(ChangedEnum.Update, [value], index);
         }
     }
 }

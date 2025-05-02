@@ -21,7 +21,8 @@ public sealed class Member : IdentityUser<Guid>, IEntity, IName
 
 	[JsonIgnore] public ObservableList<Membership> Memberships { get; set; } = [];
 
-    public override bool Equals(object? obj)
+
+	public override bool Equals(object? obj)
     {
 	    if (obj is null)
 	    {

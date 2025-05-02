@@ -15,7 +15,12 @@ public sealed class Songbook : Entity, IName
 
 	[JsonIgnore] public ObservableList<Song> Songs { get; } = [];
 
-    public Song CreateSong(string songName, string key, float tempo = 120, TimeSpan? length = null)
+	public override string ToString()
+	{
+		return $"{Name}, with {Songs.Count} songs";
+	}
+
+	public Song CreateSong(string songName, string key, float tempo = 120, TimeSpan? length = null)
     {
 	    var song = Song.Create(this, songName, key, tempo, length);
 	    Songs.Add(song);

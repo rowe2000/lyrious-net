@@ -13,6 +13,11 @@ public sealed class SetlistItem : Entity
     [JsonIgnore] public Song? Song { get; set; }
     [JsonIgnore] public Setlist? Setlist { get; set; }
 
+    public override string ToString()
+    {
+	    return $"{Song?.Name} at {Position} in {Setlist?.Name}";
+    }
+
     public static SetlistItem Create(Song song, Setlist setlist, int position = -1)
     {
         return new SetlistItem

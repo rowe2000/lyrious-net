@@ -46,7 +46,7 @@ public class CacheSet<TEntity> where TEntity : class, IEntity, new()
 			}
 		}
 
-		OnChanged(Enums.ChangedEnum.Remove, removeEntities);
+		OnChanged(ChangedEnum.Remove, removeEntities);
 		return removeEntities;
 	}
 
@@ -78,7 +78,7 @@ public class CacheSet<TEntity> where TEntity : class, IEntity, new()
 
 		if (!noEvent)
 		{
-			OnChanged(Enums.ChangedEnum.Remove, removedEntities);
+			OnChanged(ChangedEnum.Remove, removedEntities);
 		}
 
 		return removedEntities;
@@ -110,7 +110,7 @@ public class CacheSet<TEntity> where TEntity : class, IEntity, new()
 
 		if (!noEvent)
 		{
-			OnChanged(Enums.ChangedEnum.Update, changedItems);
+			OnChanged(ChangedEnum.Update, changedItems);
 		}
 
 		Console.WriteLine($"Updated items {string.Join(Environment.NewLine, changedItems.Select(o => $"{o}"))}");
@@ -128,7 +128,7 @@ public class CacheSet<TEntity> where TEntity : class, IEntity, new()
 
 		if (!noEvent)
 		{
-			OnChanged(Enums.ChangedEnum.Add, list);
+			OnChanged(ChangedEnum.Add, list);
 		}
 
 		return list;
@@ -149,16 +149,16 @@ public class CacheSet<TEntity> where TEntity : class, IEntity, new()
 	{
 		switch (args.ChangedEnum)
 		{
-			case Enums.ChangedEnum.Add:
-			case Enums.ChangedEnum.Insert:
+			case ChangedEnum.Add:
+			case ChangedEnum.Insert:
 				Add(args.Values);
 				break;
-			case Enums.ChangedEnum.Update:
+			case ChangedEnum.Update:
 				break;
-			case Enums.ChangedEnum.Remove:
+			case ChangedEnum.Remove:
 				Remove(args.Values);
 				break;
-			case Enums.ChangedEnum.Clear:
+			case ChangedEnum.Clear:
 				break;
 			default:
 				throw new ArgumentOutOfRangeException();

@@ -14,6 +14,11 @@ public sealed class Setlist : Entity, IName
 
 	[JsonIgnore] public ObservableList<SetlistItem> SetlistItems { get; set; } = [];
 
+	public override string ToString()
+	{
+		return Name;
+	}
+
 	public SetlistItem AddSong(Song song)
 	{
 		var setlistItem = SetlistItem.Create(song, this, SetlistItems.Count);

@@ -28,13 +28,17 @@ public sealed class Play : Entity
 	    set => KeyString = value.ToString();
     }
 
-
     [NotMapped]
     [JsonIgnore]
     public TimeSpan Duration
     {
 	    get => TimeSpan.FromMilliseconds(DurationMilliSeconds);
 	    set => DurationMilliSeconds = (int)value.TotalMilliseconds;
+    }
+
+    public override string ToString()
+    {
+	    return $"{Song?.Name} by {Conductor?.Name} in {Key} / {Tempo} bpm, at {CreatedAt}";
     }
 
     public static Play Create(Member conductor, Playlog playlog, Song song, string? key = null, float? tempo = null, TimeSpan? duration = null)

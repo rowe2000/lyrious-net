@@ -15,6 +15,11 @@ public class Membership : Entity
     [JsonIgnore] public Group? Group { get; set; }
     [JsonIgnore] public Member? Member { get; set; }
 
+    public override string ToString()
+    {
+	    return $"{Member?.Name ?? ""} @ {Group?.Name} , {RoleEnum} , {MembershipStatusEnum}";
+    }
+
     public static Membership Create(Member member, Group group, RoleEnum role = default, MembershipStatusEnum membershipStatusEnum = default)
     {
 	    return new Membership

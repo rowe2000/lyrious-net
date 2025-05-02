@@ -21,9 +21,9 @@ public sealed class Group : Entity, IName
 	[DataMember] public Guid? CurrentPlayId { get; set; }
 	[DataMember] public Guid? CurrentSetlistItemId { get; set; }
 
-	[JsonIgnore] public Setlist? CurrentSetlist { get; set; } = null;
-	[JsonIgnore] public SetlistItem? CurrentSetlistItem { get; set; } = null;
-	[JsonIgnore] public Play? CurrentPlay { get; set; } = null;
+	[JsonIgnore] public Setlist? CurrentSetlist { get; set; }
+	[JsonIgnore] public SetlistItem? CurrentSetlistItem { get; set; }
+	[JsonIgnore] public Play? CurrentPlay { get; set; }
 
 
 	[JsonIgnore] public ObservableList<Member> JoinedMembers { get; set; } = [];
@@ -44,24 +44,22 @@ public sealed class Group : Entity, IName
 	//    return HashCode.Combine(base.CalculateChecksum(), CurrentPlay?.Id.GetHashCode() ?? 0, CurrentSetlist?.Id.GetHashCode() ?? 0) % int.MaxValue;
 	//}
 
-	public bool IsJustMe => Memberships.Count == 0;
+	public override string ToString()
+	{
+		return $"{Name}, {Memberships.Count} members, {JoinedMembers.Count} joined, {ConnectedMembers.Count} connected";
+	}
+
+	public bool IsJustMe => Memberships.Count == 1;
 
 	public Membership CreateMembership(Member member, RoleEnum role = RoleEnum.Member)
 	{
-		var existing = Memberships.FirstOrDefault(o => member.UserName?.Equals(o.Member?.UserName) == true);
-		if (existing is not null)
+		var membership = Memberships.FirstOrDefault(o => member.UserName?.Equals(o.Member?.UserName) == true) 
+		                 ?? Membership.Create(member, this, role);
+
+		if (!member.Memberships.Contains(membership))
 		{
-			if (!member.Memberships.Contains(existing))
-			{
-				member.Memberships.Add(existing);
-			}
-
-			return existing;
+			member.Memberships.Add(membership);
 		}
-
-		var membership = Membership.Create(member, this, role);
-
-		member.Memberships.Add(membership);
 
 		return membership;
 	}
@@ -113,15 +111,14 @@ public sealed class Group : Entity, IName
 		return songbook;
 	}
 
-	public static Group Create(string name)
-	{
-		return new Group { Name = name, };
-	}
-
 	public Playlog CreatePlaylog()
 	{
 		var playlog = Playlog.Create(this);
 		Playlogs.Add(playlog);
 		return playlog;
+	}
+	public static Group Create(string name)
+	{
+		return new Group { Name = name, };
 	}
 }

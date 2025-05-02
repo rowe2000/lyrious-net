@@ -1,6 +1,4 @@
-﻿using System.Text.Json.Serialization;
-
-namespace Lyrious.CoreLib.Models;
+﻿namespace Lyrious.CoreLib.Models;
 
 public class GroupState : Entity
 {

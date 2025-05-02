@@ -42,7 +42,7 @@ public class LyriousRepository(LyriousContext context)
 		Update(Me);
 	}
 
-	public async Task<Song?> AddSongAsync(Songbook? songbook, string songName, string key, float tempo = 120, TimeSpan? length = null)
+	public async Task<Song?> CreateSongAsync(Songbook? songbook, string songName, string key, float tempo = 120, TimeSpan? length = null)
 	{
 		songbook ??= Me?.JoinedGroup?.Songbooks.FirstOrDefault();
 		if (songbook is null)
@@ -97,7 +97,7 @@ public class LyriousRepository(LyriousContext context)
 			playlog = Update(playlog);
 		}
 
-		var play = playlog?.CreatePlay(conductor, playlog, song, key ?? song.Key, tempo ?? song.Tempo);
+		var play = playlog?.CreatePlay(song, conductor, key ?? song.Key, tempo ?? song.Tempo);
 		if (play == null)
 		{
 			return null;

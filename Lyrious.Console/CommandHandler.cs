@@ -98,7 +98,7 @@ public class AddSong : Command
 			group = Repo.Get<Group>(args[3]).FirstOrDefault();
 		}
 
-		await Repo.AddSongAsync(group?.Songbooks[0], args[1], args[2]);
+		await Repo.CreateSongAsync(group?.Songbooks[0], args[1], args[2]);
 	}
 }
 public class AddMember : Command

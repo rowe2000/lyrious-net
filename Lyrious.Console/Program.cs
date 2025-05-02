@@ -3,7 +3,6 @@
 using Lyrious.CoreLib;
 using Lyrious.CoreLib.ApiModels;
 using Lyrious.CoreLib.Enums;
-using Lyrious.CoreLib.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Lyrious.ConsoleApp;
@@ -21,8 +20,7 @@ internal class Program
 		var repo = new LyriousRepository(new LyriousContext(optionsBuilder.Options, cache)) { RemoteAddress = "https://localhost:7079" };
 		var commandHandler = CommandHandler.Create<Command>();
 
-		Member? rw;
-		rw = await repo.RegisterAsync(RegisterModel.Create("rowe", null, "Robert Westman", "robert@westman.st", "+46706343840"));
+		var rw = await repo.RegisterAsync(RegisterModel.Create("rowe", null, "Robert Westman", "robert@westman.st", "+46706343840"));
 		var mb = await repo.RegisterAsync(RegisterModel.Create("mabe", null, "Maria Berggren", "", "+46706343840"));
 		var tj = await repo.RegisterAsync(RegisterModel.Create("tojo", null, "Torbjörn Jonsson", "", "+46706343840"));
 		var al = await repo.RegisterAsync(RegisterModel.Create("anlo", null, "Andreas Löfqvist", "", "+46706343840"));
@@ -48,11 +46,11 @@ internal class Program
 		await repo.JoinGroupAsync(jz, tj);
 		await repo.JoinGroupAsync(jz, al);
 
-		var song1 = await repo.AddSongAsync(jz.Songbooks[0], "The Best", "F");
-		var song2 = await repo.AddSongAsync(jz.Songbooks[0], "Burning Love", "G");
-		var song3 = await repo.AddSongAsync(jz.Songbooks[0], "Bye Bye Jonny", "G#", 130);
-		var song4 = await repo.AddSongAsync(jz.Songbooks[0], "Back in black", "Em", 140);
-		var song5 = await repo.AddSongAsync(jz.Songbooks[0], "Blackbird", "D#m", 150);
+		var song1 = await repo.CreateSongAsync(jz.Songbooks[0], "The Best", "F");
+		var song2 = await repo.CreateSongAsync(jz.Songbooks[0], "Burning Love", "G");
+		var song3 = await repo.CreateSongAsync(jz.Songbooks[0], "Bye Bye Jonny", "G#", 130);
+		var song4 = await repo.CreateSongAsync(jz.Songbooks[0], "Back in black", "Em", 140);
+		var song5 = await repo.CreateSongAsync(jz.Songbooks[0], "Blackbird", "D#m", 150);
 
 		var play = await repo.PlayAsync(jz, null, song2, rw, "C", 140);
 
@@ -72,8 +70,8 @@ internal class Program
 		await repo.AddMemberAsync(cc, fl, RoleEnum.Admin);
 		await repo.AddMemberAsync(cc, tp);
 
-		var setlist = await repo.CreateSetListAsync("Replista -25", jz);
-		await repo.AddSongsAsync(setlist, [song1, song2, song3, song4, song5]);
+		var replista = await repo.CreateSetListAsync("Replista -25", jz);
+		await repo.AddSongsAsync(replista, [song1, song2, song3, song4, song5]);
 
 		await commandHandler.Loop(repo);
 	}
