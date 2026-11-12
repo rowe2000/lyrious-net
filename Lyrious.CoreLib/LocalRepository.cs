@@ -88,6 +88,8 @@ public class LocalContext<TUser, TRole> : IdentityDbContext<TUser, TRole, Guid>,
 					// are copied, so Identity-managed fields on Member (password hash, security stamp, ...)
 					// can't be overwritten by a client payload.
 					Util.CopyProperties(entity, existing);
+					// Stored rows always carry the checksum of their stored content, whatever the caller sent.
+					existing.Checksum = ChecksumUtil.CalculateChecksum(existing);
 					MarkChangedProperties(Entry(existing));
 				}
 				else
@@ -97,6 +99,7 @@ public class LocalContext<TUser, TRole> : IdentityDbContext<TUser, TRole, Guid>,
 					var entry = base.Add(new TEntity());
 					entry.CurrentValues.SetValues(entity);
 					existing = entry.Entity;
+					existing.Checksum = ChecksumUtil.CalculateChecksum(existing);
 				}
 
 				ret.Add(existing);
@@ -221,7 +224,8 @@ public class LocalContext<TUser, TRole> : IdentityDbContext<TUser, TRole, Guid>,
 				}
 
 				entity.Removed = true;
-				Entry(entity).Property(nameof(IEntity.Removed)).IsModified = true;
+				ChecksumUtil.UpdateChecksum(entity);
+				MarkChangedProperties(Entry(entity));
 			}
 
 			SaveChangesOrRollback();

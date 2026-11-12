@@ -1,30 +1,15 @@
-﻿using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
-using Lyrious.CoreLib;
+﻿using Lyrious.Api.Services;
 using Lyrious.CoreLib.ApiModels;
 using Lyrious.CoreLib.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.IdentityModel.Tokens;
 
 namespace Lyrious.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController : ControllerBase
+public class AuthController(SignInManager<Member> signInManager, UserManager<Member> userManager, JwtSettings jwtSettings) : ControllerBase
 {
-	private readonly SignInManager<Member> signInManager;
-	private readonly UserManager<Member> userManager;
-	private readonly LyriousRepository repo;
-
-	public AuthController(SignInManager<Member> signInManager, UserManager<Member> userManager, LyriousRepository repo)
-	{
-		this.signInManager = signInManager;
-		this.userManager = userManager;
-		this.repo = repo;
-	}
-
 	[HttpPost("register")]
 	public async Task<IActionResult> Register([FromBody] RegisterModel model)
 	{
@@ -33,6 +18,7 @@ public class AuthController : ControllerBase
 
 		if (result.Succeeded)
 		{
+			// Registering doesn't log in; the client calls login to get a token.
 			return Ok(new TokenModel { Token = "", Member = member });
 		}
 
@@ -42,51 +28,27 @@ public class AuthController : ControllerBase
 	[HttpPost("login")]
 	public async Task<IActionResult> Login([FromBody] LoginModel model)
 	{
-		var result = await signInManager.PasswordSignInAsync(model.Username, model.Password, isPersistent: false, lockoutOnFailure: false);
+		var member = await userManager.FindByNameAsync(model.Username);
+		if (member == null)
+		{
+			return Unauthorized("Invalid username or password.");
+		}
+
+		// Verifies the password (and lockout state) without creating a cookie session.
+		var result = await signInManager.CheckPasswordSignInAsync(member, model.Password, lockoutOnFailure: false);
 		if (!result.Succeeded)
 		{
 			return Unauthorized("Invalid username or password.");
 		}
-		
-		// Retrieve the user
-		repo.Me = await userManager.FindByNameAsync(model.Username);
-		if (repo.Me == null)
-		{
-			return Unauthorized("Invalid username or password.");
-		}
 
-		repo.Synchronize(repo.Me);
-		
-		// Generate the JWT token
-		var token = GenerateJwtToken(repo.Me);
-		return Ok(new TokenModel { Token = token, Member = repo.Me });
+		return Ok(new TokenModel { Token = jwtSettings.CreateToken(member), Member = member });
 	}
 
 	[HttpPost("logout")]
-	public async Task<IActionResult> Logout()
+	public IActionResult Logout()
 	{
-		await signInManager.SignOutAsync();
-		repo.Me = null;
+		// Tokens are stateless: logging out means the client discards its token.
+		// A token stays valid until it expires (Jwt:LifetimeDays).
 		return Ok("Logged out successfully.");
-	}
-	private string GenerateJwtToken(Member user)
-	{
-		var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("YourSuperSecureKeyThatIsAtLeast32CharactersLong")); // Replace with a secure key
-		var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-		var claims = new List<Claim>
-		{
-			new(ClaimTypes.Name, user.UserName)
-		};
-
-		var token = new JwtSecurityToken(
-			//issuer: "your-issuer", // Replace with your issuer
-			//audience: "your-audience", // Replace with your audience
-			//claims: claims,
-			expires: DateTime.UtcNow.AddDays(30), // Token expiration
-			signingCredentials: creds
-		);
-
-		return new JwtSecurityTokenHandler().WriteToken(token);
 	}
 }

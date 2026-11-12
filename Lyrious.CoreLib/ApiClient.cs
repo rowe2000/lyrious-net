@@ -19,8 +19,24 @@ public class ApiClient : IRepository, IDisposable
 		AllowTrailingCommas = true,
 	};
 
-	private HttpClient? client = new();
+	// Cookies off: the API authenticates with the bearer token only.
+	private HttpClient? client = new(new HttpClientHandler { UseCookies = false });
 	private string baseUrl = "";
+
+	private string Token
+	{
+		get => token;
+		set
+		{
+			token = value;
+			if (!IsDisposed)
+			{
+				client!.DefaultRequestHeaders.Authorization = string.IsNullOrEmpty(token)
+					? null
+					: new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+			}
+		}
+	}
 
 	public string BaseUrl
 	{
@@ -39,8 +55,7 @@ public class ApiClient : IRepository, IDisposable
 				return;
 			}
 			
-			client.BaseAddress = new Uri(BaseUrl);
-			client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+			client!.BaseAddress = new Uri(BaseUrl);
 		}
 	}
 
@@ -189,26 +204,38 @@ public class ApiClient : IRepository, IDisposable
 
 	public async Task<Member?> RegisterAsync(RegisterModel model)
 	{
+		// Registering doesn't change who is logged in, so the current token is left alone.
 		var response = await Post(model, "/api/auth/register");
+		if (response is not { IsSuccessStatusCode: true })
+		{
+			return null;
+		}
+
 		var json = await response.Content.ReadAsStringAsync();
 		var tokenModel = JsonSerializer.Deserialize<TokenModel>(json, options);
-		token = tokenModel?.Token ?? string.Empty;
-		
+
 		Console.WriteLine($"User {model.UserName} registered successfully.");
 
 		return tokenModel?.Member;
 	}
 
-	public async Task<Member?> LoginAsync(LoginModel? model)
+	public async Task<Member?> LoginAsync(LoginModel model)
 	{
+		Token = string.Empty;
+
 		var response = await Post(model, "/api/auth/login");
+		if (response is not { IsSuccessStatusCode: true })
+		{
+			return null;
+		}
+
 		var json = await response.Content.ReadAsStringAsync();
 		var tokenModel = JsonSerializer.Deserialize<TokenModel>(json, options);
-		token = tokenModel?.Token ?? string.Empty;
-		
+		Token = tokenModel?.Token ?? string.Empty;
+
 		Console.WriteLine($"User {model.Username} logged in successfully.");
-		
-		return tokenModel?.Member;
+
+		return string.IsNullOrEmpty(Token) ? null : tokenModel?.Member;
 	}
 
 	private async Task Post(string requestUri)
@@ -237,13 +264,18 @@ public class ApiClient : IRepository, IDisposable
 		catch (Exception ex)
 		{
 			Console.WriteLine(IsDisposed ? $"Client is disposed: {ex.Message}" : $"Exception: {ex.Message}");
-			throw new Exception();
+			throw;
 		}
 		finally
 		{
-			ThrowIfNotSuccessStatusCode(response);
-
-			Console.WriteLine($"{requestUri} succeeded. - {content}");
+			if (response is { IsSuccessStatusCode: true })
+			{
+				Console.WriteLine($"{requestUri} succeeded.");
+			}
+			else if (response != null)
+			{
+				ThrowIfNotSuccessStatusCode(response);
+			}
 
 		}
 	}
@@ -263,6 +295,7 @@ public class ApiClient : IRepository, IDisposable
 	public async Task LogoutAsync()
 	{
 		await Post("/api/auth/logout");
+		Token = string.Empty;
 		Console.WriteLine("User logged out successfully.");
 	}
 

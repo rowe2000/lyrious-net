@@ -1,13 +1,12 @@
-using System.Text;
 using System.Text.Json;
 using Lyrious.CoreLib;
 using Lyrious.CoreLib.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 // Add MQTT namespaces
 using MQTTnet.Server;
-using Lyrious.Api.Services; // We'll create this folder and class shortly
+using Lyrious.Api.Services;
 
 namespace Lyrious.Api;
 internal class Program
@@ -64,7 +63,7 @@ internal class Program
 		builder.WebHost.ConfigureKestrel(options =>
 		{
 			// Regular HTTP endpoint
-			options.ListenAnyIP(5000);
+			options.ListenLocalhost(7000);
 
 			// MQTT over WebSockets endpoint will be handled by middleware
 		});
@@ -79,39 +78,21 @@ internal class Program
 		
 		builder.Services.AddDbContext<LyriousContext>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 		
-		// Add Identity services
-		builder.Services.AddIdentity<Member, Role>()
+		// Identity for users, roles and password checks only. AddIdentityCore (unlike AddIdentity)
+		// registers no cookie schemes, so JWT bearer is the API's only authentication.
+		builder.Services.AddIdentityCore<Member>()
+			.AddRoles<Role>()
 			.AddEntityFrameworkStores<LyriousContext>()
+			.AddSignInManager()
 			.AddDefaultTokenProviders();
 
+		var jwtSettings = JwtSettings.FromConfiguration(builder.Configuration);
+		builder.Services.AddSingleton(jwtSettings);
 
-		builder.Services.AddAuthentication("Bearer")
-			.AddJwtBearer("Bearer", options =>
-			{
-				var jwtConfig = builder.Configuration.GetSection("Jwt");
-				var jwtKey = jwtConfig["Key"] ?? throw new InvalidOperationException("JWT Key is not configured.");
-				options.TokenValidationParameters = new TokenValidationParameters
-				{
-					ValidateIssuer = true,
-					ValidateAudience = true,
-					ValidateLifetime = true,
-					ValidateIssuerSigningKey = true,
-					ValidAudience = jwtConfig["Audience"] ?? "lyrious-api",
-					ValidIssuer = jwtConfig["Issuer"] ?? "lyrious-client",
-					IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-				};
-			});
+		builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+			.AddJwtBearer(options => options.TokenValidationParameters = jwtSettings.ValidationParameters);
 
 		builder.Services.AddAuthorization();
-		
-		
-		// Configure authentication
-		builder.Services.ConfigureApplicationCookie(options =>
-		{
-			options.LoginPath = "/api/login";
-			options.LogoutPath = "/api/logout";
-			options.ExpireTimeSpan = TimeSpan.FromMinutes(30); // Session timeout
-		});
 
 
 		builder.Logging.AddConsole();

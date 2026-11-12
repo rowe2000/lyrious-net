@@ -231,6 +231,7 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 	public IEnumerable<TEntity> Update<TEntity>(IEnumerable<TEntity> entities) where TEntity : class, IEntity, new()
 	{
 		var array = entities.AsArray();
+		array.ForEach(o => ChecksumUtil.UpdateChecksum(o));
 		Store(array);
 		if (HasRemote)
 		{
@@ -242,6 +243,7 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 
 	public TEntity? Update<TEntity>(TEntity entity) where TEntity : class, IEntity, new()
 	{
+		ChecksumUtil.UpdateChecksum(entity);
 		var dbEntity = Store([entity]).FirstOrDefault();
 		if (HasRemote)
 		{
