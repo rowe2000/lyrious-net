@@ -20,6 +20,16 @@ namespace Lyrious.UILib
 			{
 				desktop.MainWindow = new MainWindow();
 			}
+			else if (ApplicationLifetime is IActivityApplicationLifetime activity)
+			{
+				// Hosts that create their view on demand (Avalonia 12 browser/mobile).
+				activity.MainViewFactory = () => new MainView();
+			}
+			else if (ApplicationLifetime is ISingleViewApplicationLifetime singleView)
+			{
+				// Window-less hosts such as the browser.
+				singleView.MainView = new MainView();
+			}
 
 			base.OnFrameworkInitializationCompleted();
 		}

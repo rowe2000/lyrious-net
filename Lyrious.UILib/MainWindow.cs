@@ -1,6 +1,4 @@
 using Avalonia.Controls;
-using Avalonia.Controls.Shapes;
-using Avalonia.Layout;
 
 namespace Lyrious.UILib
 {
@@ -8,12 +6,8 @@ namespace Lyrious.UILib
 	{
 		public MainWindow()
 		{
-            Title = "Lyrious";
-            Content = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Children = { new Rectangle() },
-            };
-}
+			Title = "Lyrious";
+			Content = new MainView();
+		}
 	}
 }
