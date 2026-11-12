@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -33,28 +31,7 @@ namespace Lyrious.UILib.Setlists
 				new ScrollViewer { Content = lyrics },
 				backText: $"‹ {setlist.Name}",
 				back: () => BackRequested?.Invoke(),
-				subtitle: Details(song));
-		}
-
-		private static string Details(SongDetails song)
-		{
-			var parts = new List<string>();
-			if (!string.IsNullOrWhiteSpace(song.Key))
-			{
-				parts.Add($"Key {song.Key}");
-			}
-
-			if (song.Tempo > 0)
-			{
-				parts.Add($"{song.Tempo.ToString("0.#", CultureInfo.InvariantCulture)} bpm");
-			}
-
-			if (!string.IsNullOrWhiteSpace(song.Beat))
-			{
-				parts.Add(song.Beat);
-			}
-
-			return string.Join(" · ", parts);
+				subtitle: PageLayout.SongInfo(song));
 		}
 	}
 }

@@ -5,6 +5,9 @@ namespace Lyrious.UILib.Login
 	/// <summary>Changing the logged-in member's password.</summary>
 	public sealed class ChangePasswordViewModel(IAuthService authService) : FormViewModel
 	{
+		/// <summary>Raised after the password has been changed, with the new password (e.g. to update a saved one).</summary>
+		public event System.Action<string>? PasswordChanged;
+
 		private string currentPassword = "";
 		private string newPassword = "";
 		private string confirmPassword = "";
@@ -46,8 +49,10 @@ namespace Lyrious.UILib.Login
 			var result = await authService.ChangePasswordAsync(CurrentPassword, NewPassword);
 			if (result.Succeeded)
 			{
+				var changedTo = NewPassword;
 				CurrentPassword = NewPassword = ConfirmPassword = "";
 				SuccessMessage = "Your password has been changed.";
+				PasswordChanged?.Invoke(changedTo);
 			}
 			else
 			{

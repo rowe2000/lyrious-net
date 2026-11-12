@@ -12,8 +12,8 @@ namespace Lyrious.UILib.Login
 		private string password = "";
 		private string confirmPassword = "";
 
-		/// <summary>Raised when the new member has been registered and logged in.</summary>
-		public event Action<AuthenticatedUser>? LoggedIn;
+		/// <summary>Raised when the new member has been registered and logged in, with their credentials (e.g. to offer saving them).</summary>
+		public event Action<AuthenticatedUser, SavedCredential>? LoggedIn;
 
 		public string UserName
 		{
@@ -76,11 +76,12 @@ namespace Lyrious.UILib.Login
 				return;
 			}
 
-			var login = await authService.LoginAsync(registration.UserName, Password);
+			var credential = new SavedCredential(registration.UserName, Password);
+			var login = await authService.LoginAsync(credential.UserName, credential.Password);
 			if (login.User is { } user)
 			{
 				Password = ConfirmPassword = "";
-				LoggedIn?.Invoke(user);
+				LoggedIn?.Invoke(user, credential);
 			}
 			else
 			{

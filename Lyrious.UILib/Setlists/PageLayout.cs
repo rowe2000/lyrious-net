@@ -58,6 +58,28 @@ namespace Lyrious.UILib.Setlists
 			return button;
 		}
 
+		/// <summary>A song's key, tempo and (optionally) beat, e.g. "Key G# · 120 bpm · 4/4"; empty if none are set.</summary>
+		public static string SongInfo(SongDetails song, bool includeBeat = true)
+		{
+			var parts = new System.Collections.Generic.List<string>();
+			if (!string.IsNullOrWhiteSpace(song.Key))
+			{
+				parts.Add($"Key {song.Key}");
+			}
+
+			if (song.Tempo > 0)
+			{
+				parts.Add($"{song.Tempo.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} bpm");
+			}
+
+			if (includeBeat && !string.IsNullOrWhiteSpace(song.Beat))
+			{
+				parts.Add(song.Beat);
+			}
+
+			return string.Join(" · ", parts);
+		}
+
 		public static Control List(Control[] rows, string emptyText)
 		{
 			if (rows.Length == 0)

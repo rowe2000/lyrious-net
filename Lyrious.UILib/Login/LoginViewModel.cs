@@ -9,8 +9,8 @@ namespace Lyrious.UILib.Login
 		private string userName = "";
 		private string password = "";
 
-		/// <summary>Raised after a successful login.</summary>
-		public event Action<AuthenticatedUser>? LoggedIn;
+		/// <summary>Raised after a successful login, with the credentials that worked (e.g. to offer saving them).</summary>
+		public event Action<AuthenticatedUser, SavedCredential>? LoggedIn;
 
 		public string UserName
 		{
@@ -39,11 +39,12 @@ namespace Lyrious.UILib.Login
 
 		public Task LogInAsync() => RunAsync(async () =>
 		{
-			var result = await authService.LoginAsync(UserName.Trim(), Password);
+			var credential = new SavedCredential(UserName.Trim(), Password);
+			var result = await authService.LoginAsync(credential.UserName, credential.Password);
 			if (result.User is { } user)
 			{
 				Password = "";
-				LoggedIn?.Invoke(user);
+				LoggedIn?.Invoke(user, credential);
 			}
 			else
 			{

@@ -21,6 +21,12 @@ namespace Lyrious.UILib
 		/// </summary>
 		public static ISetlistService SetlistService { get; set; } = new UnconfiguredSetlistService();
 
+		/// <summary>
+		/// Where a password can be saved after login (and filled in from next time). Hosts set this
+		/// before starting the app; by default nothing is offered.
+		/// </summary>
+		public static ICredentialStore CredentialStore { get; set; } = new NoCredentialStore();
+
 		public override void Initialize()
 		{
 			// Default follows the system theme; ThemeVariant.Dark or ThemeVariant.Light force one.
