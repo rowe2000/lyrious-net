@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Reflection;
+using Lyrious.CoreLib.Client;
 using Lyrious.CoreLib.ApiModels;
 using Lyrious.CoreLib.Models;
 using Microsoft.AspNetCore.Identity;
@@ -13,14 +15,87 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 {
 	private readonly TContext dbContext;
 	private readonly ApiClient remoteApi = new();
-	private readonly Dictionary<Type, bool> synced = new();
+	// Concurrent: hub notifications clear entries from SignalR threads.
+	private readonly ConcurrentDictionary<Type, bool> synced = new();
+	private HubClient? hub;
 
 	public Member? Me { get; set; }
 
 	public string RemoteAddress
 	{
 		get => remoteApi.BaseUrl;
-		set => remoteApi.BaseUrl = value;
+		set
+		{
+			remoteApi.BaseUrl = value;
+			hub = null;
+		}
+	}
+
+	/// <summary>
+	/// Raised (on a SignalR thread) when the server pushes changes for the current member's groups.
+	/// The next read of that entity type fetches fresh data from the remote.
+	/// </summary>
+	public event Action<Type, IEntity[]>? RemoteChanged;
+
+	private HubClient Hub => hub ??= CreateHub();
+
+	private HubClient CreateHub()
+	{
+		var hubClient = new HubClient(remoteApi.BaseUrl, () => remoteApi.AccessToken);
+		hubClient.EntitiesChanged += OnRemoteChanged;
+		hubClient.Reconnected += connectionId =>
+		{
+			// Pushes sent while disconnected are lost: re-fetch everything on the next reads.
+			synced.Clear();
+			remoteApi.HubConnectionId = connectionId;
+		};
+		return hubClient;
+	}
+
+	private void OnRemoteChanged(Type entityType, IEntity[] entities)
+	{
+		// Mark stale rather than writing to the DbContext here: this runs on a SignalR thread,
+		// and the DbContext isn't thread-safe.
+		synced.TryRemove(entityType, out _);
+
+		// No need to subscribe to a group after being invited: the server adds this connection itself.
+		RemoteChanged?.Invoke(entityType, entities);
+	}
+
+	private async Task ConnectHubAsync()
+	{
+		if (!HasRemote)
+		{
+			return;
+		}
+
+		try
+		{
+			await Hub.StartAsync();
+			remoteApi.HubConnectionId = Hub.ConnectionId;
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"Live updates unavailable: {ex.Message}");
+		}
+	}
+
+	private async Task DisconnectHubAsync()
+	{
+		remoteApi.HubConnectionId = null;
+		if (hub == null)
+		{
+			return;
+		}
+
+		try
+		{
+			await hub.StopAsync();
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"Failed to stop live updates: {ex.Message}");
+		}
 	}
 
 	public Repository(TContext dbContext)
@@ -56,6 +131,9 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 
 	public async Task<Member?> LoginAsync(string userName, string password)
 	{
+		// A previous member's live connection must not keep receiving their groups' changes.
+		await DisconnectHubAsync();
+
 		var member = await remoteApi.LoginAsync(new LoginModel { Username = userName, Password = password });
 		Console.WriteLine(member);
 		if (member != null)
@@ -64,6 +142,7 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 			// What the remote returns depends on who is logged in, so sync again for this member.
 			synced.Clear();
 			Synchronize(Me);
+			await ConnectHubAsync();
 		}
 
 		return member;
@@ -117,6 +196,7 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 
 	public async Task LogoutAsync()
 	{
+		await DisconnectHubAsync();
 		await remoteApi.LogoutAsync();
 		Me = null;
 		synced.Clear();

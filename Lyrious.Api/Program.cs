@@ -1,12 +1,12 @@
 using System.Text.Json;
+using Lyrious.Api.Hubs;
+using Lyrious.Api.Services;
 using Lyrious.CoreLib;
 using Lyrious.CoreLib.Models;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-// Add MQTT namespaces
-using MQTTnet.Server;
-using Lyrious.Api.Services;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 
 namespace Lyrious.Api;
 internal class Program
@@ -25,59 +25,26 @@ internal class Program
 				options.JsonSerializerOptions.WriteIndented = true;
 			});
 
-		// Configure MQTT broker
-		builder.Services.AddSingleton<MqttServerFactory>();
-
-		// Setup MQTT server options
-		builder.Services.AddSingleton(sp =>
-		{
-			var mqttFactory = sp.GetRequiredService<MqttServerFactory>();
-			return mqttFactory.CreateServerOptionsBuilder()
-				.WithDefaultEndpoint()
-				.WithDefaultEndpointPort(1883) // Standard MQTT port
-				//.WithConnectionValidator(context =>
-				//{
-				//	// You can implement authentication logic here if needed
-				//	// For development, we'll allow all connections
-				//	context.ReasonCode = MQTTnet.Protocol.MqttConnectReasonCode.Success;
-				//})
-				.Build();
-		});
-
-		// Register MQTT server
-		builder.Services.AddSingleton(sp =>
-		{
-			var mqttFactory = sp.GetRequiredService<MqttServerFactory>();
-			var options = sp.GetRequiredService<MqttServerOptions>();
-			return mqttFactory.CreateMqttServer(options);
-		});
-
-		// Register MQTT service
-		builder.Services.AddSingleton<MqttService>();
-		builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttService>());
-
-		// Add WebSocket support for MQTT
-		builder.Services.AddConnections();
-
-		// Configure Kestrel for WebSocket endpoints
 		builder.WebHost.ConfigureKestrel(options =>
 		{
-			// Regular HTTP endpoint
 			options.ListenLocalhost(7000);
-
-			// MQTT over WebSockets endpoint will be handled by middleware
 		});
 
 		// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 		builder.Services.AddEndpointsApiExplorer();
 		builder.Services.AddSwaggerGen();
+
+		// Real-time change notifications. Hub users are identified by the JWT "sub" claim (member id).
 		builder.Services.AddSignalR();
+		builder.Services.AddSingleton<IUserIdProvider, MemberIdUserIdProvider>();
+		builder.Services.AddSingleton<HubConnectionRegistry>();
+		builder.Services.AddScoped<ChangeNotifier>();
 
 		builder.Services.AddSingleton<Cache>();
 		builder.Services.AddScoped<LyriousRepository>();
-		
+
 		builder.Services.AddDbContext<LyriousContext>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-		
+
 		// Identity for users, roles and password checks only. AddIdentityCore (unlike AddIdentity)
 		// registers no cookie schemes, so JWT bearer is the API's only authentication.
 		builder.Services.AddIdentityCore<Member>()
@@ -90,13 +57,30 @@ internal class Program
 		builder.Services.AddSingleton(jwtSettings);
 
 		builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-			.AddJwtBearer(options => options.TokenValidationParameters = jwtSettings.ValidationParameters);
+			.AddJwtBearer(options =>
+			{
+				options.TokenValidationParameters = jwtSettings.ValidationParameters;
+				options.Events = new JwtBearerEvents
+				{
+					// WebSocket and server-sent-event clients can't set headers, so SignalR sends the token
+					// as ?access_token=. Accept it only on the hub path.
+					OnMessageReceived = context =>
+					{
+						var accessToken = context.Request.Query["access_token"];
+						if (!string.IsNullOrEmpty(accessToken) && context.HttpContext.Request.Path.StartsWithSegments(LyriousHub.Path))
+						{
+							context.Token = accessToken;
+						}
+
+						return Task.CompletedTask;
+					}
+				};
+			});
 
 		builder.Services.AddAuthorization();
 
-
 		builder.Logging.AddConsole();
-		
+
 		var app = builder.Build();
 
 		using (var scope = app.Services.CreateScope())
@@ -110,8 +94,7 @@ internal class Program
 		app.UseHttpsRedirection();
 		app.UseRouting();
 		app.UseAuthentication();
-		app.UseAuthorization(); 
-		app.UseWebSockets();
+		app.UseAuthorization();
 
 		// Configure the HTTP request pipeline.
 		if (app.Environment.IsDevelopment())
@@ -120,34 +103,8 @@ internal class Program
 			app.UseSwaggerUI();
 		}
 
-		// Set up MQTT WebSocket handler
-		
 		app.MapControllers();
-
-		// Map a custom middleware that handles MQTT over WebSockets
-		app.Map("/mqtt", async context =>
-		{
-			try
-			{
-				if (!context.WebSockets.IsWebSocketRequest)
-				{
-					context.Response.StatusCode = 400;
-					return;
-				}
-
-				using var webSocket = await context.WebSockets.AcceptWebSocketAsync("mqtt");
-				var mqttService = context.RequestServices.GetRequiredService<MqttService>();
-				await mqttService.HandleWebSocketConnectionAsync(webSocket, context.RequestAborted);
-			}
-			catch (Exception ex)
-			{
-				var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
-				logger.LogError(ex, "Error handling WebSocket connection");
-				if (!context.Response.HasStarted)
-					context.Response.StatusCode = 500;
-			}
-		});
-
+		app.MapHub<LyriousHub>(LyriousHub.Path);
 
 		app.Run();
 	}

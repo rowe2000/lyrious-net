@@ -23,6 +23,32 @@ public class ApiClient : IRepository, IDisposable
 	private HttpClient? client = new(new HttpClientHandler { UseCookies = false });
 	private string baseUrl = "";
 
+	/// <summary>The current bearer token, empty when logged out (used to authenticate the hub connection).</summary>
+	public string AccessToken => token;
+
+	/// <summary>
+	/// This client's hub connection id, sent with each request so the API doesn't
+	/// push the client's own changes back to it.
+	/// </summary>
+	public string? HubConnectionId
+	{
+		set
+		{
+			if (IsDisposed)
+			{
+				return;
+			}
+
+			client!.DefaultRequestHeaders.Remove(HubConnectionIdHeader);
+			if (!string.IsNullOrEmpty(value))
+			{
+				client.DefaultRequestHeaders.Add(HubConnectionIdHeader, value);
+			}
+		}
+	}
+
+	private const string HubConnectionIdHeader = "X-Lyrious-ConnectionId";
+
 	private string Token
 	{
 		get => token;

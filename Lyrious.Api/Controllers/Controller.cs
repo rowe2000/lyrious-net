@@ -1,4 +1,5 @@
-﻿using Lyrious.CoreLib;
+﻿using Lyrious.Api.Services;
+using Lyrious.CoreLib;
 using Lyrious.CoreLib.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -36,7 +37,7 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 
 	// POST api/<TEntity>s
 	[HttpPost]
-	public virtual IActionResult Post([FromBody] IEnumerable<TEntity> entities)
+	public virtual async Task<IActionResult> Post([FromBody] IEnumerable<TEntity> entities)
 	{
 		repo.SetIdentity(User.Identity);
 		var array = entities.ToArray();
@@ -46,12 +47,13 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 		}
 
 		repo.Update(array);
+		await NotifyAsync(array.Select(o => o.Id));
 		return Ok();
 	}
 
 	// PUT api/<TEntity>s/<id>
 	[HttpPut("{id:guid}")]
-	public virtual IActionResult Put(Guid id, [FromBody] TEntity value)
+	public virtual async Task<IActionResult> Put(Guid id, [FromBody] TEntity value)
 	{
 		if (value.Id != id)
 		{
@@ -65,12 +67,13 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 		}
 
 		repo.Update([value]);
+		await NotifyAsync([id]);
 		return Ok();
 	}
 
 	// DELETE api/<TEntity>/<id>
 	[HttpDelete("{id:guid}")]
-	public virtual IActionResult Delete(Guid id)
+	public virtual async Task<IActionResult> Delete(Guid id)
 	{
 		repo.SetIdentity(User.Identity);
 		if (!repo.CanRemove<TEntity>(id))
@@ -78,10 +81,20 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 			return NotFound();
 		}
 
+		// Removal is a soft delete, so clients are sent the entity with Removed = true.
 		repo.Remove<TEntity>([id]);
+		await NotifyAsync([id]);
 		return Ok();
 	}
 
-	// Plain 403: Forbid() would go through the Identity cookie handler and redirect to an HTML access-denied page.
+	/// <summary>Pushes the stored versions of the written entities to the hub groups that may see them.</summary>
+	private Task NotifyAsync(IEnumerable<Guid> ids)
+	{
+		var stored = repo.Get<TEntity>(ids).ToArray();
+		var notifier = HttpContext.RequestServices.GetRequiredService<ChangeNotifier>();
+		return notifier.NotifyAsync(stored, Request.Headers[ChangeNotifier.ConnectionIdHeader].FirstOrDefault());
+	}
+
+	// Plain 403 with a message rather than Forbid(), which returns an empty response.
 	private ObjectResult Forbidden() => StatusCode(StatusCodes.Status403Forbidden, "Not allowed to modify this entity.");
 }

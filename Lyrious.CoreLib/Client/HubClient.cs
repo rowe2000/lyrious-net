@@ -3,72 +3,69 @@ using Microsoft.AspNetCore.SignalR.Client;
 
 namespace Lyrious.CoreLib.Client;
 
-public class HubClient
+/// <summary>
+/// Connection to the API's LyriousHub. The server sends "Update{EntityType}" with changed entities
+/// for the groups the member belongs to; each arrives as <see cref="EntitiesChanged"/>.
+/// Messages sent while disconnected are not replayed, so <see cref="Reconnected"/> means
+/// "anything may have changed".
+/// </summary>
+public sealed class HubClient : IAsyncDisposable
 {
-    private readonly HubConnection connection;
+	public const string HubPath = "/hubs/lyrious";
 
-    private readonly Cache cache;
+	private readonly HubConnection connection;
 
-	public HubClient(string url, Cache cache)
-    {
-	    this.cache = cache;
-	    connection = new HubConnectionBuilder()
-            .WithUrl(url)
-            .WithAutomaticReconnect()
-            .Build();
+	public HubClient(string baseUrl, Func<string?> accessTokenProvider)
+	{
+		connection = new HubConnectionBuilder()
+			.WithUrl(new Uri(new Uri(baseUrl), HubPath), options => options.AccessTokenProvider = () => Task.FromResult(accessTokenProvider()))
+			.WithAutomaticReconnect()
+			.Build();
 
-        connection.Reconnecting += OnReconnecting;
-        connection.Reconnected += OnReconnected;
-        connection.Closed += OnClosed;
-    }
+		On<Group>();
+		On<Member>();
+		On<Membership>();
+		On<Play>();
+		On<Playlog>();
+		On<Setlist>();
+		On<SetlistItem>();
+		On<Song>();
+		On<Songbook>();
 
-    public IDisposable OnRemoteUpdates<TEntity>() where TEntity : class, IEntity, new()
-    {
-        return connection.On<TEntity[]>($"Update{typeof(TEntity).Name}", UpdateCache);
-    }
+		connection.Reconnected += connectionId =>
+		{
+			Reconnected?.Invoke(connectionId);
+			return Task.CompletedTask;
+		};
+	}
 
-    private void UpdateCache<TEntity>(TEntity[] entities) where TEntity : class, IEntity, new()
-    {
-        cache.Update(entities);
-        Console.WriteLine($"Cache {typeof(TEntity).Name} updated with {entities.Length} items");
-    }
+	/// <summary>Raised on a SignalR thread with the entity type and the changed entities.</summary>
+	public event Action<Type, IEntity[]>? EntitiesChanged;
 
-    public void Update<TEntity>(object sender, ChangedArgs<TEntity> args)
-    {
-        connection.InvokeAsync($"Update{typeof(TEntity).Name}Async", args.Values);
-        Console.WriteLine($"Remote {typeof(TEntity).Name} updated with {args.Values.Length} items");
-    }
+	/// <summary>Raised with the new connection id after an automatic reconnect.</summary>
+	public event Action<string?>? Reconnected;
 
-    protected virtual Task OnReconnected(string? s)
-    {
-        Reconnected?.Invoke(this, s);
-        return Task.CompletedTask;
-    }
+	public string? ConnectionId => connection.ConnectionId;
 
-    protected virtual Task OnReconnecting(Exception? arg)
-    {
-        Reconnecting?.Invoke(this, arg);
-        return Task.CompletedTask;
-    }
+	public bool IsConnected => connection.State == HubConnectionState.Connected;
 
-    protected virtual Task OnClosed(Exception? arg)
-    {
-        Closed?.Invoke(this, arg);
-        return Task.CompletedTask;
-    }
+	public async Task StartAsync()
+	{
+		if (connection.State == HubConnectionState.Disconnected)
+		{
+			await connection.StartAsync();
+		}
+	}
 
-    public event Action<object, Exception?>? Reconnecting;
-    public event Action<object, string?>? Reconnected;
-    public event Action<object, Exception?>? Closed;
+	public Task StopAsync() => connection.StopAsync();
 
-    public void BindCache<TEntity>() where TEntity : class, IEntity, new()
-    {
-        CacheSet<TEntity>.Changed += Update;
-        OnRemoteUpdates<TEntity>();
-    }
+	/// <summary>Starts receiving a group's changes; false if the member isn't in the group.</summary>
+	public Task<bool> SubscribeGroupAsync(Guid groupId) => connection.InvokeAsync<bool>("SubscribeGroup", groupId);
 
-    public void UnbindCache<TEntity>() where TEntity : class, IEntity, new()
-    {
-        CacheSet<TEntity>.Changed -= Update;
-    }
+	public ValueTask DisposeAsync() => connection.DisposeAsync();
+
+	private void On<TEntity>() where TEntity : class, IEntity, new()
+	{
+		connection.On<TEntity[]>($"Update{typeof(TEntity).Name}", entities => EntitiesChanged?.Invoke(typeof(TEntity), entities));
+	}
 }

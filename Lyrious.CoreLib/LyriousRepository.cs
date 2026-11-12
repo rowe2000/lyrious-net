@@ -335,6 +335,33 @@ public class LyriousRepository(LyriousContext context)
 			.FirstOrDefault();
 	}
 
+	/// <summary>Whether the current member has a (non-removed) membership in the group.</summary>
+	public bool IsMember(Guid groupId) => IsMemberOf(groupId);
+
+	/// <summary>Ids of the groups the current member has a (non-removed) membership in.</summary>
+	public Guid[] GetMyGroupIds()
+	{
+		if (Me == null)
+			return [];
+
+		var meId = Me.Id;
+		return context.Memberships.Where(m => m.MemberId == meId && !m.Removed).Select(m => m.GroupId).Distinct().ToArray();
+	}
+
+	/// <summary>
+	/// The groups whose members may see <paramref name="entity"/>: its owning group, or for a member
+	/// every group they belong to. Used to route change notifications.
+	/// </summary>
+	public Guid[] GroupIdsOf(IEntity entity)
+	{
+		if (entity is Member member)
+		{
+			return context.Memberships.Where(m => m.MemberId == member.Id && !m.Removed).Select(m => m.GroupId).Distinct().ToArray();
+		}
+
+		return GroupIdOf(entity) is { } groupId ? [groupId] : [];
+	}
+
 	private bool IsMemberOf(Guid? groupId)
 	{
 		if (Me == null || groupId == null)

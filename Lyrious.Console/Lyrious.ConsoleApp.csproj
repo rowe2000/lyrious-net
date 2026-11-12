@@ -9,7 +9,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Lyrious.CoreLib\Lyrious.CoreLib.csproj" />
-    <ProjectReference Include="..\Lyrious.Server\Lyrious.Server.csproj" />
   </ItemGroup>
 
   <ItemGroup>
