@@ -1,6 +1,7 @@
 ﻿using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Lyrious.CoreLib;
 using Lyrious.CoreLib.ApiModels;
 using Lyrious.CoreLib.Models;
 using Microsoft.AspNetCore.Identity;
@@ -15,11 +16,13 @@ public class AuthController : ControllerBase
 {
 	private readonly SignInManager<Member> signInManager;
 	private readonly UserManager<Member> userManager;
+	private readonly LyriousRepository repo;
 
-	public AuthController(SignInManager<Member> signInManager, UserManager<Member> userManager)
+	public AuthController(SignInManager<Member> signInManager, UserManager<Member> userManager, LyriousRepository repo)
 	{
 		this.signInManager = signInManager;
 		this.userManager = userManager;
+		this.repo = repo;
 	}
 
 	[HttpPost("register")]
@@ -40,29 +43,30 @@ public class AuthController : ControllerBase
 	public async Task<IActionResult> Login([FromBody] LoginModel model)
 	{
 		var result = await signInManager.PasswordSignInAsync(model.Username, model.Password, isPersistent: false, lockoutOnFailure: false);
-		
-		if (result.Succeeded)
+		if (!result.Succeeded)
 		{
-			// Retrieve the user
-			var member = await userManager.FindByNameAsync(model.Username);
-			if (member == null)
-			{
-				return Unauthorized("Invalid username or password.");
-			}
-
-			// Generate the JWT token
-			var token = GenerateJwtToken(member);
-
-			return Ok(new TokenModel { Token = token, Member = member });
+			return Unauthorized("Invalid username or password.");
+		}
+		
+		// Retrieve the user
+		repo.Me = await userManager.FindByNameAsync(model.Username);
+		if (repo.Me == null)
+		{
+			return Unauthorized("Invalid username or password.");
 		}
 
-		return Unauthorized("Invalid username or password.");
+		repo.Synchronize(repo.Me);
+		
+		// Generate the JWT token
+		var token = GenerateJwtToken(repo.Me);
+		return Ok(new TokenModel { Token = token, Member = repo.Me });
 	}
 
 	[HttpPost("logout")]
 	public async Task<IActionResult> Logout()
 	{
 		await signInManager.SignOutAsync();
+		repo.Me = null;
 		return Ok("Logged out successfully.");
 	}
 	private string GenerateJwtToken(Member user)

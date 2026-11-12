@@ -1,9 +1,42 @@
 ﻿using System.Globalization;
 using System.Reflection;
 using System.Runtime.Serialization;
+using Lyrious.CoreLib.Commands;
 
 namespace Lyrious.CoreLib;
 
+public static class StringExtensions
+{
+	public static string ToSnakeCase(this string str)
+	{
+		if (string.IsNullOrEmpty(str))
+		{
+			return str;
+		}
+
+		return string.Concat(str.Select((x, i) =>
+			i > 0 && char.IsUpper(x) ? "_" + x.ToString().ToLowerInvariant() : x.ToString().ToLowerInvariant()));
+	}
+	
+	public static string ToCamelCase(this string str)
+	{
+		if (string.IsNullOrEmpty(str))
+		{
+			return str;
+		}
+
+		return char.ToLowerInvariant(str[0]) + str.Substring(1);
+	}
+
+	public static bool IsEmail(this string str)
+	{
+		return str?.Contains('@') == true;
+	}
+	public static bool IsPhoneNumber(this string str)
+	{
+		return true;
+	}
+}
 public static class Util
 {
 	private static readonly Dictionary<Type, object> _dataAttributePropertiesDict = new Dictionary<Type, object>();
@@ -92,6 +125,11 @@ public static class Util
 		return CreateInstance<T>(null);
 	}
 
+	public static Type[] FindClasses<T>()
+	{
+		return GetTypes([typeof(T)]);
+	}
+
 	public static T CreateInstance<T>(Type baseType)
 	{
 		var baseTypes = baseType == null ? new[] { typeof(T) } : new[] { typeof(T), baseType };
@@ -151,25 +189,5 @@ public static class Util
 			Console.WriteLine(e);
 			throw;
 		}
-	}
-}
-
-public abstract class Command()
-{
-	protected static readonly LyriousRepository Repo;
-
-	protected virtual string[] ArgDescriptions { get; } = [];
-
-	public abstract Task Execute(string[] args);
-
-	public virtual void ThrowIfArgumentNotValid(string[] args)
-	{
-		if (args.Length > ArgDescriptions.Length)
-		{
-			return;
-		}
-
-		Console.WriteLine($"Usage: {GetType().Name} {string.Join(" ", ArgDescriptions)}");
-		throw new ArgumentException();
 	}
 }

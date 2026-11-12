@@ -47,7 +47,7 @@ public class LocalContext<TUser, TRole> : IdentityDbContext<TUser, TRole, Guid>,
 		//	return cache.Get(p);
 		//}
 
-		var entities = Get<TEntity>().Where(p).ToArray();
+		var entities = Get<TEntity>().Where(p);
 		//cache.Update(entities);
 		return entities;
 	}

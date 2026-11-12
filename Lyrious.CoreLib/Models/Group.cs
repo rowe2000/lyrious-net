@@ -64,33 +64,6 @@ public sealed class Group : Entity, IName
 		return membership;
 	}
 
-	public bool Join(Member member)
-	{
-		if (!Memberships.Any(o => member.Equals(o.Member)))
-		{
-			return false;
-		}
-
-		member.JoinedGroup?.Leave(member);
-
-		member.JoinedGroup = this;
-		member.JoinedGroupId = Id;
-
-		if (!JoinedMembers.Contains(member))
-		{
-			JoinedMembers.Add(member);
-		}
-
-		return true;
-	}
-
-	public bool Leave(Member member)
-	{
-		member.JoinedGroup = null;
-		member.JoinedGroupId = null;
-		return JoinedMembers.Remove(member);
-	}
-
 	public Setlist CreateSetlist(string setlistName)
 	{
 		var setlist = Setlist.Create(this, setlistName);
@@ -120,5 +93,22 @@ public sealed class Group : Entity, IName
 	public static Group Create(string name)
 	{
 		return new Group { Name = name, };
+	}
+
+	public Membership? ApproveMembership(Member member)
+	{
+		var membership = Memberships.FirstOrDefault(o => o.MemberId == member.Id);
+		if (membership == null)
+		{
+			return null;
+		}
+
+		membership.MembershipStatusEnum = MembershipStatusEnum.Approved;
+		return membership;
+	}
+
+	public bool IsMember(Member member)
+	{
+		return Memberships.Any(o => o.MemberId == member.Id);
 	}
 }

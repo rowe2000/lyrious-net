@@ -85,6 +85,17 @@ public sealed class ObservableList<T> : IList<T>
     
     public int Count => list.Count;
     public bool IsReadOnly => false;
+    public IEnumerable<T> Items
+    {
+	    get => list.ToArray();
+	    set
+	    {
+		    value = value.AsArray();
+		    var items = list.OfType<T>().ToArray();
+		    Remove(items.Except(value));
+		    Add(value.Except(items));
+	    }
+	}
 
     public int IndexOf(T item)
     {

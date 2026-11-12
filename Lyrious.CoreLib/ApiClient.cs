@@ -28,13 +28,17 @@ public class ApiClient : IRepository, IDisposable
 		set
 		{
 			if (baseUrl == value)
+			{
 				return;
-
+			}
+			
 			baseUrl = value;
 
 			if (string.IsNullOrWhiteSpace(BaseUrl) || IsDisposed)
+			{
 				return;
-
+			}
+			
 			client.BaseAddress = new Uri(BaseUrl);
 			client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 		}
@@ -122,6 +126,7 @@ public class ApiClient : IRepository, IDisposable
 	public IEnumerable<TEntity> Update<TEntity>(IEnumerable<TEntity> entities) where TEntity : class, IEntity, new()
 	{
 		var entityName = typeof(TEntity).Name;
+		var requestUri = $"/api/{entityName}";
 		try
 		{
 			// Serialize the LoginModel to JSON
@@ -129,7 +134,6 @@ public class ApiClient : IRepository, IDisposable
 			var content = new StringContent(jsonData, Encoding.UTF8, "application/json");
 
 			// Send POST request
-			var requestUri = $"/api/{entityName}";
 			var response = client.PostAsync(requestUri, content).Result;
 
 			// Check if the response is successful
@@ -163,13 +167,12 @@ public class ApiClient : IRepository, IDisposable
 
 	public void Remove<TEntity>(IEnumerable<Guid> ids) where TEntity : class, IEntity, new()
 	{
+		var entityName = typeof(TEntity).Name;
+		var idList = string.Join(",", ids);
+		var requestUri = $"/api/{entityName}/ids={idList}";
 		try
 		{
-			var idList = string.Join(",", ids);
-
 			// Send GET request
-			var entityName = typeof(TEntity).Name;
-			var requestUri = $"/api/{entityName}/ids={idList}";
 			_ = client.DeleteAsync(requestUri);
 		}
 		catch (Exception ex)
@@ -185,112 +188,90 @@ public class ApiClient : IRepository, IDisposable
 
 	public async Task<Member?> RegisterAsync(RegisterModel model)
 	{
-		try
-		{
-			// Serialize the RegisterModel to JSON
-			var jsonData = JsonSerializer.Serialize(model);
-			var content = new StringContent(jsonData, Encoding.UTF8, "application/json");
+		var response = await Post(model, "/api/auth/register");
+		var json = await response.Content.ReadAsStringAsync();
+		var tokenModel = JsonSerializer.Deserialize<TokenModel>(json, options);
+		token = tokenModel?.Token ?? string.Empty;
+		
+		Console.WriteLine($"User {model.UserName} registered successfully.");
 
-			// Send POST request to the register endpoint
-			var requestUri = $"/api/auth/register";
-			var response = await client.PostAsync(requestUri, content);
-
-			if (response.IsSuccessStatusCode)
-			{
-				Console.WriteLine("User registered successfully.");
-				var json = await response.Content.ReadAsStringAsync();
-				var tokenModel = JsonSerializer.Deserialize<TokenModel>(json, options);
-				token = tokenModel?.Token ?? string.Empty;
-
-				return tokenModel?.Member;
-			}
-
-			var error = await response.Content.ReadAsStringAsync();
-			Console.WriteLine($"User registration failed. Error: {error}");
-		}
-		catch (Exception ex)
-		{
-			if (IsDisposed)
-			{
-				Console.WriteLine($"Client is disposed: {ex.Message}");
-			}
-
-			Console.WriteLine($"Exception: {ex.Message}");
-		}
-
-		return null;
+		return tokenModel?.Member;
 	}
 
-	public async Task<Member?> LoginAsync(LoginModel model)
+	public async Task<Member?> LoginAsync(LoginModel? model)
 	{
+		var response = await Post(model, "/api/auth/login");
+		var json = await response.Content.ReadAsStringAsync();
+		var tokenModel = JsonSerializer.Deserialize<TokenModel>(json, options);
+		token = tokenModel?.Token ?? string.Empty;
+		
+		Console.WriteLine($"User {model.Username} logged in successfully.");
+		
+		return tokenModel?.Member;
+	}
+
+	private async Task Post(string requestUri)
+	{
+		await Post<object>(null, requestUri);
+	}
+	private async Task<HttpResponseMessage?> Post<TPost>(TPost? entities, string requestUri)
+	{
+		HttpResponseMessage? response = null;
+		StringContent? content = null;
+
 		try
 		{
 			// Serialize the LoginModel to JSON
-			var jsonData = JsonSerializer.Serialize(model);
-			var content = new StringContent(jsonData, Encoding.UTF8, "application/json");
+			if (entities != null)
+			{
+				var jsonData = JsonSerializer.Serialize(entities);
+				content = new StringContent(jsonData, Encoding.UTF8, "application/json");
+			}
 
 			// Send POST request to the login endpoint
-			var requestUri = $"/api/auth/login";
-			var response = await client.PostAsync(requestUri, content);
+			response = await client.PostAsync(requestUri, content);
 
-			if (response.IsSuccessStatusCode)
-			{
-				var json = await response.Content.ReadAsStringAsync();
-				var tokenModel = JsonSerializer.Deserialize<TokenModel>(json, options);
-				token = tokenModel?.Token ?? string.Empty;
-
-				Console.WriteLine("User logged in successfully.");
-				return tokenModel?.Member;
-			}
-
-			var error = await response.Content.ReadAsStringAsync();
-			Console.WriteLine($"User login failed. Error: {error}");
+			return response;
 		}
 		catch (Exception ex)
 		{
-			if (IsDisposed)
-			{
-				Console.WriteLine($"Client is disposed: {ex.Message}");
-			}
-
-			Console.WriteLine($"Exception: {ex.Message}");
+			Console.WriteLine(IsDisposed ? $"Client is disposed: {ex.Message}" : $"Exception: {ex.Message}");
+			throw new Exception();
 		}
-		return null;
+		finally
+		{
+			ThrowIfNotSuccessStatusCode(response);
+
+			Console.WriteLine($"{requestUri} succeeded. - {content}");
+
+		}
 	}
 
-	public async Task<string> LogoutAsync()
+	private static void ThrowIfNotSuccessStatusCode(HttpResponseMessage? response)
 	{
-		try
+		if (response.IsSuccessStatusCode)
 		{
-			// Send POST request to the logout endpoint
-			var requestUri = $"/api/auth/logout";
-			var response = await client.PostAsync(requestUri, null);
-
-			if (response.IsSuccessStatusCode)
-			{
-				return "User registered successfully.";
-			}
-
-			var error = await response.Content.ReadAsStringAsync();
-			return $"Error: {error}";
+			return;
 		}
-		catch (Exception ex)
-		{
-			if (IsDisposed)
-			{
-				Console.WriteLine($"Client is disposed: {ex.Message}");
-			}
 
-			return $"Exception: {ex.Message}";
-		}
+		var message = $"Uri {response.RequestMessage?.RequestUri} failed -> {response.StatusCode} {response.ReasonPhrase}";
+		Console.WriteLine(message);
+		//throw new Exception(message);
+	}
+
+	public async Task LogoutAsync()
+	{
+		await Post("/api/auth/logout");
+		Console.WriteLine("User logged out successfully.");
 	}
 
 	public async Task<string> Ping<TEntity>()
 	{
+		var requestUri = $"/api/{typeof(TEntity).Name}/ping";
+
 		try
 		{
 			// Send POST request to the logout endpoint
-			var requestUri = $"/api/{typeof(TEntity).Name}/ping";
 			var response = await client.PostAsync(requestUri, null);
 
 			if (response.IsSuccessStatusCode)

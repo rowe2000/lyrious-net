@@ -51,7 +51,7 @@ public sealed class Member : IdentityUser<Guid>, IEntity, IName
     {
 	    return $"{(string.IsNullOrWhiteSpace(Name) ? "" : Name + ", ")} {Id}";
     }
-    public static Member Create(string userName, string name, string email, string phone)
+    public static Member Create(string userName, string name, string? email, string? phone)
     {
 	    return new Member
 	    {
@@ -60,5 +60,41 @@ public sealed class Member : IdentityUser<Guid>, IEntity, IName
 		    Email = email,
 		    PhoneNumber = phone
 	    };
+    }
+
+    public bool Join(Group group)
+    {
+	    if (JoinedGroupId == group.Id)
+	    {
+		    return false;
+	    }
+
+	    if (!Memberships.Any(o => Equals(o.Member)))
+	    {
+		    return false;
+	    }
+
+	    if (JoinedGroup != null)
+	    {
+		    Leave(JoinedGroup);
+	    }
+
+	    JoinedGroup = group;
+	    JoinedGroupId = group.Id;
+
+	    if (!group.JoinedMembers.Contains(this))
+	    {
+		    group.JoinedMembers.Add(this);
+	    }
+
+	    return true;
+
+    }
+
+    public bool Leave(Group group)
+    {
+	    JoinedGroup = null;
+	    JoinedGroupId = null;
+	    return group.JoinedMembers.Remove(this);
     }
 }

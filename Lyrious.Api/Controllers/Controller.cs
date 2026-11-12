@@ -1,12 +1,13 @@
 ﻿using Lyrious.CoreLib;
 using Lyrious.CoreLib.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 namespace Lyrious.Api.Controllers;
 
-[ApiController]
-//[Authorize]
+[ApiController] 
+[Authorize]
 [Route("api/[controller]")]
 public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBase
 	where TEntity : class, IEntity, new()
@@ -15,6 +16,7 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 	[HttpGet]
 	public virtual IEnumerable<TEntity> Get()
 	{
+		repo.SetIdentity(User.Identity);
 		return repo.Get<TEntity>();
 	}
 
@@ -22,6 +24,7 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 	[HttpGet("{id:guid}")]
 	public virtual TEntity Get(Guid id)
 	{
+		repo.SetIdentity(User.Identity);
 		return repo.Get<TEntity>([id]).FirstOrDefault() ?? throw new KeyNotFoundException();
 	}
 
@@ -29,6 +32,7 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 	[HttpPost]
 	public virtual async Task<IActionResult> Post([FromBody] IEnumerable<TEntity> entities)
 	{
+		repo.SetIdentity(User.Identity);
 		repo.Update(entities);
 
 		return Ok();
@@ -38,6 +42,7 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 	[HttpPut("{id:guid}")]
 	public virtual async Task<IActionResult> Put(Guid id, [FromBody] TEntity value)
 	{
+		repo.SetIdentity(User.Identity);
 		repo.Update([value]);
 
 		return Ok();
@@ -47,6 +52,7 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 	[HttpDelete("{id:guid}")]
 	public virtual async Task<IActionResult> Delete(Guid id)
 	{
+		repo.SetIdentity(User.Identity);
 		repo.Remove<TEntity>([id]);
 
 		return Ok();

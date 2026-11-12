@@ -11,5 +11,5 @@ public interface IRepository
     IEnumerable<TEntity> Get<TEntity>(DateTime commit) where TEntity : class, IEntity, new();
     IEnumerable<TEntity> Get<TEntity>(Func<TEntity, bool> p) where TEntity : class, IEntity, new();
 	IEnumerable<TEntity> Update<TEntity>(IEnumerable<TEntity> entities) where TEntity : class, IEntity, new();
-    void Remove<TEntity>(IEnumerable<Guid> ids) where TEntity : class, IEntity, new();
+    void Remove<TEntity>(IEnumerable<Guid> ids) where TEntity : class, IEntity, new(); 
 }
