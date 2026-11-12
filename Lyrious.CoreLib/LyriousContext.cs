@@ -27,7 +27,9 @@ public class LyriousContext : LocalContext<Member, Role>
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
-		//base.OnModelCreating(modelBuilder);
+		// Identity's own model (users, roles, claims, logins, tokens and, since .NET 10, passkeys).
+		// Without it, Identity tables added in newer versions have no key configured and startup fails.
+		base.OnModelCreating(modelBuilder);
 
 
 		// For all entity types that derive from Entity

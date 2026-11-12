@@ -38,8 +38,11 @@ public sealed class ChangeNotifier(IHubContext<LyriousHub> hub, LyriousRepositor
 					// Subscribe (or unsubscribe) the member's live connections before anything is sent to the
 					// group, so a write right after an invite can't overtake it.
 					await UpdateGroupSubscriptionsAsync(membership);
-					// Tell the member directly too: when they're the one being removed they're no longer in the group.
-					await hub.Clients.User(membership.MemberId.ToString()).SendAsync(method, new[] { payload });
+					// A removed member has just left the group, so tell them directly; anyone else gets it through the group.
+					if (membership.Removed)
+					{
+						await hub.Clients.User(membership.MemberId.ToString()).SendAsync(method, new[] { payload });
+					}
 				}
 			}
 
