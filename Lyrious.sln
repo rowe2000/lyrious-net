@@ -7,7 +7,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lyrious.CoreLib", "Lyrious.
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lyrious.ConsoleApp", "Lyrious.Console\Lyrious.ConsoleApp.csproj", "{BCFAE68A-14E2-4A9A-86D1-8413F1547B58}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lyrious.AvaloniaApp", "Lyrious.AvaloniaApp\Lyrious.AvaloniaApp.csproj", "{B89CDB99-6430-4DF9-BA2E-3D94AEFCB3D3}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lyrious.Desktop", "Lyrious.Desktop\Lyrious.Desktop.csproj", "{B89CDB99-6430-4DF9-BA2E-3D94AEFCB3D3}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lyrious.Api", "Lyrious.Api\Lyrious.Api.csproj", "{8F4EA8E1-D68D-47BF-A194-2B8ACA27FEDF}"
 EndProject

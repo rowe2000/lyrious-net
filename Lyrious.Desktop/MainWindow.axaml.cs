@@ -1,6 +1,6 @@
 using Avalonia.Controls;
 
-namespace Lyrious.AvaloniaApp;
+namespace Lyrious.Desktop;
 
 public partial class MainWindow : Window
 {

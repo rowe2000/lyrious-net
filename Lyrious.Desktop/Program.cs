@@ -1,7 +1,7 @@
 ﻿using System;
 using Avalonia;
 
-namespace Lyrious.AvaloniaApp;
+namespace Lyrious.Desktop;
 
 internal class Program
 {

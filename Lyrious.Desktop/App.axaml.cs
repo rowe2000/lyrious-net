@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 
-namespace Lyrious.AvaloniaApp;
+namespace Lyrious.Desktop;
 
 public partial class App : Application
 {
