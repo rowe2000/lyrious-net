@@ -13,7 +13,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lyrious.Api", "Lyrious.Api\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lyrious.Server", "Lyrious.Server\Lyrious.Server.csproj", "{2D804E77-AAEA-4124-BD0A-A9974A0436E9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lyrious.AvaTest", "Lyrious.AvaTest\Lyrious.AvaTest.csproj", "{72D0BD4D-C2B8-44B0-824C-21354854A183}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lyrious.UILib", "Lyrious.UILib\Lyrious.UILib.csproj", "{72D0BD4D-C2B8-44B0-824C-21354854A183}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

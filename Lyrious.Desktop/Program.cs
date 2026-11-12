@@ -1,5 +1,6 @@
 ﻿using System;
 using Avalonia;
+using Lyrious.UILib;
 
 namespace Lyrious.Desktop;
 
