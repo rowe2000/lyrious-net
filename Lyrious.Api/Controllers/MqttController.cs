@@ -1,9 +1,11 @@
 using Lyrious.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Lyrious.Api.Controllers
 {
 	[ApiController]
+	[Authorize]
 	[Route("api/[controller]")]
 	public class MqttController : ControllerBase
 	{
@@ -34,7 +36,7 @@ namespace Lyrious.Api.Controllers
 			catch (Exception ex)
 			{
 				_logger.LogError(ex, "Error publishing MQTT message");
-				return StatusCode(500, new { Success = false, Error = ex.Message });
+				return StatusCode(500, new { Success = false, Error = "Failed to publish message" });
 			}
 		}
 	}

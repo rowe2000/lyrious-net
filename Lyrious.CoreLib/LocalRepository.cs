@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Lyrious.CoreLib;
 
@@ -75,99 +76,110 @@ public class LocalContext<TUser, TRole> : IdentityDbContext<TUser, TRole, Guid>,
 	{
 		var ret = new List<TEntity>();
 		var db = Database.IsSqlite() ? "Sqlite" : "Sql server";
-		try
+
+		WithoutGraphScanning(() =>
 		{
 			foreach (var entity in entities)
 			{
 				var existing = base.Find<TEntity>(entity.Id);
 				if (existing != null)
 				{
-					var entry = base.Update(existing);
-					existing = entry.Entity;
+					// Copy the incoming [DataMember] values onto the tracked entity. Only [DataMember] properties
+					// are copied, so Identity-managed fields on Member (password hash, security stamp, ...)
+					// can't be overwritten by a client payload.
+					Util.CopyProperties(entity, existing);
+					MarkChangedProperties(Entry(existing));
 				}
 				else
 				{
-					var clone = entity.Clone<TEntity>();
-					var entry = base.Add(clone);
+					// Insert a fresh instance carrying all mapped scalar values (Identity fields included),
+					// without attaching the caller's navigation graph.
+					var entry = base.Add(new TEntity());
+					entry.CurrentValues.SetValues(entity);
 					existing = entry.Entity;
 				}
 
 				ret.Add(existing);
 			}
 
-			SaveChanges();
-			Console.WriteLine($"Succeeded to store {typeof(TEntity).Name} entities to {db}");
+			try
+			{
+				SaveChangesOrRollback();
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Failed to store {typeof(TEntity).Name} entities to {db}: {ex.Message}");
+				throw;
+			}
+		});
 
-			return ret;
-		}
-		//catch (DbUpdateConcurrencyException ex)
-		//{
-		//	Console.WriteLine($"Concurrency conflict: {ex.Message}");
+		Console.WriteLine($"Succeeded to store {typeof(TEntity).Name} entities to {db}");
+		return ret;
+	}
 
-		//	foreach (var entry in ex.Entries)
-		//	{
-		//		if (entry.Entity is TEntity conflictingEntity)
-		//		{
-		//			// Reload the entity from the database
-		//			entry.Reload();
-		//		}
-		//	}
-
-		//	// Retry saving changes
-		//	SaveChanges();
-		//	return entities;
-		//}
-		//catch (DbUpdateException ex)
-		//{
-		//	Console.WriteLine($"Update error: {ex.Message}");
-
-		//	// Check specifically for foreign key violations
-		//	if (ex.InnerException?.Message.Contains("FOREIGN KEY constraint") == true)
-		//	{
-		//		// For foreign key violations, retry with a transaction
-		//		using (var transaction = Database.BeginTransaction())
-		//		{
-		//			try
-		//			{
-		//				// Resubmit the changes in proper order
-		//				// First identify the entity types
-		//				foreach (var entry in ChangeTracker.Entries())
-		//				{
-		//					if (entry.State == EntityState.Added)
-		//					{
-		//						// Process only entities that aren't the primary entity type
-		//						if (!(entry.Entity is TEntity))
-		//						{
-		//							// Save these non-TEntity changes first
-		//							SaveChanges();
-		//							break;
-		//						}
-		//					}
-		//				}
-
-		//				// Now try to save the main entities again
-		//				SaveChanges();
-		//				transaction.Commit();
-		//				return entities;
-		//			}
-		//			catch (Exception transactionEx)
-		//			{
-		//				transaction.Rollback();
-		//				Console.WriteLine($"Transaction failed: {transactionEx.Message}");
-		//				throw;
-		//			}
-		//		}
-		//	}
-
-		//	// If it's another type of update exception, just log and rethrow
-		//	throw;
-		//}
-		catch (Exception ex)
+	/// <summary>
+	/// Runs <paramref name="action"/> with automatic change detection off. Domain methods such as
+	/// Group.CreateSongbook put caller-owned objects into navigation collections of tracked entities;
+	/// a full DetectChanges would try to track those objects next to the copies stored here and fail
+	/// with "another instance with the same key is already being tracked". Changes are marked
+	/// explicitly instead, per entity.
+	/// </summary>
+	private void WithoutGraphScanning(Action action)
+	{
+		var autoDetectChanges = ChangeTracker.AutoDetectChangesEnabled;
+		ChangeTracker.AutoDetectChangesEnabled = false;
+		try
 		{
-			Console.WriteLine($"Failed to store {typeof(TEntity).Name} entities to {db}: {ex.Message}");
+			action();
 		}
+		finally
+		{
+			ChangeTracker.AutoDetectChangesEnabled = autoDetectChanges;
+		}
+	}
 
-		return [];
+	/// <summary>Marks the scalar properties whose value differs from the stored one as modified (no graph traversal).</summary>
+	private static void MarkChangedProperties(EntityEntry entry)
+	{
+		foreach (var property in entry.Properties)
+		{
+			if (!property.Metadata.IsPrimaryKey() && !Equals(property.CurrentValue, property.OriginalValue))
+			{
+				property.IsModified = true;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Saves pending changes. On failure the pending changes are undone before rethrowing,
+	/// so a failed save doesn't leave bad state behind that every later save on this context would retry.
+	/// </summary>
+	private void SaveChangesOrRollback()
+	{
+		try
+		{
+			SaveChanges();
+		}
+		catch
+		{
+			foreach (var entry in ChangeTracker.Entries().ToArray())
+			{
+				switch (entry.State)
+				{
+					case EntityState.Added:
+						entry.State = EntityState.Detached;
+						break;
+
+					case EntityState.Modified:
+					case EntityState.Deleted:
+						entry.CurrentValues.SetValues(entry.OriginalValues);
+						entry.State = EntityState.Unchanged;
+						break;
+				}
+			}
+
+			throw;
+		}
 	}
 
 
@@ -197,20 +209,23 @@ public class LocalContext<TUser, TRole> : IdentityDbContext<TUser, TRole, Guid>,
 		var guids = ids as IList<Guid> ?? ids.ToArray();
 		
 		//cache.Remove<TEntity>(guids);
-		
-		foreach (var id in guids)
+
+		WithoutGraphScanning(() =>
 		{
-			var entity = Set<TEntity>().Find(id);
-			if (entity == null)
+			foreach (var id in guids)
 			{
-				continue;
+				var entity = Set<TEntity>().Find(id);
+				if (entity == null)
+				{
+					continue;
+				}
+
+				entity.Removed = true;
+				Entry(entity).Property(nameof(IEntity.Removed)).IsModified = true;
 			}
 
-			entity.Removed = true;
-			Update(entity);
-		}
-
-		SaveChanges();
+			SaveChangesOrRollback();
+		});
 	}
 
 	public IEnumerable<TEntity> Get<TEntity>(DateTime commit) where TEntity : class, IEntity, new()

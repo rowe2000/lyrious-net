@@ -1,6 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
+using Lyrious.CoreLib.Enums;
 using Microsoft.AspNetCore.Identity;
 
 namespace Lyrious.CoreLib.Models;
@@ -69,7 +70,7 @@ public sealed class Member : IdentityUser<Guid>, IEntity, IName
 		    return false;
 	    }
 
-	    if (!Memberships.Any(o => Equals(o.Member)))
+	    if (!Memberships.Any(o => o.GroupId == group.Id && o.MembershipStatusEnum == MembershipStatusEnum.Approved))
 	    {
 		    return false;
 	    }

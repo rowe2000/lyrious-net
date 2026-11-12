@@ -1,8 +1,10 @@
 using System.Net.WebSockets;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using Lyrious.CoreLib;
 using Lyrious.CoreLib.Models;
+using Microsoft.AspNetCore.Identity;
 using MQTTnet;
 using MQTTnet.Protocol;
 using MQTTnet.Server;
@@ -11,23 +13,26 @@ namespace Lyrious.Api.Services
 {
 	public class MqttService : IHostedService
 	{
+		private const string ServerClientId = "SERVER";
+		private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
 		private readonly MqttServer _mqttServer;
 		private readonly ILogger<MqttService> _logger;
-		private readonly LyriousRepository _repository;
+		private readonly IServiceScopeFactory _scopeFactory;
+		private readonly bool _allowAnonymousAccess;
 
-		public MqttService(MqttServer mqttServer, ILogger<MqttService> logger, IServiceProvider serviceProvider)
+		public MqttService(MqttServer mqttServer, ILogger<MqttService> logger, IServiceScopeFactory scopeFactory, IConfiguration configuration)
 		{
 			_mqttServer = mqttServer;
 			_logger = logger;
-
-			// Create a scope to resolve scoped services
-			var scope = serviceProvider.CreateScope();
-			_repository = scope.ServiceProvider.GetRequiredService<LyriousRepository>();
+			_scopeFactory = scopeFactory;
+			_allowAnonymousAccess = configuration.GetValue("Mqtt:AllowAnonymousAccess", false);
 		}
 
 		public async Task StartAsync(CancellationToken cancellationToken)
 		{
 			// Set up server event handlers
+			_mqttServer.ValidatingConnectionAsync += OnValidatingConnectionAsync;
 			_mqttServer.ClientConnectedAsync += OnClientConnectedAsync;
 			_mqttServer.ClientDisconnectedAsync += OnClientDisconnectedAsync;
 			_mqttServer.InterceptingPublishAsync += OnInterceptingPublishAsync;
@@ -45,6 +50,7 @@ namespace Lyrious.Api.Services
 		public async Task StopAsync(CancellationToken cancellationToken)
 		{
 			// Unregister event handlers
+			_mqttServer.ValidatingConnectionAsync -= OnValidatingConnectionAsync;
 			_mqttServer.ClientConnectedAsync -= OnClientConnectedAsync;
 			_mqttServer.ClientDisconnectedAsync -= OnClientDisconnectedAsync;
 			_mqttServer.InterceptingPublishAsync -= OnInterceptingPublishAsync;
@@ -54,6 +60,33 @@ namespace Lyrious.Api.Services
 			await _mqttServer.StopAsync();
 
 			_logger.LogInformation("MQTT server stopped");
+		}
+
+		/// <summary>
+		/// Authenticates MQTT clients against ASP.NET Identity. A client that sends a user name must
+		/// supply that member's password; anonymous clients are only let in when Mqtt:AllowAnonymousAccess
+		/// is true, and can never write data. A non-empty UserName on later events is therefore verified.
+		/// </summary>
+		private async Task OnValidatingConnectionAsync(ValidatingConnectionEventArgs args)
+		{
+			if (string.IsNullOrEmpty(args.UserName))
+			{
+				if (!_allowAnonymousAccess)
+				{
+					args.ReasonCode = MqttConnectReasonCode.NotAuthorized;
+				}
+
+				return;
+			}
+
+			using var scope = _scopeFactory.CreateScope();
+			var userManager = scope.ServiceProvider.GetRequiredService<UserManager<Member>>();
+			var member = await userManager.FindByNameAsync(args.UserName);
+			if (member == null || !await userManager.CheckPasswordAsync(member, args.Password ?? string.Empty))
+			{
+				_logger.LogWarning("MQTT client {ClientId} failed authentication as {UserName}", args.ClientId, args.UserName);
+				args.ReasonCode = MqttConnectReasonCode.BadUserNameOrPassword;
+			}
 		}
 
 		private Task OnClientConnectedAsync(ClientConnectedEventArgs args)
@@ -73,24 +106,41 @@ namespace Lyrious.Api.Services
 			try
 			{
 				var topic = args.ApplicationMessage.Topic;
+
+				// Messages injected by the server itself (acks, status, HTTP publish endpoint) are never applied as data.
+				if (args.ClientId == ServerClientId || !TryParseUpdateTopic(topic, out var collection, out var id))
+				{
+					return;
+				}
+
+				// Update payloads are not relayed: topics carry no group, so any subscriber could read them.
+				args.ProcessPublish = false;
+
+				if (string.IsNullOrEmpty(args.UserName))
+				{
+					_logger.LogWarning("Rejected update on {Topic} from anonymous client {ClientId}", topic, args.ClientId);
+					return;
+				}
+
 				var payload = Encoding.UTF8.GetString(args.ApplicationMessage.Payload);
 
-				_logger.LogInformation($"Message received - Topic: {topic}, Payload: {payload}");
+				// A fresh scope per message: LyriousRepository and its DbContext are scoped and not thread-safe.
+				using var scope = _scopeFactory.CreateScope();
+				var repository = scope.ServiceProvider.GetRequiredService<LyriousRepository>();
+				repository.SetIdentity(new GenericIdentity(args.UserName));
 
-				// Process messages based on topic patterns
-				if (topic.StartsWith("lyrious/songs/"))
+				switch (collection)
 				{
-					await ProcessSongMessageAsync(topic, payload);
+					case "songs":
+						await ApplyUpdateAsync<Song>(repository, collection, id, payload, args.UserName);
+						break;
+					case "groups":
+						await ApplyUpdateAsync<Group>(repository, collection, id, payload, args.UserName);
+						break;
+					case "setlists":
+						await ApplyUpdateAsync<Setlist>(repository, collection, id, payload, args.UserName);
+						break;
 				}
-				else if (topic.StartsWith("lyrious/groups/"))
-				{
-					await ProcessGroupMessageAsync(topic, payload);
-				}
-				else if (topic.StartsWith("lyrious/setlists/"))
-				{
-					await ProcessSetlistMessageAsync(topic, payload);
-				}
-				// Add other topic patterns as needed
 			}
 			catch (Exception ex)
 			{
@@ -106,73 +156,41 @@ namespace Lyrious.Api.Services
 
 		#region Topic Processing Methods
 
-		private async Task ProcessSongMessageAsync(string topic, string payload)
+		/// <summary>Matches lyrious/{collection}/{id}/update.</summary>
+		private static bool TryParseUpdateTopic(string topic, out string collection, out Guid id)
 		{
-			// Example: Topic pattern: lyrious/songs/{id}/update
 			var parts = topic.Split('/');
+			collection = parts.Length == 4 ? parts[1] : string.Empty;
+			id = Guid.Empty;
 
-			if (parts.Length >= 4)
-			{
-				var songId = Guid.Parse(parts[2]);
-				var action = parts[3];
-
-				if (action == "update" && !string.IsNullOrEmpty(payload))
-				{
-					var song = JsonSerializer.Deserialize<Song>(payload);
-					if (song != null)
-					{
-						_repository.Update(song);
-						await PublishMessageAsync($"lyrious/songs/{songId}/updated", new { Success = true });
-					}
-				}
-			}
+			return parts.Length == 4
+			       && parts[0] == "lyrious"
+			       && parts[3] == "update"
+			       && Guid.TryParse(parts[2], out id);
 		}
 
-		private async Task ProcessGroupMessageAsync(string topic, string payload)
+		private async Task ApplyUpdateAsync<TEntity>(LyriousRepository repository, string collection, Guid id, string payload, string userName)
+			where TEntity : class, IEntity, new()
 		{
-			// Implement similar logic for Group entities
-			var parts = topic.Split('/');
-
-			if (parts.Length >= 4)
+			var entity = string.IsNullOrEmpty(payload) ? null : JsonSerializer.Deserialize<TEntity>(payload, JsonOptions);
+			if (entity == null || entity.Id != id)
 			{
-				var groupId = Guid.Parse(parts[2]);
-				var action = parts[3];
-
-				if (action == "update" && !string.IsNullOrEmpty(payload))
-				{
-					var group = JsonSerializer.Deserialize<Group>(payload);
-					if (group != null)
-					{
-						_repository.Update(group);
-						await PublishMessageAsync($"lyrious/groups/{groupId}/updated", new { Success = true });
-					}
-				}
+				_logger.LogWarning("Rejected {Collection} update {Id} from {UserName}: payload missing or id mismatch", collection, id, userName);
+				return;
 			}
-		}
 
-		private async Task ProcessSetlistMessageAsync(string topic, string payload)
-		{
-			// Implement similar logic for Setlist entities
-			var parts = topic.Split('/');
-
-			if (parts.Length >= 4)
+			if (!repository.CanWrite(entity))
 			{
-				var setlistId = Guid.Parse(parts[2]);
-				var action = parts[3];
-
-				if (action == "update" && !string.IsNullOrEmpty(payload))
-				{
-					var setlist = JsonSerializer.Deserialize<Setlist>(payload);
-					if (setlist != null)
-					{
-						_repository.Update(setlist);
-						await PublishMessageAsync($"lyrious/setlists/{setlistId}/updated", new { Success = true });
-					}
-				}
+				_logger.LogWarning("Rejected {Collection} update {Id} from {UserName}: not allowed", collection, id, userName);
+				return;
 			}
+
+			repository.Update(entity);
+			await PublishMessageAsync($"lyrious/{collection}/{id}/updated", new { Success = true });
 		}
 
 		#endregion
+
 
 		#region Helper Methods
 
@@ -236,7 +254,7 @@ namespace Lyrious.Api.Services
 				await _mqttServer.InjectApplicationMessage(
 					new InjectedMqttApplicationMessage(message)
 					{
-						SenderClientId = "SERVER"
+						SenderClientId = ServerClientId
 					});
 
 				_logger.LogInformation($"Published message to topic: {topic}");

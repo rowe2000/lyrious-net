@@ -47,7 +47,7 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 		var member = await remoteApi.RegisterAsync(registerModel);
 		if (member != null)
 		{
-			dbContext.Update([member]);
+			Store([member]);
 		}
 
 		Console.WriteLine(member);
@@ -61,10 +61,38 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 		if (member != null)
 		{
 			Me = member;
+			// What the remote returns depends on who is logged in, so sync again for this member.
+			synced.Clear();
 			Synchronize(Me);
 		}
 
 		return member;
+	}
+
+	/// <summary>
+	/// Looks up a member by user name, email or phone number (in that order of precedence).
+	/// Unlike Get&lt;Member&gt;, this isn't limited to members sharing a group with the current
+	/// member, so it can be used to find someone to invite.
+	/// </summary>
+	public async Task<Member?> FindMemberAsync(string query)
+	{
+		if (HasRemote)
+		{
+			var remoteMember = await remoteApi.FindMemberAsync(query);
+			if (remoteMember == null)
+			{
+				return null;
+			}
+
+			// Keep a local row so local memberships can reference it, but don't let the
+			// public profile overwrite a fuller local copy.
+			return dbContext.Find<Member>(remoteMember.Id) ?? Store([remoteMember]).FirstOrDefault() ?? remoteMember;
+		}
+
+		var members = dbContext.Set<Member>();
+		return members.FirstOrDefault(o => o.UserName == query)
+		       ?? members.FirstOrDefault(o => o.Email == query)
+		       ?? members.FirstOrDefault(o => o.PhoneNumber == query);
 	}
 
 	public void Synchronize(Member me)
@@ -90,6 +118,8 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 	public async Task LogoutAsync()
 	{
 		await remoteApi.LogoutAsync();
+		Me = null;
+		synced.Clear();
 	}
 
 
@@ -115,6 +145,29 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 
 	public bool HasRemote => !string.IsNullOrWhiteSpace(remoteApi.BaseUrl);
 
+	/// <summary>
+	/// Writes entities to the local database. Without a remote (the API server) the local database
+	/// is authoritative and failures propagate. With a remote it is only a local copy, so a failure
+	/// is logged and an empty result returned, leaving the remote write to go ahead.
+	/// </summary>
+	private TEntity[] Store<TEntity>(TEntity[] entities) where TEntity : class, IEntity, new()
+	{
+		if (!HasRemote)
+		{
+			return dbContext.Update(entities).AsArray();
+		}
+
+		try
+		{
+			return dbContext.Update(entities).AsArray();
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"Failed to cache {typeof(TEntity).Name} entities locally: {ex.Message}");
+			return [];
+		}
+	}
+
 	private void SyncRemote<TEntity>() where TEntity : class, IEntity, new()
 	{
 		if (!HasRemote)
@@ -129,7 +182,7 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 		}
 
 		var entities = remoteApi.Get<TEntity>();
-		dbContext.Update(entities);
+		Store(entities.AsArray());
 		synced[typeof(TEntity)] = true;
 	}
 
@@ -152,11 +205,11 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 		if (HasRemote && !(synced.TryGetValue(typeof(TEntity), out var b) && b))
 		{
 			var entities = remoteApi.Get<TEntity>(ids).ToArray();
-			dbContext.Update(entities);
-			return entities;
+			Store(entities);
+			return entities.Where(HasAccess);
 		}
 
-		var tuples = dbContext.Get<TEntity>(ids);
+		var tuples = dbContext.Get<TEntity>(ids).Where(HasAccess);
 		//var remoteIds = tuples.Where(o => o == null).ToArray();
 		//if (remoteIds.Any())
 		//{
@@ -178,7 +231,7 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 	public IEnumerable<TEntity> Update<TEntity>(IEnumerable<TEntity> entities) where TEntity : class, IEntity, new()
 	{
 		var array = entities.AsArray();
-		dbContext.Update(array);
+		Store(array);
 		if (HasRemote)
 		{
 			remoteApi.Update(array);
@@ -189,10 +242,12 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 
 	public TEntity? Update<TEntity>(TEntity entity) where TEntity : class, IEntity, new()
 	{
-		var dbEntity = dbContext.Update([entity]).FirstOrDefault();
+		var dbEntity = Store([entity]).FirstOrDefault();
 		if (HasRemote)
 		{
 			remoteApi.Update([entity]);
+			// The remote is authoritative; a failed local copy shouldn't make the write look failed.
+			return dbEntity ?? entity;
 		}
 
 		return dbEntity;
@@ -215,6 +270,7 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 	
 	public IEnumerable<TEntity> Get<TEntity>(string name) where TEntity : class, IEntity, IName, new()
 	{
-		return dbContext.Get<TEntity>(name);
+		// Same path as the other reads: sync from the remote and apply access checks.
+		return Get<TEntity>(o => o.Name == name);
 	}
 }

@@ -73,8 +73,9 @@ public class ApiClient : IRepository, IDisposable
 
 	public IEnumerable<TEntity> Get<TEntity>(IEnumerable<Guid> ids) where TEntity : class, IEntity, new()
 	{
-		var idList = string.Join(",", ids);
-		return Get<TEntity>($"/ids={idList}");
+		// The API has no batch-by-id route; fetch the (access-filtered) list and pick the ids.
+		var idSet = ids.ToHashSet();
+		return Get<TEntity>(string.Empty).Where(o => idSet.Contains(o.Id)).ToArray();
 	}
 	public IEnumerable<TEntity> Get<TEntity>(DateTime commit) where TEntity : class, IEntity, new()
 	{
@@ -263,6 +264,19 @@ public class ApiClient : IRepository, IDisposable
 	{
 		await Post("/api/auth/logout");
 		Console.WriteLine("User logged out successfully.");
+	}
+
+	public async Task<Member?> FindMemberAsync(string query)
+	{
+		var response = await client!.GetAsync($"/api/member/find?query={Uri.EscapeDataString(query)}");
+		if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+		{
+			return null;
+		}
+
+		response.EnsureSuccessStatusCode();
+		var json = await response.Content.ReadAsStringAsync();
+		return JsonSerializer.Deserialize<Member>(json, options);
 	}
 
 	public async Task<string> Ping<TEntity>()

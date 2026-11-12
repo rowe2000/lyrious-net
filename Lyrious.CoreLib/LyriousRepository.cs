@@ -23,6 +23,17 @@ public class LyriousRepository(LyriousContext context)
 		var group = Group.Create(groupName);
 		group = Update(group);
 
+		if (group == null)
+		{
+			return null;
+		}
+
+		// The creator's membership must exist before anything else in the group,
+		// since the API only accepts writes from members of the owning group.
+		var membership = group.CreateMembership(Me, RoleEnum.Admin);
+		membership.MembershipStatusEnum = MembershipStatusEnum.Approved;
+		Update(membership);
+
 		var songbook = group.CreateSongbook("Default");
 		songbook = Update(songbook);
 
@@ -30,19 +41,10 @@ public class LyriousRepository(LyriousContext context)
 		var setlist = group.CreateSetlist("Setlist 1");
 		setlist = Update(setlist);
 
-		group.CurrentSetlistId = setlist.Id;
+		group.CurrentSetlistId = setlist?.Id;
 		group.CurrentSetlist = setlist;
 
-		group = Update(group);
-
-		if (group == null)
-		{
-			return null;
- 		}
-
-		var membership = group.CreateMembership(Me, RoleEnum.Admin);
-		membership.MembershipStatusEnum = MembershipStatusEnum.Approved;
-		Update(membership);
+		group = Update(group) ?? group;
 
 		await JoinGroupAsync(group);
 
@@ -74,13 +76,13 @@ public class LyriousRepository(LyriousContext context)
 
 	public async Task<Membership?> InviteMemberAsync(Member member, RoleEnum roleEnum = RoleEnum.Member)
 	{
-		var group = Me?.JoinedGroup;
+		var group = GetJoinedGroup();
 		if (group == null)
 		{
 			return null;
 		}
 
-		var membership = Get<Membership>(o => o.MemberId == member.Id).FirstOrDefault();
+		var membership = GetMembership(group.Id, member.Id);
 		if (membership != null)
 		{
 			if (membership.RoleEnum == roleEnum)
@@ -90,7 +92,6 @@ public class LyriousRepository(LyriousContext context)
 
 			membership.RoleEnum = roleEnum;
 			return Update(membership);
-
 		}
 
 		membership = group.CreateMembership(member, roleEnum);
@@ -99,35 +100,23 @@ public class LyriousRepository(LyriousContext context)
 
 	public async Task<Membership?> InviteMemberByUsernameAsync(string username, RoleEnum roleEnum = RoleEnum.Member)
 	{
-		var member = Get<Member>(o => o.UserName == username).FirstOrDefault();
-		if (member == null)
-		{
-			return null;
-		}
-
-		return await InviteMemberAsync(member);
+		return await InviteMemberByQueryAsync(username, roleEnum);
 	}
 
 	public async Task<Membership?> InviteMemberByEmailAsync(string email, RoleEnum roleEnum = RoleEnum.Member)
 	{
-		var member = Get<Member>(o => o.Email == email).FirstOrDefault();
-		if (member == null)
-		{
-			return null;
-		}
-
-		return await InviteMemberAsync(member);
+		return await InviteMemberByQueryAsync(email, roleEnum);
 	}
 
 	public async Task<Membership?> InviteMemberByPhoneAsync(string phoneNumber, RoleEnum roleEnum = RoleEnum.Member)
 	{
-		var member = Get<Member>(o => o.PhoneNumber == phoneNumber).FirstOrDefault();
-		if (member == null)
-		{
-			return null;
-		}
+		return await InviteMemberByQueryAsync(phoneNumber, roleEnum);
+	}
 
-		return await InviteMemberAsync(member);
+	private async Task<Membership?> InviteMemberByQueryAsync(string query, RoleEnum roleEnum)
+	{
+		var member = await FindMemberAsync(query);
+		return member == null ? null : await InviteMemberAsync(member, roleEnum);
 	}
 
 	public async Task<Membership?> ApproveMembershipAsync(Group group)
@@ -136,24 +125,27 @@ public class LyriousRepository(LyriousContext context)
 		{
 			return null;
 		}
-		
-		var membership = group.ApproveMembership(Me);
+
+		var membership = GetMembership(group.Id, Me.Id);
 		if (membership == null)
 		{
 			return null;
 		}
 
-		if (Me.JoinedGroupId == null)
+		membership.MembershipStatusEnum = MembershipStatusEnum.Approved;
+		membership = Update(membership);
+
+		if (membership != null && Me.JoinedGroupId == null)
 		{
 			await JoinGroupAsync(group);
 		}
-		
-		return Update(membership);
+
+		return membership;
 	}
 
 	public async Task<Setlist> CreateSetListAsync(string setlistName, Group? group = null)
 	{
-		group ??= Me?.JoinedGroup;
+		group ??= GetJoinedGroup() ?? throw new InvalidOperationException("No joined group.");
 
 		var setlist = group.CreateSetlist(setlistName);
 		return Update(setlist) ?? throw new Exception();
@@ -161,7 +153,19 @@ public class LyriousRepository(LyriousContext context)
 
 	public async Task<bool> JoinGroupAsync(Group group)
 	{
-		if (Me?.Join(group) == true)
+		if (Me == null)
+		{
+			return false;
+		}
+
+		// Me usually comes from the login response, which carries no memberships; load the one for this group.
+		var membership = GetMembership(group.Id, Me.Id);
+		if (membership != null && !Me.Memberships.Contains(membership))
+		{
+			Me.Memberships.Add(membership);
+		}
+
+		if (Me.Join(group))
 		{
 			return Update(Me) is not null;
 		}
@@ -172,24 +176,27 @@ public class LyriousRepository(LyriousContext context)
 	public async Task<Play?> PlayAsync(SetlistItem? setlistItem, Song? song = null, string? key = null, float? tempo = null)
 	{
 		song ??= setlistItem?.Song;
-		if (song == null)
+		if (song == null || Me == null)
 		{
 			return null;
 		}
 
-		var group = Me?.JoinedGroup;
+		var group = GetJoinedGroup();
 		if (group == null)
 		{
 			return null;
 		}
 
-		var isConductor = Me?.Memberships.FirstOrDefault(o => o.GroupId == group.Id)?.RoleEnum == RoleEnum.Conductor;
+		var isConductor = GetMembership(group.Id, Me.Id)?.RoleEnum == RoleEnum.Conductor;
 		if (!isConductor)
 		{
 			return null;
 		}
-		
-		var playlog = group.Playlogs.LastOrDefault(o => o.CreatedAt.Date == DateTime.Now.Date);
+
+		var today = DateTime.Now.Date;
+		var playlog = Get<Playlog>(o => o.GroupId == group.Id && o.CreatedAt.Date == today)
+			.OrderBy(o => o.CreatedAt)
+			.LastOrDefault();
 		if (playlog == null)
 		{
 			playlog = group.CreatePlaylog();
@@ -214,6 +221,17 @@ public class LyriousRepository(LyriousContext context)
 		return play;
 	}
 
+	private Group? GetJoinedGroup()
+	{
+		var joinedGroupId = Me?.JoinedGroupId;
+		return joinedGroupId == null ? null : Get<Group>(o => o.Id == joinedGroupId).FirstOrDefault();
+	}
+
+	private Membership? GetMembership(Guid groupId, Guid memberId)
+	{
+		return Get<Membership>(o => o.GroupId == groupId && o.MemberId == memberId && !o.Removed).FirstOrDefault();
+	}
+
 	public void SetIdentity(IIdentity? identity)
 	{
 		Me = identity != null ? context.Members.FirstOrDefault(o => o.UserName == identity.Name) : null;
@@ -221,69 +239,118 @@ public class LyriousRepository(LyriousContext context)
 
 	protected override bool HasAccess<TEntity>(TEntity entity)
 	{
+		if (Me == null)
+			return false;
+
 		return entity switch
 		{
-			Group group => HasAccess(group),
-			Member member => HasAccess(member),
-			Membership membership => HasAccess(membership),
-			Play play => HasAccess(play.Playlog?.Group),
-			Playlog playlog => HasAccess(playlog.Group),
-			Role role => Me != null,
-			Setlist setlist => HasAccess(setlist.Group),
-			SetlistItem setlistItem => HasAccess(setlistItem.Setlist?.Group),
-			Song song => HasAccess(song.Songbook?.Group),
-			Songbook songbook => HasAccess(songbook.Group),
-			_ => false
+			Member member => member.Id == Me.Id || SharesGroupWith(member.Id),
+			Role => true,
+			Group group => group.Id == Me.JoinedGroupId || IsMemberOf(group.Id),
+			_ => IsMemberOf(GroupIdOf(entity))
 		};
 	}
 
-	private bool HasAccess(Membership membership)
+	/// <summary>
+	/// Whether the current member may create or update <paramref name="entity"/>.
+	/// For an existing entity both the stored and the incoming version must be writable,
+	/// so an entity can't be moved into or out of a group the member doesn't belong to.
+	/// </summary>
+	public bool CanWrite<TEntity>(TEntity entity) where TEntity : class, IEntity, new()
 	{
 		if (Me == null)
 			return false;
 
-		if (membership == null)
-			return false;
+		var existing = context.Find<TEntity>(entity.Id);
+		if (existing == null)
+			return CanCreate(entity);
 
-		if (membership.MemberId == Me.Id)
-			return true;
-
-		return context.Memberships.Any(m => m.Id == membership.Id && Me.Id == m.MemberId);
+		return CanModify(existing) && CanModify(entity);
 	}
 
-	private bool HasAccess(Member member)
+	/// <summary>
+	/// Whether the current member may remove the stored entity with <paramref name="id"/>.
+	/// Unknown ids are treated as not removable.
+	/// </summary>
+	public bool CanRemove<TEntity>(Guid id) where TEntity : class, IEntity, new()
 	{
 		if (Me == null)
 			return false;
 
-		if (member == null)
-			return false;
-
-		if (member.Id == Me.Id)
-			return true;
-
-		var otherMemberships = context.Memberships.Where(m => member.Id == m.MemberId).ToArray()
-			.Distinct().ToArray();
-		var otherMembershipIds = otherMemberships.Select(o => o.GroupId);
-
-		var meMemberships = context.Memberships.Where(m => Me.Id == m.MemberId).Distinct().ToArray();
-		var meMembershipIds = meMemberships.Select(o => o.GroupId);
-
-		var memberships = meMembershipIds.Except(otherMembershipIds).ToArray();
-		return memberships.Any();
+		var existing = context.Find<TEntity>(id);
+		return existing != null && CanModify(existing);
 	}
 
-	private bool HasAccess(Group? group)
+	private bool CanCreate(IEntity entity)
+	{
+		return entity switch
+		{
+			// Anyone signed in may start a new group.
+			Group => true,
+			// The first membership of a freshly created group bootstraps its creator.
+			Membership m when m.MemberId == Me!.Id
+			                  && context.Groups.Any(g => g.Id == m.GroupId)
+			                  && !context.Memberships.Any(o => o.GroupId == m.GroupId && !o.Removed) => true,
+			_ => CanModify(entity)
+		};
+	}
+
+	private bool CanModify(IEntity entity)
+	{
+		return entity switch
+		{
+			Member member => member.Id == Me!.Id && (member.JoinedGroupId == null || IsMemberOf(member.JoinedGroupId)),
+			Role => false,
+			SetlistItem item => IsMemberOf(GroupIdOf(item)) && IsMemberOf(SongGroupId(item.SongId)),
+			Play play => IsMemberOf(GroupIdOf(play)) && IsMemberOf(SongGroupId(play.SongId)),
+			_ => IsMemberOf(GroupIdOf(entity))
+		};
+	}
+
+	/// <summary>
+	/// Resolves the owning group through foreign keys, so it also works for entities whose
+	/// navigation properties aren't loaded (e.g. deserialized request bodies).
+	/// </summary>
+	private Guid? GroupIdOf(IEntity entity)
+	{
+		return entity switch
+		{
+			Group group => group.Id,
+			Membership membership => membership.GroupId,
+			Playlog playlog => playlog.GroupId,
+			Setlist setlist => setlist.GroupId,
+			Songbook songbook => songbook.GroupId,
+			Song song => context.Songbooks.Where(o => o.Id == song.SongbookId).Select(o => o.GroupId).FirstOrDefault(),
+			SetlistItem item => context.Setlists.Where(o => o.Id == item.SetlistId).Select(o => (Guid?)o.GroupId).FirstOrDefault(),
+			Play play => context.Playlogs.Where(o => o.Id == play.PlaylogId).Select(o => (Guid?)o.GroupId).FirstOrDefault(),
+			_ => null
+		};
+	}
+
+	private Guid? SongGroupId(Guid songId)
+	{
+		return context.Songs
+			.Where(o => o.Id == songId)
+			.Join(context.Songbooks, s => s.SongbookId, b => b.Id, (s, b) => b.GroupId)
+			.FirstOrDefault();
+	}
+
+	private bool IsMemberOf(Guid? groupId)
+	{
+		if (Me == null || groupId == null)
+			return false;
+
+		var meId = Me.Id;
+		return context.Memberships.Any(m => m.GroupId == groupId && m.MemberId == meId && !m.Removed);
+	}
+
+	private bool SharesGroupWith(Guid memberId)
 	{
 		if (Me == null)
 			return false;
 
-		if (group == null)
-			return false;
-
-		if (group.Id == Me.JoinedGroup?.Id)
-			return true;
-
-		return context.Memberships.Any(m => m.GroupId == group.Id && Me.Id == m.MemberId);
+		var meId = Me.Id;
+		var myGroupIds = context.Memberships.Where(m => m.MemberId == meId && !m.Removed).Select(m => m.GroupId);
+		return context.Memberships.Any(m => m.MemberId == memberId && !m.Removed && myGroupIds.Contains(m.GroupId));
 	}
 }

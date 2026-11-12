@@ -25,6 +25,7 @@ Login rowe ASDqwe123_
 	CreateSong "Blackbird" Em
 
 	CreateSetlist "Replista -25"
+	AddToSetlist "Replista -25" "The Best" "Burning Love" "Bye Bye Jonny" "Back in black" "Blackbird"
 
 	CreateGroup "Norra Glädjen"
 
@@ -36,32 +37,40 @@ Logout
 Login tojo ASDqwe123_
 	ApproveMembership Jonzons
 	JoinGroup Jonzons
-	Logout
-
-	Login anlo ASDqwe123_
-	ApproveMembership Jonzons
-	JoinGroup Jonzons
-	Logout
-
-	Login mabe ASDqwe123_
-	ApproveMembership Jonzons
-	JoinGroup Jonzons
-	PlayFromSetlist "Repolist -25" 2
 Logout
 
-ApproveMembership "Norra glädjen"
-ApproveMembership "Norra glädjen"
-ApproveMembership "Norra glädjen"
-ApproveMembership "Norra glädjen"
+Login anlo ASDqwe123_
+	ApproveMembership Jonzons
+	JoinGroup Jonzons
+Logout
+
+Login mabe ASDqwe123_
+	ApproveMembership Jonzons
+	JoinGroup Jonzons
+	# Positions are 0-based: 2 is the third song
+	PlayFromSetlist "Replista -25" 2
+Logout
+
+Login rojo ASDqwe123_
+	ApproveMembership "Norra Glädjen"
+Logout
+
+Login hebe ASDqwe123_
+	ApproveMembership "Norra Glädjen"
+Logout
+
+Login mapo ASDqwe123_
+	ApproveMembership "Norra Glädjen"
+Logout
 
 Login magy ASDqwe123_
-CreateGroup Utmarken
-InviteMember magy Admin
-InviteMember rojo Conductor
-InviteMember chrille
+	CreateGroup Utmarken
+	InviteMember rojo Conductor
+	InviteMember chri
 
-CreateGroup "Captain Crew"
-InviteMember frlu Admin
-InviteMember tope
+	CreateGroup "Captain Crew"
+	InviteMember frlu Admin
+	InviteMember tope
 
-CreateGroup "Native Sons"
+	CreateGroup "Native Sons"
+Logout

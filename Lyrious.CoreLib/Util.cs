@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using System.Collections.Concurrent;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.Serialization;
 using Lyrious.CoreLib.Commands;
@@ -39,7 +40,8 @@ public static class StringExtensions
 }
 public static class Util
 {
-	private static readonly Dictionary<Type, object> _dataAttributePropertiesDict = new Dictionary<Type, object>();
+	// Concurrent: CopyProperties is called from parallel API requests.
+	private static readonly ConcurrentDictionary<Type, object> _dataAttributePropertiesDict = new();
 
 	public static bool CopyProperties<T>(T source, T target)
 	{
