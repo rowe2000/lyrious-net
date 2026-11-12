@@ -1,19 +1,13 @@
 using System;
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace Lyrious.UILib.Login
 {
 	/// <summary>State and behaviour of the login page, independent of how it's drawn.</summary>
-	public sealed class LoginViewModel(IAuthService authService) : INotifyPropertyChanged
+	public sealed class LoginViewModel(IAuthService authService) : FormViewModel
 	{
 		private string userName = "";
 		private string password = "";
-		private bool isBusy;
-		private string? errorMessage;
-
-		public event PropertyChangedEventHandler? PropertyChanged;
 
 		/// <summary>Raised after a successful login.</summary>
 		public event Action<AuthenticatedUser>? LoggedIn;
@@ -21,74 +15,40 @@ namespace Lyrious.UILib.Login
 		public string UserName
 		{
 			get => userName;
-			set => Set(ref userName, value, alsoNotify: nameof(CanLogIn));
+			set => Set(ref userName, value);
 		}
 
 		public string Password
 		{
 			get => password;
-			set => Set(ref password, value, alsoNotify: nameof(CanLogIn));
+			set => Set(ref password, value);
 		}
 
-		public bool IsBusy
+		protected override bool IsComplete => !string.IsNullOrWhiteSpace(UserName) && Password.Length > 0;
+
+		/// <summary>Shows a confirmation above the form, e.g. after a password reset, with the username filled in.</summary>
+		public void ShowNotice(string message, string? userName = null)
 		{
-			get => isBusy;
-			private set => Set(ref isBusy, value, alsoNotify: nameof(CanLogIn));
+			if (userName != null)
+			{
+				UserName = userName;
+			}
+
+			SuccessMessage = message;
 		}
 
-		public string? ErrorMessage
+		public Task LogInAsync() => RunAsync(async () =>
 		{
-			get => errorMessage;
-			private set => Set(ref errorMessage, value);
-		}
-
-		public bool CanLogIn => !IsBusy && !string.IsNullOrWhiteSpace(UserName) && Password.Length > 0;
-
-		public async Task LogInAsync()
-		{
-			if (!CanLogIn)
+			var result = await authService.LoginAsync(UserName.Trim(), Password);
+			if (result.User is { } user)
 			{
-				return;
+				Password = "";
+				LoggedIn?.Invoke(user);
 			}
-
-			IsBusy = true;
-			ErrorMessage = null;
-			try
+			else
 			{
-				var result = await authService.LoginAsync(UserName.Trim(), Password);
-				if (result.User is { } user)
-				{
-					Password = "";
-					LoggedIn?.Invoke(user);
-				}
-				else
-				{
-					ErrorMessage = result.Error ?? "Login failed.";
-				}
+				ErrorMessage = result.Error ?? "Login failed.";
 			}
-			catch (Exception ex)
-			{
-				ErrorMessage = $"Couldn't reach the server. {ex.Message}";
-			}
-			finally
-			{
-				IsBusy = false;
-			}
-		}
-
-		private void Set<T>(ref T field, T value, string? alsoNotify = null, [CallerMemberName] string? propertyName = null)
-		{
-			if (Equals(field, value))
-			{
-				return;
-			}
-
-			field = value;
-			PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-			if (alsoNotify != null)
-			{
-				PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(alsoNotify));
-			}
-		}
+		});
 	}
 }

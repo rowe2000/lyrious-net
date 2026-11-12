@@ -1,5 +1,6 @@
 using Avalonia;
 using Lyrious.UILib.Login;
+using Lyrious.UILib.Setlists;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
@@ -13,6 +14,12 @@ namespace Lyrious.UILib
 		/// until then login explains that no server is configured.
 		/// </summary>
 		public static IAuthService AuthService { get; set; } = new UnconfiguredAuthService();
+
+		/// <summary>
+		/// Where the setlist and lyrics pages get their data. Hosts set this before starting the app;
+		/// until then those pages explain that no server is configured.
+		/// </summary>
+		public static ISetlistService SetlistService { get; set; } = new UnconfiguredSetlistService();
 
 		public override void Initialize()
 		{

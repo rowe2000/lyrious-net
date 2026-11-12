@@ -11,6 +11,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Lyrious.Api;
 internal class Program
 {
+	private const string WebClientsCorsPolicy = "WebClients";
+
 	private static void Main(string[] args)
 	{
 		var builder = WebApplication.CreateBuilder(args);
@@ -39,6 +41,13 @@ internal class Program
 		builder.Services.AddSingleton<IUserIdProvider, MemberIdUserIdProvider>();
 		builder.Services.AddSingleton<HubConnectionRegistry>();
 		builder.Services.AddScoped<ChangeNotifier>();
+
+		// Account emails (password reset codes); only logged until Smtp:Host is configured.
+		builder.Services.AddSingleton(builder.Configuration.GetSection("Smtp").Get<SmtpSettings>() ?? new SmtpSettings());
+		builder.Services.AddSingleton<IEmailSender, EmailSender>();
+		// Reset codes are the short 6-digit codes of the email token provider (valid for a few minutes),
+		// which people can type, rather than the default long token.
+		builder.Services.Configure<IdentityOptions>(options => options.Tokens.PasswordResetTokenProvider = TokenOptions.DefaultEmailProvider);
 
 		builder.Services.AddSingleton<Cache>();
 		builder.Services.AddScoped<LyriousRepository>();
@@ -79,6 +88,16 @@ internal class Program
 
 		builder.Services.AddAuthorization();
 
+		// Browser clients (Lyrious.Web) are served from another origin, so the browser needs CORS
+		// permission to call the API. Only the configured origins are allowed. Credentials are
+		// allowed because SignalR's browser client sends them when connecting to the hub.
+		var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+		builder.Services.AddCors(options => options.AddPolicy(WebClientsCorsPolicy, policy => policy
+			.WithOrigins(allowedOrigins)
+			.AllowAnyHeader()
+			.AllowAnyMethod()
+			.AllowCredentials()));
+
 		builder.Logging.AddConsole();
 
 		var app = builder.Build();
@@ -93,6 +112,8 @@ internal class Program
 
 		app.UseHttpsRedirection();
 		app.UseRouting();
+		// Must run before authentication so preflight (OPTIONS) requests get CORS headers.
+		app.UseCors(WebClientsCorsPolicy);
 		app.UseAuthentication();
 		app.UseAuthorization();
 

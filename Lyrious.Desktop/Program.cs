@@ -1,5 +1,6 @@
 ﻿using System;
 using Avalonia;
+using Lyrious.Client;
 using Lyrious.UILib;
 
 namespace Lyrious.Desktop;
@@ -13,8 +14,9 @@ internal class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        using var authService = new ApiAuthService(args.Length > 0 ? args[0] : "http://localhost:7000");
-        App.AuthService = authService;
+        var auth = new HttpAuthService(args.Length > 0 ? args[0] : "http://localhost:7000");
+        App.AuthService = auth;
+        App.SetlistService = new HttpSetlistService(auth);
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lyrious.Android", "Lyrious.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lyrious.iOS", "Lyrious.iOS\Lyrious.iOS.csproj", "{1D8F8B9A-04D2-48EA-A4F7-E24E53498A77}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lyrious.Client", "Lyrious.Client\Lyrious.Client.csproj", "{E8F2188B-A793-431C-8156-933952D55187}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -139,6 +141,18 @@ Global
 		{1D8F8B9A-04D2-48EA-A4F7-E24E53498A77}.Release|x64.Build.0 = Release|Any CPU
 		{1D8F8B9A-04D2-48EA-A4F7-E24E53498A77}.Release|x86.ActiveCfg = Release|Any CPU
 		{1D8F8B9A-04D2-48EA-A4F7-E24E53498A77}.Release|x86.Build.0 = Release|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Debug|x64.Build.0 = Debug|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Debug|x86.Build.0 = Debug|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Release|x64.ActiveCfg = Release|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Release|x64.Build.0 = Release|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Release|x86.ActiveCfg = Release|Any CPU
+		{E8F2188B-A793-431C-8156-933952D55187}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

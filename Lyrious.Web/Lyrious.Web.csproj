@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Lyrious.UILib\Lyrious.UILib.csproj" />
+    <ProjectReference Include="..\Lyrious.Client\Lyrious.Client.csproj" />
   </ItemGroup>
 
   <ItemGroup>
