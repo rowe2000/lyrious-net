@@ -19,6 +19,9 @@ namespace Lyrious.UILib
 	{
 		/// <summary>The address of the Lyrious API to sync with, e.g. http://localhost:5180.</summary>
 		public const string Host = "host";
+
+		/// <summary>"false" turns off going on to the next song when stopping at the end of the lyrics (on by default).</summary>
+		public const string NextSongOnStopAtEnd = "next-song-on-stop-at-end";
 	}
 
 	/// <summary>Used until a host provides a store: settings last only while the app runs.</summary>

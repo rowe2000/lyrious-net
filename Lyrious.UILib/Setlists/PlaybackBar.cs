@@ -113,6 +113,12 @@ namespace Lyrious.UILib.Setlists
 		/// "No more songs" is shown there instead; for a song shown from the songbook, nothing.
 		/// </summary>
 		/// <param name="lastInSetlist">The current song is the setlist's last: "No more songs" is shown instead.</param>
+		/// <summary>Greys out the next song while playing: the song can't be changed then.</summary>
+		public void SetNextAllowed(bool allowed)
+		{
+			next.IsEnabled = allowed;
+		}
+
 		public void SetNextSong(string? nextSongName, string? details = null, bool lastInSetlist = false)
 		{
 			next.IsVisible = nextSongName != null;

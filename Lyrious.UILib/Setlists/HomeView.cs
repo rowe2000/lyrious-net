@@ -56,6 +56,14 @@ namespace Lyrious.UILib.Setlists
 		private readonly Grid topRow;
 		private readonly PlaybackBar playbackBar = new() { IsVisible = false };
 
+		// A short message over the bottom of the page, e.g. why something can't be done right now.
+		private readonly TextBlock noticeText = new() { TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center };
+		private readonly Border notice;
+		private int noticeVersion;
+
+		// A band change of song that arrived while playing, to follow once playing stops.
+		private GroupSummary? pendingFollow;
+
 		// The current setlist's songs, for the next song in the playback toolbar.
 		private IReadOnlyList<SetlistEntry> playbackEntries = [];
 
@@ -134,14 +142,35 @@ namespace Lyrious.UILib.Setlists
 			setlistDrawer = Drawer(SplitViewPanePlacement.Right, 320);
 			// The playback toolbar sits under the lyrics page, also in focus mode.
 			DockPanel.SetDock(playbackBar, Dock.Bottom);
-			setlistDrawer.Content = new Grid { Children = { new DockPanel { Children = { playbackBar, page } }, topRow } };
+			notice = new Border
+			{
+				Child = noticeText,
+				Padding = new Thickness(16, 10),
+				CornerRadius = new CornerRadius(8),
+				Margin = new Thickness(16, 0, 16, 120),
+				MaxWidth = 480,
+				HorizontalAlignment = HorizontalAlignment.Center,
+				VerticalAlignment = VerticalAlignment.Bottom,
+				IsVisible = false,
+				IsHitTestVisible = false,
+			};
+			notice.Bind(Border.BackgroundProperty, notice.GetResourceObservable(LyriousTheme.CardBrush));
+			setlistDrawer.Content = new Grid { Children = { new DockPanel { Children = { playbackBar, page } }, topRow, notice } };
 			playbackBar.PlayPauseRequested += () =>
 			{
 				if (page.Content is LyricScrollView lyrics)
 				{
-					lyrics.SetAutoScroll(!lyrics.IsAutoScrolling);
+					var stopping = lyrics.IsAutoScrolling;
+					var atEnd = lyrics.IsAtEnd;
+					lyrics.SetAutoScroll(!stopping);
 					// The other members that have joined the band start or stop too.
 					_ = SendPlaybackAsync(lyrics.IsAutoScrolling);
+
+					// Stopping at the very end of the lyrics goes on to the next song (a setting, on by default).
+					if (stopping && atEnd && PlaybackSettings.NextSongOnStopAtEnd)
+					{
+						NextSong();
+					}
 				}
 			};
 			playbackBar.RestartRequested += () => (page.Content as LyricScrollView)?.ScrollToStart();
@@ -173,6 +202,13 @@ namespace Lyrious.UILib.Setlists
 				if (e.OldValue is LyricScrollView old)
 				{
 					old.SetAutoScroll(false);
+				}
+
+				// Left the lyrics while playing: a band change of song that waited for the stop applies now.
+				if (pendingFollow is { } follow && e.NewValue is not LyricScrollView { IsAutoScrolling: true } && e.NewValue is not ProgressBar)
+				{
+					pendingFollow = null;
+					Dispatcher.UIThread.Post(() => _ = FollowGroupAsync(follow));
 				}
 
 				var isLyrics = e.NewValue is LyricScrollView;
@@ -311,6 +347,13 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
+			// The song can't change while playing: follow once playing stops (the latest change wins).
+			if (IsPlaying)
+			{
+				pendingFollow = group;
+				return;
+			}
+
 			try
 			{
 				var setlist = setlistChanged ? await service.GetSetlistAsync(group.CurrentSetlistId!.Value) : currentSetlist;
@@ -346,12 +389,7 @@ namespace Lyrious.UILib.Setlists
 
 				if (entry != null)
 				{
-					var wasPlaying = page.Content is LyricScrollView { IsAutoScrolling: true };
 					ShowLyrics(group, setlist, entry);
-					if (wasPlaying && page.Content is LyricScrollView lyrics)
-					{
-						lyrics.SetAutoScroll(true);
-					}
 				}
 				else
 				{
@@ -482,6 +520,13 @@ namespace Lyrious.UILib.Setlists
 			var buttons = DrawerButtons(menuDrawer, openButton, "menu");
 			DockPanel.SetDock(buttons, Dock.Right);
 
+			var settings = DrawerItem("Settings");
+			settings.Click += (_, _) =>
+			{
+				CloseUnlessPinned(menuDrawer);
+				ShowSettings();
+			};
+
 			var sync = DrawerItem("Sync");
 			// Under "Sync": whether the server can be reached and how many changes are waiting.
 			sync.Content = new StackPanel
@@ -525,7 +570,7 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(header, Dock.Top);
 
 			// The account actions sit at the bottom of the drawer.
-			var account = new StackPanel { Spacing = 4, Children = { sync, changePassword } };
+			var account = new StackPanel { Spacing = 4, Children = { settings, sync, changePassword } };
 			DockPanel.SetDock(account, Dock.Bottom);
 
 			if (offerForgetSavedPassword)
@@ -795,6 +840,11 @@ namespace Lyrious.UILib.Setlists
 
 			row.Click += (_, _) =>
 			{
+				if (RefuseWhilePlaying())
+				{
+					return;
+				}
+
 				CloseUnlessPinned(setlistDrawer);
 				currentEntryId = entry.Id;
 				HighlightDrawerSong();
@@ -1104,10 +1154,19 @@ namespace Lyrious.UILib.Setlists
 				if (page.Content == view)
 				{
 					playbackBar.SetPlaying(view.IsAutoScrolling);
+					playbackBar.SetNextAllowed(!view.IsAutoScrolling);
 					SetFocusMode(view.IsAutoScrolling);
+
+					// The band changed song while this was playing: follow now that it has stopped.
+					if (!view.IsAutoScrolling && pendingFollow is { } follow)
+					{
+						pendingFollow = null;
+						_ = FollowGroupAsync(follow);
+					}
 				}
 			};
 			playbackBar.SetPlaying(false);
+			playbackBar.SetNextAllowed(true);
 			page.Content = view;
 			_ = UpdatePlaybackNavigationAsync();
 		}
@@ -1174,15 +1233,9 @@ namespace Lyrious.UILib.Setlists
 
 			var current = IndexOfEntry(playbackEntries, entryId);
 			var target = current + 1;
-			if (current >= 0 && target < playbackEntries.Count)
+			if (current >= 0 && target < playbackEntries.Count && !RefuseWhilePlaying())
 			{
-				// While playing, the next song plays on (and focus mode stays on).
-				var wasPlaying = page.Content is LyricScrollView { IsAutoScrolling: true };
 				SelectSong(group, setlist, playbackEntries[target]);
-				if (wasPlaying && page.Content is LyricScrollView next)
-				{
-					next.SetAutoScroll(true);
-				}
 			}
 		}
 
@@ -1264,6 +1317,45 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		/// <summary>The settings page; closing it goes back to the page before.</summary>
+		private void ShowSettings()
+		{
+			var previous = page.Content;
+			var view = new SettingsView();
+			view.Closed += () => page.Content = previous;
+			page.Content = view;
+		}
+
+		/// <summary>Whether the lyrics are playing (scrolling by themselves): the song can't be changed then.</summary>
+		private bool IsPlaying => page.Content is LyricScrollView { IsAutoScrolling: true };
+
+		/// <summary>While playing, refuses a change of song (and says why). True when refused.</summary>
+		private bool RefuseWhilePlaying()
+		{
+			if (!IsPlaying)
+			{
+				return false;
+			}
+
+			ShowNotice("Stop playing to change song.");
+			return true;
+		}
+
+		/// <summary>Shows a short message over the bottom of the page for a few seconds.</summary>
+		private void ShowNotice(string text)
+		{
+			noticeText.Text = text;
+			notice.IsVisible = true;
+			var version = ++noticeVersion;
+			DispatcherTimer.RunOnce(() =>
+			{
+				if (version == noticeVersion)
+				{
+					notice.IsVisible = false;
+				}
+			}, TimeSpan.FromSeconds(3));
+		}
+
 		/// <summary>
 		/// Shows the song's lyrics straight away and saves it as the group's current song in the
 		/// background, so the page doesn't flash a loading indicator between two songs. If saving
@@ -1271,6 +1363,11 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private void SelectSong(GroupSummary group, SetlistSummary setlist, SetlistEntry entry)
 		{
+			if (RefuseWhilePlaying())
+			{
+				return;
+			}
+
 			ShowLyrics(group, setlist, entry);
 			_ = SaveSongSelectionAsync(group, entry);
 		}

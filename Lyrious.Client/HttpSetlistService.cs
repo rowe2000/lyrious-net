@@ -45,6 +45,9 @@ public sealed class HttpSetlistService : ISetlistService
         engine.StatusChanged += () => StatusChanged?.Invoke();
         engine.Downloaded += OnDownloaded;
         engine.BackOnline += () => _ = StartLiveIfWantedAsync();
+
+        // Every login (online or offline) syncs straight away: sends what's waiting, fetches what's new.
+        auth.LoggedIn += () => _ = CacheAsync();
     }
 
     public event Action<GroupSummary>? GroupChanged;
@@ -99,23 +102,47 @@ public sealed class HttpSetlistService : ISetlistService
         }
     }
 
+    // The cache, ready (loaded and synced once) for the login session it was made ready for.
+    private Task<EntityCache>? ready;
+    private int readySession = -1;
+
     /// <summary>
-    /// The logged-in member's cache, loaded from this device; the first time in a session it's also
-    /// synced with the server (if it can be reached; if not, the copy on the device is used).
+    /// The logged-in member's cache, loaded from this device. After each login it's synced with the
+    /// server first (if it can be reached; if not, the copy on the device is used and syncing is
+    /// tried again every few seconds). Callers during that first sync wait for the same one.
     /// </summary>
-    private async Task<EntityCache> CacheAsync()
+    private Task<EntityCache> CacheAsync()
     {
         var memberId = auth.MemberId ?? throw new InvalidOperationException("You're not logged in.");
-        if (cache?.MemberId == memberId)
+        if (ready == null || readySession != auth.Session || cache?.MemberId != memberId)
         {
-            return cache;
+            readySession = auth.Session;
+            ready = LoadAndSyncAsync(memberId);
         }
 
-        var loaded = EntityCache.Load(store, memberId);
-        cache = loaded;
-        StatusChanged?.Invoke();
-        await engine.SyncAsync(loaded);
-        return loaded;
+        return ready;
+    }
+
+    private async Task<EntityCache> LoadAndSyncAsync(Guid memberId)
+    {
+        if (cache?.MemberId != memberId)
+        {
+            cache = EntityCache.Load(store, memberId);
+            StatusChanged?.Invoke();
+        }
+
+        var current = cache;
+        try
+        {
+            await engine.SyncAsync(current);
+        }
+        catch (Exception ex)
+        {
+            // An unexpected sync problem mustn't lock the member out of their own copy.
+            System.Diagnostics.Debug.WriteLine($"Sync after login failed: {ex.Message}");
+        }
+
+        return current;
     }
 
     /// <summary>Records a change made here and sends it in the background (now if online, later if not).</summary>

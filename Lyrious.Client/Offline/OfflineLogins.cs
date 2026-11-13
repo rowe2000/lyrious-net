@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -7,14 +9,16 @@ using Lyrious.UILib;
 
 namespace Lyrious.Client.Offline;
 
-/// <summary>A login that can be checked without the server: who the member is.</summary>
-internal sealed record OfflineLogin(Guid MemberId, string UserName, string DisplayName, Guid? JoinedGroupId);
+/// <summary>A login that can be checked without the server: who the member is, and on which server they logged in.</summary>
+internal sealed record OfflineLogin(Guid MemberId, string UserName, string DisplayName, Guid? JoinedGroupId, string Server = "");
 
 /// <summary>
-/// Lets members who have logged in online on this device log in again without the server. After
+/// Lets members who have logged in online on this device log in again without any server. After
 /// each online login a salted, slow hash of the password is kept (never the password itself), per
-/// server and username, with who the member is. A failed online login removes it, so a password
-/// changed elsewhere stops working offline too.
+/// server and username, with who the member is. Offline, a login is accepted whatever host is set
+/// now: the one for the current host is tried first, then the member's others, newest first. A
+/// failed online login removes that server's one, so a password changed elsewhere stops working
+/// offline too.
 /// </summary>
 /// <param name="hasher">Computes PBKDF2; the browser's is native and doesn't block the page.</param>
 internal sealed class OfflineLogins(ISettingsStore store, IPasswordHasher hasher)
@@ -44,6 +48,8 @@ internal sealed class OfflineLogins(ISettingsStore store, IPasswordHasher hasher
             ["iterations"] = iterations,
             ["salt"] = Convert.ToBase64String(salt),
             ["hash"] = Convert.ToBase64String(hash),
+            ["server"] = server.TrimEnd('/'),
+            ["savedAt"] = DateTime.UtcNow.ToString("O"),
         };
 
         var all = ReadAll();
@@ -51,14 +57,39 @@ internal sealed class OfflineLogins(ISettingsStore store, IPasswordHasher hasher
         store.Set(Key, all.ToJsonString());
     }
 
-    /// <summary>Who the member is, if the password matches the one from their last online login here.</summary>
+    /// <summary>
+    /// Who the member is, if the password matches one of their online logins on this device: the
+    /// one for <paramref name="server"/> first, then their logins on other servers, newest first.
+    /// </summary>
     public async Task<OfflineLogin?> VerifyAsync(string server, string userName, string password)
     {
-        if (ReadAll()[EntryKey(server, userName)] is not JsonObject entry)
+        foreach (var (key, entry) in Candidates(server, userName))
         {
-            return null;
+            if (await VerifyEntryAsync(entry, userName, password) is { } login)
+            {
+                return login with { Server = (string?)entry["server"] ?? key[..key.LastIndexOf('|')] };
+            }
         }
 
+        return null;
+    }
+
+    /// <summary>The member's saved logins: the current server's first, then the rest, newest first.</summary>
+    private IEnumerable<(string Key, JsonObject Entry)> Candidates(string server, string userName)
+    {
+        var all = ReadAll();
+        var exact = EntryKey(server, userName);
+        var suffix = "|" + userName.Trim().ToLowerInvariant();
+        return all
+            .Where(pair => pair.Value is JsonObject && pair.Key.EndsWith(suffix, StringComparison.Ordinal))
+            .Select(pair => (Key: pair.Key, Entry: (JsonObject)pair.Value!))
+            .OrderByDescending(pair => pair.Key == exact)
+            .ThenByDescending(pair => (string?)pair.Entry["savedAt"] ?? "")
+            .ToList();
+    }
+
+    private async Task<OfflineLogin?> VerifyEntryAsync(JsonObject entry, string userName, string password)
+    {
         try
         {
             var salt = Convert.FromBase64String((string)entry["salt"]!);
@@ -81,7 +112,8 @@ internal sealed class OfflineLogins(ISettingsStore store, IPasswordHasher hasher
         }
     }
 
-    public bool Has(string server, string userName) => ReadAll()[EntryKey(server, userName)] is JsonObject;
+    /// <summary>Whether the member has logged in online on this device, to any server.</summary>
+    public bool Has(string server, string userName) => Candidates(server, userName).Any();
 
     public void Remove(string server, string userName)
     {

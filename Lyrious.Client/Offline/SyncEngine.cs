@@ -166,7 +166,9 @@ internal sealed class SyncEngine
             return true;
         }
 
-        SetProblem("The server refused your login (was your password changed?). Log out and in again to sync.");
+        SetProblem(auth.ReauthenticationProblem is { } problem && !problem.StartsWith("Wrong username", StringComparison.Ordinal)
+            ? problem
+            : "The server refused your login (was your password changed?). Log out and in again to sync.");
         return false;
     }
 

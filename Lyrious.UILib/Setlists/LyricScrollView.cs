@@ -171,6 +171,9 @@ namespace Lyrious.UILib.Setlists
 			scroller.Offset = new Vector(scroller.Offset.X, y);
 		}
 
+		/// <summary>Whether the lyrics are scrolled all the way to the bottom (or fit without scrolling).</summary>
+		public bool IsAtEnd => scroller is { } viewer && viewer.Offset.Y >= MaxOffset(viewer) - 1;
+
 		private static double MaxOffset(ScrollViewer viewer) => Math.Max(0, viewer.Extent.Height - viewer.Viewport.Height);
 
 		protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)

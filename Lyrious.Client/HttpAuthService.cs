@@ -36,6 +36,9 @@ public sealed class HttpAuthService : IAuthService
     private string? sessionUserName;
     private string? sessionPassword;
 
+    // For an offline session: the server its offline login came from (its joined group is kept there).
+    private string? offlineServer;
+
     /// <param name="store">Where offline logins are kept on this device; without one, offline login isn't possible.</param>
     /// <param name="hasher">Computes the offline login's password hash; .NET's own by default (the browser supplies its Web Crypto).</param>
     public HttpAuthService(HttpClient http, ISettingsStore? store = null, IPasswordHasher? hasher = null)
@@ -165,6 +168,24 @@ public sealed class HttpAuthService : IAuthService
     /// </summary>
     public async Task<LoginResult> LoginAsync(string userName, string password, CancellationToken cancellationToken = default)
     {
+        var result = await LoginOnlineOrOfflineAsync(userName, password, cancellationToken);
+        if (result.User != null)
+        {
+            Session++;
+            LoggedIn?.Invoke();
+        }
+
+        return result;
+    }
+
+    /// <summary>Counts successful logins (online or offline), so each new session can be told apart from the last.</summary>
+    public int Session { get; private set; }
+
+    /// <summary>Raised after every successful login, online or offline (not when logging in again in the background).</summary>
+    public event System.Action? LoggedIn;
+
+    private async Task<LoginResult> LoginOnlineOrOfflineAsync(string userName, string password, CancellationToken cancellationToken)
+    {
         LogOut();
         try
         {
@@ -172,11 +193,14 @@ public sealed class HttpAuthService : IAuthService
         }
         catch (System.Exception ex) when (IsNetworkFailure(ex, cancellationToken))
         {
+            // Any server's offline login will do: there may be no server reachable at all, or the
+            // host may have been changed to one this device hasn't logged in to yet.
             if (await offlineLogins.VerifyAsync(ServerAddress, userName, password) is { } login)
             {
                 MemberId = login.MemberId;
                 JoinedGroupId = login.JoinedGroupId;
                 IsOfflineSession = true;
+                offlineServer = login.Server;
                 sessionUserName = userName;
                 sessionPassword = password;
                 return LoginResult.Success(new AuthenticatedUser(login.UserName, login.DisplayName));
@@ -188,17 +212,23 @@ public sealed class HttpAuthService : IAuthService
             }
 
             throw new HttpRequestException(
-                $"The server at {ServerAddress} can't be reached, and you haven't logged in to it on this device before, so you can't log in offline. Check the host (below the form) and that the server is running.", ex);
+                $"The server at {ServerAddress} can't be reached, and you haven't logged in on this device before, so you can't log in offline yet. Check the host (below the form) and that the server is running.", ex);
         }
     }
+
+    /// <summary>Why <see cref="ReauthenticateAsync"/> last failed, for the member; null if it didn't.</summary>
+    public string? ReauthenticationProblem { get; private set; }
 
     /// <summary>
     /// Logs in with the server again with this session's login, e.g. when it's back after an offline
     /// login, or when the token has expired. True when it worked; false when the server refused the
-    /// login (the password was changed elsewhere). Throws when the server can't be reached.
+    /// login (the password was changed elsewhere) or knows the username as another account (another
+    /// server than the offline login's): the session stays offline then, so changes made offline
+    /// can't end up in someone else's account. Throws when the server can't be reached.
     /// </summary>
     public async Task<bool> ReauthenticateAsync(CancellationToken cancellationToken = default)
     {
+        ReauthenticationProblem = null;
         if (sessionUserName == null || sessionPassword == null)
         {
             return false;
@@ -206,9 +236,10 @@ public sealed class HttpAuthService : IAuthService
 
         // The member's joined group may have been changed offline and not synced yet: keep it.
         var joined = JoinedGroupId;
-        var result = await LoginOnlineAsync(sessionUserName, sessionPassword, cancellationToken);
+        var result = await LoginOnlineAsync(sessionUserName, sessionPassword, cancellationToken, expectedMemberId: MemberId);
         if (result.User == null)
         {
+            ReauthenticationProblem = result.Error;
             return false;
         }
 
@@ -216,7 +247,8 @@ public sealed class HttpAuthService : IAuthService
         return true;
     }
 
-    private async Task<LoginResult> LoginOnlineAsync(string userName, string password, CancellationToken cancellationToken)
+    /// <param name="expectedMemberId">When logging in again for a session: the server must know the username as this same account.</param>
+    private async Task<LoginResult> LoginOnlineAsync(string userName, string password, CancellationToken cancellationToken, System.Guid? expectedMemberId = null)
     {
         // Throws when the server can't be reached (or CORS blocks the call).
         using var response = await http.PostAsJsonAsync(
@@ -248,7 +280,14 @@ public sealed class HttpAuthService : IAuthService
             return LoginResult.Failure("The server sent an unexpected response.");
         }
 
+        if (expectedMemberId is { } expected && member.Id != expected)
+        {
+            return LoginResult.Failure(
+                $"{ServerAddress} has another account called {userName} than the one you logged in with offline, so this session stays offline. Log out and in again to use {ServerAddress}; changes made offline stay on this device.");
+        }
+
         AccessToken = body.Token;
+        offlineServer = null;
         MemberId = member.Id;
         JoinedGroupId = member.JoinedGroupId;
         IsOfflineSession = false;
@@ -267,7 +306,7 @@ public sealed class HttpAuthService : IAuthService
         JoinedGroupId = groupId;
         if (sessionUserName != null)
         {
-            offlineLogins.SetJoinedGroup(ServerAddress, sessionUserName, groupId);
+            offlineLogins.SetJoinedGroup(offlineServer ?? ServerAddress, sessionUserName, groupId);
         }
     }
 
@@ -338,6 +377,7 @@ public sealed class HttpAuthService : IAuthService
         MemberId = null;
         JoinedGroupId = null;
         IsOfflineSession = false;
+        offlineServer = null;
         sessionUserName = null;
         sessionPassword = null;
     }
