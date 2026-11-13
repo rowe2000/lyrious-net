@@ -37,10 +37,11 @@ public sealed class HttpAuthService : IAuthService
     private string? sessionPassword;
 
     /// <param name="store">Where offline logins are kept on this device; without one, offline login isn't possible.</param>
-    public HttpAuthService(HttpClient http, ISettingsStore? store = null)
+    /// <param name="hasher">Computes the offline login's password hash; .NET's own by default (the browser supplies its Web Crypto).</param>
+    public HttpAuthService(HttpClient http, ISettingsStore? store = null, IPasswordHasher? hasher = null)
     {
         this.http = http;
-        offlineLogins = new OfflineLogins(store ?? new MemorySettingsStore());
+        offlineLogins = new OfflineLogins(store ?? new MemorySettingsStore(), hasher ?? new DotNetPasswordHasher());
         try
         {
             http.Timeout = RequestTimeout;
@@ -111,10 +112,10 @@ public sealed class HttpAuthService : IAuthService
     public string ServerAddress => http.BaseAddress?.ToString().TrimEnd('/') ?? "";
 
     /// <summary>
-    /// Checks <paramref name="address"/> answers like a Lyrious API (POST api/ping), then uses it for
-    /// all calls from now on, and logs out. "http://" is assumed when no scheme is given.
+    /// Checks an address for a server: whether it's a web address at all ("http://" is assumed when
+    /// no scheme is given), and whether a Lyrious API answers there (POST api/ping says "Pong").
     /// </summary>
-    public async Task<string?> ChangeServerAsync(string address, CancellationToken cancellationToken = default)
+    public async Task<ServerCheck> CheckServerAsync(string address, CancellationToken cancellationToken = default)
     {
         var text = address.Trim();
         if (!text.Contains("://"))
@@ -125,11 +126,11 @@ public sealed class HttpAuthService : IAuthService
         if (!System.Uri.TryCreate(text.TrimEnd('/') + "/", System.UriKind.Absolute, out var uri)
             || (uri.Scheme != System.Uri.UriSchemeHttp && uri.Scheme != System.Uri.UriSchemeHttps))
         {
-            return "That isn't a web address. Use for example http://localhost:5180.";
+            return new ServerCheck(null, false, "That isn't a web address. Use for example http://localhost:5180.");
         }
 
-        // A separate client: the current one keeps working if the new host doesn't answer.
-        var candidate = CreateClient(uri);
+        var normalized = uri.ToString().TrimEnd('/');
+        using var candidate = CreateClient(uri);
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -137,19 +138,25 @@ public sealed class HttpAuthService : IAuthService
             using var response = await candidate.PostAsync("api/ping", content: null, timeout.Token);
             if (!response.IsSuccessStatusCode || !(await response.Content.ReadAsStringAsync(timeout.Token)).Contains("Pong"))
             {
-                candidate.Dispose();
-                return $"{uri.ToString().TrimEnd('/')} answered {(int)response.StatusCode} {response.ReasonPhrase}; it doesn't look like a Lyrious server.";
+                return new ServerCheck(normalized, false, $"{normalized} answered {(int)response.StatusCode} {response.ReasonPhrase}; it doesn't look like a Lyrious server.");
             }
         }
         catch (System.Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            candidate.Dispose();
-            return $"Couldn't reach {uri.ToString().TrimEnd('/')}. Check the address, and that the server is running.";
+            return new ServerCheck(normalized, false, $"{normalized} doesn't answer right now.");
         }
 
+        return new ServerCheck(normalized, true, null);
+    }
+
+    /// <summary>
+    /// Uses the server at <paramref name="address"/> (as returned by <see cref="CheckServerAsync"/>)
+    /// for all calls from now on, and logs out: a login belongs to the server that gave it.
+    /// </summary>
+    public void UseServer(string address)
+    {
         LogOut();
-        http = candidate;
-        return null;
+        http = CreateClient(new System.Uri(address.TrimEnd('/') + "/"));
     }
 
     /// <summary>
@@ -165,7 +172,7 @@ public sealed class HttpAuthService : IAuthService
         }
         catch (System.Exception ex) when (IsNetworkFailure(ex, cancellationToken))
         {
-            if (offlineLogins.Verify(ServerAddress, userName, password) is { } login)
+            if (await offlineLogins.VerifyAsync(ServerAddress, userName, password) is { } login)
             {
                 MemberId = login.MemberId;
                 JoinedGroupId = login.JoinedGroupId;
@@ -181,7 +188,7 @@ public sealed class HttpAuthService : IAuthService
             }
 
             throw new HttpRequestException(
-                "The server can't be reached, and you haven't logged in on this device before, so you can't log in offline yet.", ex);
+                $"The server at {ServerAddress} can't be reached, and you haven't logged in to it on this device before, so you can't log in offline. Check the host (below the form) and that the server is running.", ex);
         }
     }
 
@@ -250,7 +257,7 @@ public sealed class HttpAuthService : IAuthService
 
         var name = string.IsNullOrWhiteSpace(member.Name) ? userName : member.Name;
         var user = new AuthenticatedUser(member.UserName ?? userName, name);
-        offlineLogins.Save(ServerAddress, userName, password, new OfflineLogin(member.Id, user.UserName, user.DisplayName, member.JoinedGroupId));
+        await offlineLogins.SaveAsync(ServerAddress, userName, password, new OfflineLogin(member.Id, user.UserName, user.DisplayName, member.JoinedGroupId));
         return LoginResult.Success(user);
     }
 
@@ -312,9 +319,9 @@ public sealed class HttpAuthService : IAuthService
 
         // The offline login follows the new password.
         if (sessionUserName != null && MemberId is { } memberId
-            && offlineLogins.Verify(ServerAddress, sessionUserName, currentPassword) is { } login)
+            && await offlineLogins.VerifyAsync(ServerAddress, sessionUserName, currentPassword) is { } login)
         {
-            offlineLogins.Save(ServerAddress, sessionUserName, newPassword, login with { MemberId = memberId, JoinedGroupId = JoinedGroupId });
+            await offlineLogins.SaveAsync(ServerAddress, sessionUserName, newPassword, login with { MemberId = memberId, JoinedGroupId = JoinedGroupId });
         }
 
         sessionPassword = newPassword;

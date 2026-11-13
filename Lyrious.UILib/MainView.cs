@@ -101,7 +101,8 @@ namespace Lyrious.UILib
 				login.ShowNotice(notice, userName);
 			}
 
-			var view = new LoginView(login);
+			var view = new LoginView(login, App.AuthService.ServerAddress);
+			view.HostRequested += ShowHostFromLogin;
 			view.RegisterRequested += ShowRegister;
 			view.ForgotPasswordRequested += () => ShowForgotPassword(login.UserName);
 			Content = view;
@@ -253,18 +254,21 @@ namespace Lyrious.UILib
 		{
 			var auth = App.AuthService;
 			var current = auth.ServerAddress;
+			// The current host needs no check; another is checked, and used even if it doesn't answer
+			// (the Sync page warns first).
 			var view = new SyncView(current, address => SameHost(address, current)
-				? Task.FromResult<string?>(null)
-				: auth.ChangeServerAsync(address), App.SetlistService);
+				? Task.FromResult(new ServerCheck(current, true, null))
+				: auth.CheckServerAsync(address), App.SetlistService);
 			view.Cancelled += () => Content = home;
-			view.Saved += _ =>
+			view.Saved += address =>
 			{
-				if (auth.ServerAddress == current)
+				if (SameHost(address, current))
 				{
 					Content = home; // Unchanged.
 					return;
 				}
 
+				auth.UseServer(Tidy(address));
 				App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
 				home.Close();
 				ShowLogin($"Now syncing with {auth.ServerAddress}. Log in to continue.", null);
@@ -272,8 +276,42 @@ namespace Lyrious.UILib
 			Content = view;
 		}
 
+		/// <summary>
+		/// The host page, from the login page: there's no session yet, so it's only the address (no
+		/// sync status). A new host is remembered on this device; back to the login page either way.
+		/// </summary>
+		private void ShowHostFromLogin()
+		{
+			var auth = App.AuthService;
+			var current = auth.ServerAddress;
+			var view = new SyncView(current, address => SameHost(address, current)
+				? Task.FromResult(new ServerCheck(current, true, null))
+				: auth.CheckServerAsync(address));
+			view.Cancelled += ShowLogin;
+			view.Saved += address =>
+			{
+				if (SameHost(address, current))
+				{
+					ShowLogin();
+					return;
+				}
+
+				auth.UseServer(Tidy(address));
+				App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
+				ShowLogin($"Now using {auth.ServerAddress}.", null);
+			};
+			Content = view;
+		}
+
 		private static bool SameHost(string address, string current)
-			=> string.Equals(address.Trim().TrimEnd('/'), current.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+			=> string.Equals(Tidy(address), current.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+
+		/// <summary>An address as the auth service keeps it: with a scheme ("http://" if none) and no trailing slash.</summary>
+		private static string Tidy(string address)
+		{
+			var text = address.Trim().TrimEnd('/');
+			return text.Contains("://") ? text : "http://" + text;
+		}
 
 		// Back returns to the same home view, so the page the user was on is kept.
 		private void ShowChangePassword(HomeView home, string userName)

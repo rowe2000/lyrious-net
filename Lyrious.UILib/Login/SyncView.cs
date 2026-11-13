@@ -11,8 +11,9 @@ namespace Lyrious.UILib.Login
 {
 	/// <summary>
 	/// "Sync": whether the data is in sync with the server (and "Sync now"), and which Lyrious server
-	/// (host) the app talks to. Save (✓) checks the server answers before switching; Cancel (✕) goes
-	/// back. If saving fails, the error is shown and the address kept.
+	/// (host) the app talks to. Save (✓) checks the server answers before switching. A host that
+	/// doesn't answer can still be used: a warning says so, and pressing ✓ again uses it. Something
+	/// that isn't an address at all is refused. Cancel (✕) goes back.
 	/// </summary>
 	public sealed class SyncView : UserControl
 	{
@@ -28,12 +29,12 @@ namespace Lyrious.UILib.Login
 		/// <summary>Raised when the user cancels.</summary>
 		public event Action? Cancelled;
 
-		/// <summary>Raised with the host's address after it's been saved.</summary>
+		/// <summary>Raised with the host's (tidied-up) address when the user wants to use it.</summary>
 		public event Action<string>? Saved;
 
-		/// <param name="save">Switches to the host; returns null when done, else a message for the user.</param>
+		/// <param name="check">Checks an address (see <see cref="IAuthService.CheckServerAsync"/>).</param>
 		/// <param name="sync">The data sync, to show its status and sync now; null to leave that out.</param>
-		public SyncView(string currentHost, Func<string, Task<string?>> save, ISetlistService? sync = null)
+		public SyncView(string currentHost, Func<string, Task<ServerCheck>> check, ISetlistService? sync = null)
 		{
 			this.sync = sync;
 			host = new TextBox { Text = currentHost, PlaceholderText = "e.g. http://localhost:5180" };
@@ -41,10 +42,23 @@ namespace Lyrious.UILib.Login
 			var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
 			error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable(LyriousTheme.ErrorBrush));
 
+			// The address last warned about: pressing ✓ again for the same address uses it anyway.
+			string? warnedAbout = null;
+
 			var saveButton = HomeView.IconButton(SaveIcon, "Save host");
 			var cancelButton = HomeView.IconButton(CancelIcon, "Cancel");
 			cancelButton.Click += (_, _) => Cancelled?.Invoke();
-			host.TextChanged += (_, _) => saveButton.IsEnabled = !string.IsNullOrWhiteSpace(host.Text);
+			host.TextChanged += (_, _) =>
+			{
+				saveButton.IsEnabled = !string.IsNullOrWhiteSpace(host.Text);
+				if (warnedAbout != null)
+				{
+					// A different address is checked afresh.
+					warnedAbout = null;
+					error.IsVisible = false;
+					ToolTip.SetTip(saveButton, "Save host");
+				}
+			};
 
 			async Task SaveAsync()
 			{
@@ -54,24 +68,43 @@ namespace Lyrious.UILib.Login
 				}
 
 				var address = host.Text!.Trim();
+				if (warnedAbout == address)
+				{
+					// Warned already, and ✓ pressed again: use it anyway.
+					Saved?.Invoke(address);
+					return;
+				}
+
 				saveButton.IsEnabled = cancelButton.IsEnabled = host.IsEnabled = false;
 				error.IsVisible = false;
 				try
 				{
-					if (await save(address) is { } problem)
+					var result = await check(address);
+					if (result is { Address: { } usable, Answers: true })
 					{
-						error.Text = problem;
-						error.IsVisible = true;
+						Saved?.Invoke(usable);
+						return;
+					}
+
+					if (result.Address == null)
+					{
+						error.Text = result.Message; // Not an address at all: can't be used.
+						ShowAs(error, LyriousTheme.ErrorBrush);
 					}
 					else
 					{
-						Saved?.Invoke(address);
-						return;
+						warnedAbout = address;
+						ShowAs(error, LyriousTheme.WarningBrush);
+						error.Text = $"Warning: {result.Message} You can use it anyway: press ✓ again. Until it answers you'll work offline, and you can only log in if you've logged in to it on this device before.";
+						ToolTip.SetTip(saveButton, "Use this host anyway");
 					}
+
+					error.IsVisible = true;
 				}
 				catch (Exception ex)
 				{
 					error.Text = ex.Message;
+					ShowAs(error, LyriousTheme.ErrorBrush);
 					error.IsVisible = true;
 				}
 
@@ -137,6 +170,9 @@ namespace Lyrious.UILib.Login
 		protected override void OnLoaded(Avalonia.Interactivity.RoutedEventArgs e)
 		{
 			base.OnLoaded(e);
+			// Ready to type a new address straight away.
+			host.Focus();
+			host.SelectAll();
 			if (sync != null)
 			{
 				sync.StatusChanged += OnStatusChanged;
@@ -152,6 +188,10 @@ namespace Lyrious.UILib.Login
 				sync.StatusChanged -= OnStatusChanged;
 			}
 		}
+
+		/// <summary>Colours a message: red for errors, yellow for warnings (following the theme).</summary>
+		private static void ShowAs(TextBlock message, string brush)
+			=> message.Bind(TextBlock.ForegroundProperty, message.GetResourceObservable(brush));
 
 		private void OnStatusChanged() => Avalonia.Threading.Dispatcher.UIThread.Post(ShowStatus);
 

@@ -37,12 +37,21 @@ namespace Lyrious.UILib.Login
 		/// <summary>The address of the server (host) the app talks to, e.g. http://localhost:5180.</summary>
 		string ServerAddress { get; }
 
+		/// <summary>Checks an address for a server: whether it's an address at all, and whether a Lyrious server answers there.</summary>
+		Task<ServerCheck> CheckServerAsync(string address, CancellationToken cancellationToken = default);
+
 		/// <summary>
-		/// Switches to another server, after checking it answers; the member is logged out, since
-		/// their login belongs to the old server. Returns null when done, else a message for the user.
+		/// Switches to the server at the (checked) address, answering or not; the member is logged
+		/// out, since their login belongs to the old server.
 		/// </summary>
-		Task<string?> ChangeServerAsync(string address, CancellationToken cancellationToken = default);
+		void UseServer(string address);
 	}
+
+	/// <summary>The result of checking a server address.</summary>
+	/// <param name="Address">The address tidied up (e.g. "http://" added); null if it isn't an address at all.</param>
+	/// <param name="Answers">Whether a Lyrious server answered there.</param>
+	/// <param name="Message">Why it can't be used, or why it's doubtful; null when all is well.</param>
+	public sealed record ServerCheck(string? Address, bool Answers, string? Message);
 
 	/// <summary>The signed-in member, as far as the UI needs to know.</summary>
 	public sealed record AuthenticatedUser(string UserName, string DisplayName);
@@ -72,8 +81,12 @@ namespace Lyrious.UILib.Login
 
 		public string ServerAddress => "";
 
-		public Task<string?> ChangeServerAsync(string address, CancellationToken cancellationToken = default)
-			=> Task.FromResult<string?>(NotConnected);
+		public Task<ServerCheck> CheckServerAsync(string address, CancellationToken cancellationToken = default)
+			=> Task.FromResult(new ServerCheck(null, false, NotConnected));
+
+		public void UseServer(string address)
+		{
+		}
 
 		public Task<LoginResult> LoginAsync(string userName, string password, CancellationToken cancellationToken = default)
 			=> Task.FromResult(LoginResult.Failure(NotConnected));

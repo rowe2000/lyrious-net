@@ -28,7 +28,7 @@ internal sealed partial class Program
         var apiBaseUrl = GetApiBaseUrl(args.FirstOrDefault(), settings.Get(SettingKeys.Host));
         // The offline cache and offline logins, kept apart from the settings.
         var offline = new BrowserSettingsStore("lyrious.offline.");
-        var auth = new HttpAuthService(new HttpClient { BaseAddress = apiBaseUrl }, offline);
+        var auth = new HttpAuthService(new HttpClient { BaseAddress = apiBaseUrl }, offline, new BrowserPasswordHasher());
         App.AuthService = auth;
         App.SetlistService = new HttpSetlistService(auth, offline);
         App.CredentialStore = new BrowserCredentialStore();

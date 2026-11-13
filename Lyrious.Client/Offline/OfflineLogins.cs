@@ -2,6 +2,7 @@ using System;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Lyrious.UILib;
 
 namespace Lyrious.Client.Offline;
@@ -15,22 +16,24 @@ internal sealed record OfflineLogin(Guid MemberId, string UserName, string Displ
 /// server and username, with who the member is. A failed online login removes it, so a password
 /// changed elsewhere stops working offline too.
 /// </summary>
-internal sealed class OfflineLogins(ISettingsStore store)
+/// <param name="hasher">Computes PBKDF2; the browser's is native and doesn't block the page.</param>
+internal sealed class OfflineLogins(ISettingsStore store, IPasswordHasher hasher)
 {
     private const string Key = "offline-logins";
     private const int SaltSize = 16;
     private const int HashSize = 32;
 
-    // PBKDF2 with SHA-256 where the platform has it; the browser may not, so there are fallbacks.
+    // PBKDF2 with SHA-256 from the hasher; if it isn't available, a managed one with fewer rounds
+    // (slow in the browser, so it's only a fallback; still read for logins saved with it earlier).
     private const string Pbkdf2 = "pbkdf2-sha256";
     private const string ManualPbkdf2 = "pbkdf2-hmacsha256-managed";
     private const int Iterations = 100_000;
     private const int ManualIterations = 20_000;
 
-    public void Save(string server, string userName, string password, OfflineLogin login)
+    public async Task SaveAsync(string server, string userName, string password, OfflineLogin login)
     {
         var salt = RandomNumberGenerator.GetBytes(SaltSize);
-        var (algorithm, iterations, hash) = Hash(password, salt);
+        var (algorithm, iterations, hash) = await HashAsync(password, salt);
         var entry = new JsonObject
         {
             ["memberId"] = login.MemberId.ToString(),
@@ -49,7 +52,7 @@ internal sealed class OfflineLogins(ISettingsStore store)
     }
 
     /// <summary>Who the member is, if the password matches the one from their last online login here.</summary>
-    public OfflineLogin? Verify(string server, string userName, string password)
+    public async Task<OfflineLogin?> VerifyAsync(string server, string userName, string password)
     {
         if (ReadAll()[EntryKey(server, userName)] is not JsonObject entry)
         {
@@ -60,7 +63,7 @@ internal sealed class OfflineLogins(ISettingsStore store)
         {
             var salt = Convert.FromBase64String((string)entry["salt"]!);
             var expected = Convert.FromBase64String((string)entry["hash"]!);
-            var actual = Hash(password, salt, (string)entry["algorithm"]!, (int)entry["iterations"]!);
+            var actual = await HashAsync(password, salt, (string)entry["algorithm"]!, (int)entry["iterations"]!);
             if (!CryptographicOperations.FixedTimeEquals(actual, expected))
             {
                 return null;
@@ -72,7 +75,7 @@ internal sealed class OfflineLogins(ISettingsStore store)
                 (string?)entry["displayName"] ?? userName,
                 Guid.TryParse((string?)entry["joinedGroupId"], out var joined) ? joined : null);
         }
-        catch (Exception ex) when (ex is FormatException or InvalidOperationException or NullReferenceException or CryptographicException or PlatformNotSupportedException)
+        catch (Exception ex) when (ex is FormatException or InvalidOperationException or NullReferenceException or CryptographicException or PlatformNotSupportedException or System.Runtime.InteropServices.JavaScript.JSException)
         {
             return null;
         }
@@ -114,28 +117,25 @@ internal sealed class OfflineLogins(ISettingsStore store)
         }
     }
 
-    private static (string Algorithm, int Iterations, byte[] Hash) Hash(string password, byte[] salt)
+    private async Task<(string Algorithm, int Iterations, byte[] Hash)> HashAsync(string password, byte[] salt)
     {
         try
         {
-            return (Pbkdf2, Iterations, Hash(password, salt, Pbkdf2, Iterations));
+            return (Pbkdf2, Iterations, await HashAsync(password, salt, Pbkdf2, Iterations));
         }
-        catch (PlatformNotSupportedException)
+        catch (Exception ex) when (ex is PlatformNotSupportedException or System.Runtime.InteropServices.JavaScript.JSException)
         {
-            return (ManualPbkdf2, ManualIterations, Hash(password, salt, ManualPbkdf2, ManualIterations));
+            // E.g. the browser has no Web Crypto (a page served over plain http from another machine).
+            return (ManualPbkdf2, ManualIterations, await HashAsync(password, salt, ManualPbkdf2, ManualIterations));
         }
     }
 
-    private static byte[] Hash(string password, byte[] salt, string algorithm, int iterations)
+    private async Task<byte[]> HashAsync(string password, byte[] salt, string algorithm, int iterations) => algorithm switch
     {
-        var bytes = Encoding.UTF8.GetBytes(password);
-        return algorithm switch
-        {
-            Pbkdf2 => Rfc2898DeriveBytes.Pbkdf2(bytes, salt, iterations, HashAlgorithmName.SHA256, HashSize),
-            ManualPbkdf2 => ManagedPbkdf2(bytes, salt, iterations),
-            _ => throw new CryptographicException($"Unknown password hash '{algorithm}'."),
-        };
-    }
+        Pbkdf2 => await hasher.Pbkdf2Sha256Async(password, salt, iterations, HashSize),
+        ManualPbkdf2 => ManagedPbkdf2(Encoding.UTF8.GetBytes(password), salt, iterations),
+        _ => throw new CryptographicException($"Unknown password hash '{algorithm}'."),
+    };
 
     /// <summary>PBKDF2 (RFC 8018) with HMAC-SHA256, one 32-byte block, for platforms without the built-in one.</summary>
     private static byte[] ManagedPbkdf2(byte[] password, byte[] salt, int iterations)

@@ -13,6 +13,8 @@ namespace Lyrious.UILib
 		public const string ErrorBrush = "LyriousErrorBrush";
 		public const string CardBrush = "LyriousCardBrush";
 		public const string SuccessBrush = "LyriousSuccessBrush";
+		/// <summary>Warnings: something works, but not as one might expect (yellow).</summary>
+		public const string WarningBrush = "LyriousWarningBrush";
 		public const string ForegroundBrush = "LyriousForegroundBrush";
 		/// <summary>The outline of a selected list row (the current item is filled with the accent colour instead).</summary>
 		public const string SelectionBrush = "LyriousSelectionBrush";
@@ -24,6 +26,8 @@ namespace Lyrious.UILib
 				[ErrorBrush] = new SolidColorBrush(Color.Parse("#C42B1C")),
 				[CardBrush] = new SolidColorBrush(Color.Parse("#F3F3F3")),
 				[SuccessBrush] = new SolidColorBrush(Color.Parse("#0F7B0F")),
+				// A dark yellow, so it stays readable on a light background.
+				[WarningBrush] = new SolidColorBrush(Color.Parse("#9D7A00")),
 				[ForegroundBrush] = new SolidColorBrush(Color.Parse("#1B1B1B")),
 				[SelectionBrush] = new SolidColorBrush(Color.Parse("#0067C0")),
 			};
@@ -32,6 +36,7 @@ namespace Lyrious.UILib
 				[ErrorBrush] = new SolidColorBrush(Color.Parse("#FF99A4")),
 				[CardBrush] = new SolidColorBrush(Color.Parse("#2B2B2B")),
 				[SuccessBrush] = new SolidColorBrush(Color.Parse("#6CCB5F")),
+				[WarningBrush] = new SolidColorBrush(Color.Parse("#FCE100")),
 				[ForegroundBrush] = new SolidColorBrush(Color.Parse("#FFFFFF")),
 				[SelectionBrush] = new SolidColorBrush(Color.Parse("#60CDFF")),
 			};
