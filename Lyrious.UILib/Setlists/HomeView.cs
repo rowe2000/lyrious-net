@@ -61,6 +61,11 @@ namespace Lyrious.UILib.Setlists
 		private readonly Border notice;
 		private int noticeVersion;
 
+		// The pages shown before the current one, for the ✕ on the middle pages (newest last).
+		private readonly List<Control> history = [];
+		private bool goingBack;
+		private const int HistoryLimit = 20;
+
 		// A band change of song that arrived while playing, to follow once playing stops.
 		private GroupSummary? pendingFollow;
 
@@ -185,10 +190,19 @@ namespace Lyrious.UILib.Setlists
 			setlistButton.Click += (_, _) =>
 			{
 				setlistDrawer.IsPaneOpen = true;
-				_ = LoadSetlistDrawerAsync();
+				_ = LoadSetlistDrawerAsync(centerSong: true);
 			};
+			// Opened again some other way (e.g. after focus mode): the current song in the middle too.
+			setlistDrawer.PaneOpened += (_, _) => CenterDrawerSong();
 
 			Content = menuDrawer;
+
+			// A middle page's ✕: back to the page before.
+			page.AddHandler(PageLayout.CloseRequestedEvent, (_, e) =>
+			{
+				e.Handled = true;
+				GoBack();
+			});
 
 			// Focus mode belongs to the lyrics page: leaving it (e.g. an error page) ends focus mode.
 			// So do the playback toolbar and scrolling.
@@ -202,6 +216,17 @@ namespace Lyrious.UILib.Setlists
 				if (e.OldValue is LyricScrollView old)
 				{
 					old.SetAutoScroll(false);
+				}
+
+				// Remember the page left, for ✕ (pages only: not loading indicators or messages).
+				if (!goingBack && e.OldValue is UserControl left && !ReferenceEquals(left, e.NewValue))
+				{
+					history.Remove(left);
+					history.Add(left);
+					if (history.Count > HistoryLimit)
+					{
+						history.RemoveAt(0);
+					}
 				}
 
 				// Left the lyrics while playing: a band change of song that waited for the stop applies now.
@@ -703,7 +728,8 @@ namespace Lyrious.UILib.Setlists
 		/// setlist it already shows, the old list stays up (no progress bar), so it doesn't flicker;
 		/// the scroll position is kept too. A load that a newer one has overtaken is dropped.
 		/// </summary>
-		private async Task LoadSetlistDrawerAsync()
+		/// <param name="centerSong">Scrolls the list so the current song is in the middle once it's loaded (when the drawer opens).</param>
+		private async Task LoadSetlistDrawerAsync(bool centerSong = false)
 		{
 			var load = ++drawerLoad;
 			if (currentGroup is not { } group || currentSetlist is not { } setlist)
@@ -755,6 +781,11 @@ namespace Lyrious.UILib.Setlists
 				{
 					setlistDrawerBody.Content = new ScrollViewer { Content = list };
 				}
+
+				if (centerSong)
+				{
+					CenterDrawerSong();
+				}
 			}
 			catch (Exception ex)
 			{
@@ -768,6 +799,25 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>Highlights the current song's row (and only it) without rebuilding the list.</summary>
+		/// <summary>
+		/// Scrolls the setlist drawer's list so the current song's row is in the middle (as near as the
+		/// list's ends allow). Done after layout, when the rows have their places. Nothing if no song
+		/// in the drawer's setlist is current.
+		/// </summary>
+		private void CenterDrawerSong() => Dispatcher.UIThread.Post(() =>
+		{
+			if (currentEntryId is not { } entryId
+			    || !drawerRows.TryGetValue(entryId, out var row)
+			    || setlistDrawerBody.Content is not ScrollViewer { Content: Control list } scroller
+			    || row.TranslatePoint(new Point(0, row.Bounds.Height / 2), list) is not { } middle)
+			{
+				return;
+			}
+
+			var max = Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height);
+			scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(middle.Y - scroller.Viewport.Height / 2, 0, max));
+		}, DispatcherPriority.Background);
+
 		private void HighlightDrawerSong()
 		{
 			foreach (var (entryId, row) in drawerRows)
@@ -793,19 +843,26 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>
 		/// Keeps the setlist drawer in step with the page. When only the song changed within the
 		/// setlist it shows, just the highlight moves; otherwise an open drawer reloads its songs
-		/// (<paramref name="reload"/> forces that, e.g. after songs were added).
+		/// (<paramref name="reload"/> forces that, e.g. after songs were added). Either way an open
+		/// drawer scrolls the current song to its middle.
 		/// </summary>
 		private void RefreshSetlistDrawer(bool reload = false)
 		{
 			if (!reload && drawerSetlistId != null && drawerSetlistId == currentSetlist?.Id)
 			{
 				HighlightDrawerSong();
+				// The current song may have changed: bring it to the middle of an open drawer.
+				if (setlistDrawer.IsPaneOpen)
+				{
+					CenterDrawerSong();
+				}
+
 				return;
 			}
 
 			if (setlistDrawer.IsPaneOpen)
 			{
-				_ = LoadSetlistDrawerAsync();
+				_ = LoadSetlistDrawerAsync(centerSong: true);
 			}
 			else
 			{
@@ -900,6 +957,8 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private async Task OpenStartPageAsync(bool showPage = true)
 		{
+			// A band's start page begins a new history: ✕ never leads back into another band's pages.
+			history.Clear();
 			var start = await StartPage.DetermineAsync(service);
 			groupName.Text = start.Group?.Name ?? "Choose a band";
 			currentGroup = start.Group;
@@ -1317,13 +1376,63 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
-		/// <summary>The settings page; closing it goes back to the page before.</summary>
-		private void ShowSettings()
+		/// <summary>The settings page; its ✕ goes back to the page before.</summary>
+		private void ShowSettings() => page.Content = new SettingsView();
+
+		/// <summary>
+		/// Back to the page shown before the current one. Lyrics of a song that's no longer the current
+		/// one aren't shown again: the current song's lyrics are opened instead. With nothing to go
+		/// back to, the current song's lyrics (if any) are shown.
+		/// </summary>
+		private void GoBack()
 		{
-			var previous = page.Content;
-			var view = new SettingsView();
-			view.Closed += () => page.Content = previous;
-			page.Content = view;
+			while (history.Count > 0)
+			{
+				var previous = history[^1];
+				history.RemoveAt(history.Count - 1);
+				if (ReferenceEquals(previous, page.Content))
+				{
+					continue;
+				}
+
+				if (previous is LyricScrollView lyrics && lyrics.SongId != currentSongId)
+				{
+					break; // Out of date: open the current song instead (below).
+				}
+
+				goingBack = true;
+				try
+				{
+					page.Content = previous;
+				}
+				finally
+				{
+					goingBack = false;
+				}
+
+				if (previous is LyricScrollView)
+				{
+					_ = UpdatePlaybackNavigationAsync();
+				}
+
+				return;
+			}
+
+			_ = RunAsync(ReopenCurrentSongAsync);
+		}
+
+		/// <summary>Opens the current song's lyrics, if a song from a setlist is current.</summary>
+		private async Task ReopenCurrentSongAsync()
+		{
+			if (currentGroup is { } group && currentSetlist is { } setlist && currentEntryId is { } entryId
+			    && await service.GetEntryAsync(entryId) is { } entry)
+			{
+				ShowLyrics(group, setlist, entry);
+			}
+			else
+			{
+				await OpenStartPageAsync();
+			}
 		}
 
 		/// <summary>Whether the lyrics are playing (scrolling by themselves): the song can't be changed then.</summary>

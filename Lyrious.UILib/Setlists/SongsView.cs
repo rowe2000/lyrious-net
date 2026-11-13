@@ -71,7 +71,8 @@ namespace Lyrious.UILib.Setlists
 				"Songbook",
 				new DockPanel { Children = { nameRow, status, search, list } },
 				subtitle: $"{group.Name} · choose a song",
-				titleAction: addButton);
+				titleAction: addButton,
+				closable: true);
 		}
 
 		/// <summary>The songs as a selectable list: a click selects (toolbar: open, edit, delete), a double click opens.</summary>
@@ -89,10 +90,10 @@ namespace Lyrious.UILib.Setlists
 				song => SongSelected?.Invoke(song),
 				emptyText);
 
-		/// <summary>Whether the song's name or lyrics contain the text (ignoring case).</summary>
+		/// <summary>Whether the song's name or lyrics contain the text (ignoring case; chords in the lyrics don't get in the way).</summary>
 		private static bool Matches(SongDetails song, string text)
 			=> song.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)
-			   || song.Lyrics.Contains(text, StringComparison.CurrentCultureIgnoreCase);
+			   || ChordPro.StripChords(song.Lyrics).Contains(text, StringComparison.CurrentCultureIgnoreCase);
 
 		/// <summary>Imports a song from a text or ChordPro file the user picks.</summary>
 		private async Task ImportAsync()

@@ -61,7 +61,8 @@ namespace Lyrious.UILib.Setlists
 			Content = PageLayout.Page(
 				"Add songs",
 				content,
-				subtitle: $"To {setlist.Name} · select songs from the songbook");
+				subtitle: $"To {setlist.Name} · select songs from the songbook",
+				closable: true);
 		}
 
 		/// <summary>One songbook song: name, then "in setlist" and key; stays highlighted while selected.</summary>

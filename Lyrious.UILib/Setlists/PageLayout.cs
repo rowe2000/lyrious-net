@@ -2,6 +2,7 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 
@@ -10,12 +11,43 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>Building blocks shared by the setlist and lyrics pages (code-only).</summary>
 	internal static class PageLayout
 	{
+		private const string CloseIcon = "M6,6 L18,18 M18,6 L6,18";
+
+		/// <summary>
+		/// Raised (bubbling) by a page's ✕: the page wants to go back to the one before. The host of the
+		/// pages handles it (see HomeView); a page doesn't need to know what came before it.
+		/// </summary>
+		public static readonly RoutedEvent<RoutedEventArgs> CloseRequestedEvent =
+			RoutedEvent.Register<Control, RoutedEventArgs>("PageCloseRequested", RoutingStrategies.Bubble);
+
 		/// <summary>
 		/// A centered, width-limited column with an optional back link, a title and content.
 		/// <paramref name="titleAction"/> is a control (e.g. an add button) shown at the right of the title.
+		/// <paramref name="closable"/> adds a ✕ at the far right that goes back to the page before.
 		/// </summary>
-		public static Control Page(string title, Control content, string? backText = null, Action? back = null, string? subtitle = null, Control? titleAction = null)
-			=> Page(title, content, backText != null && back != null ? BackLink(backText, back) : null, subtitle, titleAction);
+		public static Control Page(string title, Control content, string? backText = null, Action? back = null, string? subtitle = null, Control? titleAction = null, bool closable = false)
+			=> Page(title, content, backText != null && back != null ? BackLink(backText, back) : null, subtitle, WithClose(titleAction, closable));
+
+		/// <summary>The title's action with a ✕ after it (raising <see cref="CloseRequestedEvent"/>), when closable.</summary>
+		private static Control? WithClose(Control? titleAction, bool closable)
+		{
+			if (!closable)
+			{
+				return titleAction;
+			}
+
+			var close = HomeView.IconButton(CloseIcon, "Close");
+			close.Click += (_, _) => close.RaiseEvent(new RoutedEventArgs(CloseRequestedEvent));
+			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+			if (titleAction != null)
+			{
+				titleAction.VerticalAlignment = VerticalAlignment.Center;
+				actions.Children.Add(titleAction);
+			}
+
+			actions.Children.Add(close);
+			return actions;
+		}
 
 		private static Control Page(string title, Control content, Control? backLink, string? subtitle = null, Control? titleAction = null)
 		{

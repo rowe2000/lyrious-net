@@ -65,7 +65,8 @@ namespace Lyrious.UILib.Setlists
 			searchPage = PageLayout.Page(
 				"Find song online",
 				new DockPanel { Children = { searchRow, ultimateGuitarButton, results } },
-				subtitle: "Lyrics from LRCLIB (lrclib.net)");
+				subtitle: "Lyrics from LRCLIB (lrclib.net)",
+				closable: true);
 			Content = searchPage;
 		}
 
@@ -191,7 +192,8 @@ namespace Lyrious.UILib.Setlists
 				new DockPanel { Children = { add, new ScrollViewer { Content = lyrics } } },
 				backText: "‹ Search results",
 				back: () => Content = searchPage,
-				subtitle: subtitle);
+				subtitle: subtitle,
+				closable: true);
 		}
 
 		private static TextBlock Message(string text) => new() { Text = text, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };

@@ -9,11 +9,6 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>The app's settings, kept on this device (<see cref="App.Settings"/>). Changes apply at once.</summary>
 	public sealed class SettingsView : UserControl
 	{
-		private const string CloseIcon = "M6,6 L18,18 M18,6 L6,18";
-
-		/// <summary>Raised when the user closes the page.</summary>
-		public event Action? Closed;
-
 		public SettingsView()
 		{
 			var nextOnStop = new ToggleSwitch
@@ -24,8 +19,6 @@ namespace Lyrious.UILib.Setlists
 			};
 			nextOnStop.IsCheckedChanged += (_, _) => PlaybackSettings.NextSongOnStopAtEnd = nextOnStop.IsChecked == true;
 
-			var close = HomeView.IconButton(CloseIcon, "Close settings");
-			close.Click += (_, _) => Closed?.Invoke();
 
 			var form = new StackPanel
 			{
@@ -39,7 +32,7 @@ namespace Lyrious.UILib.Setlists
 				},
 			};
 
-			Content = PageLayout.Page("Settings", form, subtitle: "Kept on this device", titleAction: close);
+			Content = PageLayout.Page("Settings", form, subtitle: "Kept on this device", closable: true);
 		}
 
 		/// <summary>One setting: its name and an explanation, with its control at the right.</summary>

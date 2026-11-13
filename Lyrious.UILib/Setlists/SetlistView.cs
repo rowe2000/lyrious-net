@@ -33,7 +33,8 @@ namespace Lyrious.UILib.Setlists
 				setlist.Name,
 				PageLayout.List(rows, "There are no songs in this setlist yet."),
 				subtitle: entries.Count == 1 ? "1 song" : $"{entries.Count} songs",
-				titleAction: addButton);
+				titleAction: addButton,
+				closable: true);
 		}
 	}
 }

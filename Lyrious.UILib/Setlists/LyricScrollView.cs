@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -44,8 +46,25 @@ namespace Lyrious.UILib.Setlists
 		private ScrollViewer? scroller;
 		private double scrollRemainder;
 
-		/// <summary>How fast the lyrics scroll by themselves, in pixels per second.</summary>
+		// Timed scrolling: the lyrics' time tags, and from them a timeline of (seconds, content y)
+		// that should be at the middle of the view at that time. Rebuilt when the layout changes.
+		private IReadOnlyList<TimeMarker> markers = [];
+		private Control? lyricsContent;
+		private List<(double Seconds, double Y)>? timeline;
+		private Size timelineFor;
+		private double playbackStart;
+
+		/// <summary>
+		/// Whether the song's time tags set the scrolling (instead of <see cref="ScrollSpeed"/>): each
+		/// tagged place reaches the middle of the view at its time.
+		/// </summary>
+		public bool IsTimed => markers.Count > 0;
+
+		/// <summary>How fast the lyrics scroll by themselves, in pixels per second (when not <see cref="IsTimed"/>).</summary>
 		public double ScrollSpeed { get; set; } = 12;
+
+		/// <summary>The song shown.</summary>
+		public Guid SongId => song.Id;
 
 		/// <summary>Whether the lyrics editor is open (so the page shouldn't be replaced under the user).</summary>
 		public bool IsEditing => titleActions.Content != editButton;
@@ -104,6 +123,12 @@ namespace Lyrious.UILib.Setlists
 			{
 				scroller.Offset = new Vector(scroller.Offset.X, 0);
 				scrollRemainder = 0;
+				if (IsTimed && scrollTimer.IsEnabled)
+				{
+					// Back to the start of the song's timeline.
+					playbackStart = 0;
+					scrollClock.Restart();
+				}
 			}
 		}
 
@@ -129,6 +154,10 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				scrollRemainder = 0;
+				// Timed: pick up the song's timeline where the lyrics are now (0:00 at the top).
+				playbackStart = IsTimed && scroller.Offset.Y > 0 && Timeline() is { } points
+					? TimeAt(points, scroller.Offset.Y + scroller.Viewport.Height / 2)
+					: 0;
 				scrollClock.Restart();
 				scrollTimer.Start();
 			}
@@ -150,12 +179,22 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			var seconds = scrollClock.Elapsed.TotalSeconds;
-			scrollClock.Restart();
 			if (scroller.Extent.Height <= 0)
 			{
 				return; // Not laid out yet (just opened); the end isn't known.
 			}
+
+			if (IsTimed && Timeline() is { } points)
+			{
+				// Where the song's timeline says the lyrics should be now (not a step from where they are).
+				var now = playbackStart + scrollClock.Elapsed.TotalSeconds;
+				var target = Math.Clamp(CenterAt(points, now) - scroller.Viewport.Height / 2, 0, MaxOffset(scroller));
+				scroller.Offset = new Vector(scroller.Offset.X, Math.Round(target));
+				return;
+			}
+
+			var seconds = scrollClock.Elapsed.TotalSeconds;
+			scrollClock.Restart();
 
 			// Offsets snap to whole pixels on some platforms, so the fractions are carried over.
 			scrollRemainder += ScrollSpeed * seconds;
@@ -169,6 +208,95 @@ namespace Lyrious.UILib.Setlists
 			// At the end it simply stays there, still playing, until the user stops it.
 			var y = Math.Min(scroller.Offset.Y + step, MaxOffset(scroller));
 			scroller.Offset = new Vector(scroller.Offset.X, y);
+		}
+
+		/// <summary>
+		/// The timeline from the time tags: (seconds, the content's y at the tag), in time order, with y
+		/// never going back up. It starts at 0:00 with the top of the lyrics in view. Built after layout,
+		/// and again when the view's size changes (lines wrap differently). Null before layout.
+		/// </summary>
+		private List<(double Seconds, double Y)>? Timeline()
+		{
+			if (scroller == null || lyricsContent == null || scroller.Extent.Height <= 0)
+			{
+				return null;
+			}
+
+			if (timeline != null && timelineFor == scroller.Viewport)
+			{
+				return timeline;
+			}
+
+			var points = new List<(double Seconds, double Y)>();
+			foreach (var marker in markers.OrderBy(m => m.Time))
+			{
+				if (marker.Anchor.TranslatePoint(new Point(0, marker.Anchor.Bounds.Height / 2), lyricsContent) is { } place
+				    && (points.Count == 0 || (marker.Time.TotalSeconds > points[^1].Seconds && place.Y >= points[^1].Y)))
+				{
+					points.Add((marker.Time.TotalSeconds, place.Y));
+				}
+			}
+
+			if (points.Count == 0)
+			{
+				return null;
+			}
+
+			// At 0:00 the lyrics start at the top: the middle of the view shows the content's y = half its height.
+			if (points[0].Seconds > 0)
+			{
+				points.Insert(0, (0, Math.Min(scroller.Viewport.Height / 2, points[0].Y)));
+			}
+
+			timeline = points;
+			timelineFor = scroller.Viewport;
+			return points;
+		}
+
+		/// <summary>The content y that should be in the middle of the view at a time; after the last tag, at the last section's pace.</summary>
+		private static double CenterAt(List<(double Seconds, double Y)> points, double seconds)
+		{
+			if (points.Count == 1 || seconds <= points[0].Seconds)
+			{
+				return points[0].Y;
+			}
+
+			for (var i = 1; i < points.Count; i++)
+			{
+				if (seconds <= points[i].Seconds)
+				{
+					var (t0, y0) = points[i - 1];
+					var (t1, y1) = points[i];
+					return y0 + (y1 - y0) * (seconds - t0) / (t1 - t0);
+				}
+			}
+
+			var (ta, ya) = points[^2];
+			var (tb, yb) = points[^1];
+			return yb + (yb - ya) / (tb - ta) * (seconds - tb);
+		}
+
+		/// <summary>The time at which a content y is in the middle of the view (the reverse of <see cref="CenterAt"/>).</summary>
+		private static double TimeAt(List<(double Seconds, double Y)> points, double y)
+		{
+			if (points.Count == 1 || y <= points[0].Y)
+			{
+				return points[0].Seconds;
+			}
+
+			for (var i = 1; i < points.Count; i++)
+			{
+				if (y <= points[i].Y)
+				{
+					var (t0, y0) = points[i - 1];
+					var (t1, y1) = points[i];
+					return y1 > y0 ? t0 + (t1 - t0) * (y - y0) / (y1 - y0) : t1;
+				}
+			}
+
+			var (ta, ya) = points[^2];
+			var (tb, yb) = points[^1];
+			return yb > ya ? tb + (tb - ta) / (yb - ya) * (y - yb) : tb;
 		}
 
 		/// <summary>Whether the lyrics are scrolled all the way to the bottom (or fit without scrolling).</summary>
@@ -185,19 +313,35 @@ namespace Lyrious.UILib.Setlists
 		private void ShowLyrics()
 		{
 			var hasLyrics = !string.IsNullOrWhiteSpace(song.Lyrics);
-			var scroller = new ScrollViewer
+			Control text;
+			markers = [];
+			timeline = null;
+			if (hasLyrics && ChordPro.HasFormatting(song.Lyrics))
 			{
-				// Transparent, so a tap anywhere in the lyrics area counts, not only on the letters.
-				Background = Brushes.Transparent,
-				Content = new TextBlock
+				// Chords above the words they belong to, headings, notes, and time tags for the scrolling.
+				var rendered = ChordPro.Render(song.Lyrics, fontSize: 24, lineHeight: 36, song.Tempo, song.Beat);
+				text = rendered.Content;
+				markers = rendered.Markers;
+			}
+			else
+			{
+				text = new TextBlock
 				{
 					Text = hasLyrics ? song.Lyrics : "There are no lyrics for this song yet. Add them with the pencil button.",
 					FontSize = hasLyrics ? 24 : 16,
 					LineHeight = hasLyrics ? 36 : double.NaN,
 					Opacity = hasLyrics ? 1 : 0.7,
 					TextWrapping = TextWrapping.Wrap,
-					Margin = new Thickness(0, 0, 0, 48),
-				},
+				};
+			}
+
+			text.Margin = new Thickness(0, 0, 0, 48);
+			lyricsContent = text;
+			var scroller = new ScrollViewer
+			{
+				// Transparent, so a tap anywhere in the lyrics area counts, not only on the letters.
+				Background = Brushes.Transparent,
+				Content = text,
 			};
 			// A tap (not a drag to scroll) toggles focus mode.
 			scroller.Tapped += (_, e) =>

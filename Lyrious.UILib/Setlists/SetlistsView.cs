@@ -41,7 +41,8 @@ namespace Lyrious.UILib.Setlists
 				"Setlists",
 				new DockPanel { Children = { nameRow, list } },
 				subtitle: $"{group.Name} · choose a setlist",
-				titleAction: addButton);
+				titleAction: addButton,
+				closable: true);
 		}
 	}
 }

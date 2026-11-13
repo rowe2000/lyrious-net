@@ -38,7 +38,8 @@ namespace Lyrious.UILib.Setlists
 				"Bands",
 				new DockPanel { Children = { nameRow, list } },
 				subtitle: "Choose a band",
-				titleAction: addButton);
+				titleAction: addButton,
+				closable: true);
 		}
 
 		/// <summary>One band: its name, then its members, one per line.</summary>
