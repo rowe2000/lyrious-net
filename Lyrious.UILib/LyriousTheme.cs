@@ -14,6 +14,8 @@ namespace Lyrious.UILib
 		public const string CardBrush = "LyriousCardBrush";
 		public const string SuccessBrush = "LyriousSuccessBrush";
 		public const string ForegroundBrush = "LyriousForegroundBrush";
+		/// <summary>The outline of a selected list row (the current item is filled with the accent colour instead).</summary>
+		public const string SelectionBrush = "LyriousSelectionBrush";
 
 		public static void AddTo(IResourceDictionary resources)
 		{
@@ -23,6 +25,7 @@ namespace Lyrious.UILib
 				[CardBrush] = new SolidColorBrush(Color.Parse("#F3F3F3")),
 				[SuccessBrush] = new SolidColorBrush(Color.Parse("#0F7B0F")),
 				[ForegroundBrush] = new SolidColorBrush(Color.Parse("#1B1B1B")),
+				[SelectionBrush] = new SolidColorBrush(Color.Parse("#0067C0")),
 			};
 			resources.ThemeDictionaries[ThemeVariant.Dark] = new ResourceDictionary
 			{
@@ -30,6 +33,7 @@ namespace Lyrious.UILib
 				[CardBrush] = new SolidColorBrush(Color.Parse("#2B2B2B")),
 				[SuccessBrush] = new SolidColorBrush(Color.Parse("#6CCB5F")),
 				[ForegroundBrush] = new SolidColorBrush(Color.Parse("#FFFFFF")),
+				[SelectionBrush] = new SolidColorBrush(Color.Parse("#60CDFF")),
 			};
 		}
 	}

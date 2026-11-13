@@ -18,8 +18,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised with the selected songs, in songbook order, when the user adds them.</summary>
 		public event Action<IReadOnlyList<SongDetails>>? SongsAdded;
 
-		/// <summary>Raised when the user goes back to the setlist without adding.</summary>
-		public event Action? BackRequested;
+
+		/// <summary>Raised when the user wants to find a song on the internet for this setlist.</summary>
+		public event Action? InternetSearchRequested;
 
 		/// <param name="songsInSetlist">Ids of the songs the setlist already has.</param>
 		public AddSongsView(SetlistSummary setlist, IReadOnlyList<SongDetails> songbook, IReadOnlySet<Guid> songsInSetlist)
@@ -44,7 +45,12 @@ namespace Lyrious.UILib.Setlists
 
 			var rows = songbook.Select(song => (Control)SongRow(song, songsInSetlist.Contains(song.Id), Toggle)).ToArray();
 
-			var content = new DockPanel();
+			// At the top: find a song that isn't in the songbook yet.
+			var internet = new Button { Content = "Find song on the internet…", Margin = new Thickness(0, 0, 0, 16) };
+			internet.Click += (_, _) => InternetSearchRequested?.Invoke();
+			DockPanel.SetDock(internet, Dock.Top);
+
+			var content = new DockPanel { Children = { internet } };
 			if (rows.Length > 0)
 			{
 				content.Children.Add(add);
@@ -55,9 +61,7 @@ namespace Lyrious.UILib.Setlists
 			Content = PageLayout.Page(
 				"Add songs",
 				content,
-				backText: $"‹ {setlist.Name}",
-				back: () => BackRequested?.Invoke(),
-				subtitle: "Select songs from the songbook");
+				subtitle: $"To {setlist.Name} · select songs from the songbook");
 		}
 
 		/// <summary>One songbook song: name, then "in setlist" and key; stays highlighted while selected.</summary>

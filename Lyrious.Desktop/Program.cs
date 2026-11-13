@@ -17,6 +17,7 @@ internal class Program
         var auth = new HttpAuthService(args.Length > 0 ? args[0] : "http://localhost:7000");
         App.AuthService = auth;
         App.SetlistService = new HttpSetlistService(auth);
+        App.CredentialStore = DesktopCredentialStore.Create();
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

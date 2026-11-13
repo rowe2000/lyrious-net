@@ -24,6 +24,7 @@ internal sealed partial class Program
         var auth = new HttpAuthService(new HttpClient { BaseAddress = apiBaseUrl });
         App.AuthService = auth;
         App.SetlistService = new HttpSetlistService(auth);
+        App.CredentialStore = new BrowserCredentialStore();
 
         return BuildAvaloniaApp()
             .WithInterFont()

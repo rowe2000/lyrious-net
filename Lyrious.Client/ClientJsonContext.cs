@@ -41,6 +41,14 @@ internal sealed record SongDto(System.Guid Id, string Name, string? Key, float T
 internal sealed record SongbookDto(System.Guid Id, string Name, System.Guid? GroupId, bool Removed);
 
 /// <summary>A membership; the role (0 Member, 1 Conductor, 2 Admin) and status (2 Approved) are sent as numbers, as the API does.</summary>
+/// <summary>A new song, with every field the API stores (it replaces all fields with what it receives).</summary>
+internal sealed record NewSongDto(
+    System.Guid Id, string Name, string Key, float Tempo, string Beat, int LengthMilliSeconds, string Lyrics,
+    System.Guid SongbookId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed);
+
+/// <summary>A search result from LRCLIB (https://lrclib.net/docs).</summary>
+internal sealed record LrclibTrack(long Id, string? TrackName, string? ArtistName, string? AlbumName, double? Duration, bool Instrumental, string? PlainLyrics);
+
 /// <summary>A member's public name only; the API sends more, which is ignored.</summary>
 internal sealed record MemberDto(System.Guid Id, string? Name, string? UserName);
 
@@ -68,4 +76,6 @@ internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int Membershi
 [JsonSerializable(typeof(SongbookDto[]))]
 [JsonSerializable(typeof(MembershipDto[]))]
 [JsonSerializable(typeof(MemberDto[]))]
+[JsonSerializable(typeof(NewSongDto[]))]
+[JsonSerializable(typeof(LrclibTrack[]))]
 internal sealed partial class ClientJsonContext : JsonSerializerContext;

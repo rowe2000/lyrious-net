@@ -1,6 +1,8 @@
 using System;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Lyrious.UILib.Login;
 using Lyrious.UILib.Setlists;
 
@@ -10,8 +12,8 @@ namespace Lyrious.UILib
 	/// The app's main content. Desktop shows it inside <see cref="MainWindow"/>; single-view hosts
 	/// such as the browser, which have no windows, show it directly. It starts with onboarding
 	/// (login, or creating an account), then shows the signed-in app (<see cref="HomeView"/>).
-	/// Where the platform has a password store, it offers to save the password after login and
-	/// fills in the login form from it.
+	/// Where the platform has a password store, it offers to save the password after login, logs in
+	/// with the saved password when the app starts, and fills in the login form from it.
 	/// </summary>
 	public class MainView : UserControl
 	{
@@ -21,14 +23,76 @@ namespace Lyrious.UILib
 
 		public MainView()
 		{
-			ShowLogin();
+			_ = StartAsync();
 		}
+
+		/// <summary>
+		/// At app start, logs in with the saved password if there is one, so the login form is
+		/// skipped. If that fails, the form is shown with the reason and the saved login filled in.
+		/// Only done at start: after logging out, the form is shown as usual.
+		/// </summary>
+		private async Task StartAsync()
+		{
+			Content = Splash("Logging in…");
+
+			SavedCredential? saved;
+			try
+			{
+				saved = await App.CredentialStore.LoadAsync();
+			}
+			catch (Exception)
+			{
+				saved = null; // A password store problem must never stop anyone from logging in by hand.
+			}
+
+			if (saved == null)
+			{
+				ShowLogin();
+				return;
+			}
+
+			savedCredential = saved;
+			string error;
+			try
+			{
+				var result = await App.AuthService.LoginAsync(saved.UserName, saved.Password);
+				if (result.User is { } user)
+				{
+					ShowHome(user, saved);
+					return;
+				}
+
+				error = result.Error ?? "Login failed.";
+			}
+			catch (Exception ex)
+			{
+				error = $"Couldn't reach the server. {ex.Message}";
+			}
+
+			var login = ShowLogin(null, null, fillInSaved: false);
+			login.UserName = saved.UserName;
+			login.Password = saved.Password;
+			login.ShowError($"Couldn't log in with the saved password. {error}");
+		}
+
+		private static Control Splash(string text) => new StackPanel
+		{
+			Spacing = 12,
+			HorizontalAlignment = HorizontalAlignment.Center,
+			VerticalAlignment = VerticalAlignment.Center,
+			Children =
+			{
+				new TextBlock { Text = text, FontSize = 18, HorizontalAlignment = HorizontalAlignment.Center },
+				new ProgressBar { IsIndeterminate = true, Width = 200 },
+			},
+		};
 
 		private void ShowLogin() => ShowLogin(null, null);
 
 		/// <param name="notice">A confirmation to show above the form, e.g. after a password reset.</param>
 		/// <param name="userName">Prefills the username field (and then no saved password is filled in).</param>
-		private void ShowLogin(string? notice, string? userName)
+		/// <param name="fillInSaved">Whether to fill in the saved password (when no username is given).</param>
+		private LoginViewModel ShowLogin(string? notice, string? userName, bool fillInSaved = true)
 		{
 			var login = new LoginViewModel(App.AuthService);
 			login.LoggedIn += (user, credential) => _ = AfterLoginAsync(user, credential);
@@ -43,10 +107,12 @@ namespace Lyrious.UILib
 			Content = view;
 
 			// After a password reset the saved password is out of date, so it's not filled in then.
-			if (userName == null)
+			if (userName == null && fillInSaved)
 			{
 				_ = FillInSavedPasswordAsync(login);
 			}
+
+			return login;
 		}
 
 		private async Task FillInSavedPasswordAsync(LoginViewModel login)

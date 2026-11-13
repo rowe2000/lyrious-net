@@ -37,6 +37,9 @@ namespace Lyrious.UILib.Setlists
 
 		Task<SetlistSummary> CreateSetlistAsync(Guid groupId, string name, CancellationToken cancellationToken = default);
 
+		/// <summary>Deletes the setlist; its songs stay in the songbook.</summary>
+		Task DeleteSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default);
+
 		/// <summary>The setlist's songs in order.</summary>
 		Task<IReadOnlyList<SetlistEntry>> GetEntriesAsync(Guid setlistId, CancellationToken cancellationToken = default);
 
@@ -45,6 +48,18 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>The songs in the group's songbooks, by name.</summary>
 		Task<IReadOnlyList<SongDetails>> GetSongbookSongsAsync(Guid groupId, CancellationToken cancellationToken = default);
+
+		/// <summary>Searches an online lyrics database by title and/or artist.</summary>
+		Task<IReadOnlyList<InternetSong>> SearchInternetAsync(string query, CancellationToken cancellationToken = default);
+
+		/// <summary>Adds a song to the group's songbook (its first one) and returns it.</summary>
+		Task<SongDetails> CreateSongAsync(Guid groupId, string name, string lyrics, TimeSpan duration, CancellationToken cancellationToken = default);
+
+		/// <summary>Deletes the song from the songbook (and so from every setlist).</summary>
+		Task DeleteSongAsync(Guid songId, CancellationToken cancellationToken = default);
+
+		/// <summary>Stores the song's name, key, tempo, beat and lyrics, and returns the updated song.</summary>
+		Task<SongDetails> UpdateSongAsync(SongDetails song, CancellationToken cancellationToken = default);
 
 		/// <summary>Replaces the song's lyrics and returns the updated song.</summary>
 		Task<SongDetails> UpdateLyricsAsync(Guid songId, string lyrics, CancellationToken cancellationToken = default);
@@ -70,6 +85,9 @@ namespace Lyrious.UILib.Setlists
 
 	public sealed record SongDetails(Guid Id, string Name, string Key, float Tempo, string Beat, string Lyrics);
 
+	/// <summary>A song found online: title, artist, album, length and plain lyrics (empty if the database has none).</summary>
+	public sealed record InternetSong(string Title, string Artist, string Album, TimeSpan Duration, string Lyrics, bool Instrumental);
+
 	/// <summary>A song at a position in a setlist.</summary>
 	public sealed record SetlistEntry(Guid Id, Guid SetlistId, int Position, SongDetails Song);
 
@@ -86,9 +104,14 @@ namespace Lyrious.UILib.Setlists
 		public Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary?> GetSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary> CreateSetlistAsync(Guid groupId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task DeleteSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistEntry>> GetEntriesAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistEntry?> GetEntryAsync(Guid setlistItemId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SongDetails>> GetSongbookSongsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<IReadOnlyList<InternetSong>> SearchInternetAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<SongDetails> CreateSongAsync(Guid groupId, string name, string lyrics, TimeSpan duration, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task DeleteSongAsync(Guid songId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<SongDetails> UpdateSongAsync(SongDetails song, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SongDetails> UpdateLyricsAsync(Guid songId, string lyrics, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task AddSongsAsync(Guid setlistId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SelectSetlistAsync(Guid groupId, Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();

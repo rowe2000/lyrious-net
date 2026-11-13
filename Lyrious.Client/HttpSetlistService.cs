@@ -22,6 +22,21 @@ public sealed class HttpSetlistService(HttpAuthService auth) : ISetlistService
 {
     private HttpClient Http => auth.Http;
 
+    /// <summary>LRCLIB, a free online lyrics database; it allows calls from any web page (CORS).</summary>
+    private static readonly HttpClient Lrclib = CreateLrclibClient();
+
+    private static HttpClient CreateLrclibClient()
+    {
+        var client = new HttpClient { BaseAddress = new Uri("https://lrclib.net/"), Timeout = TimeSpan.FromSeconds(20) };
+        // LRCLIB asks apps to identify themselves; browsers don't let pages set the User-Agent.
+        if (!OperatingSystem.IsBrowser())
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Lyrious/1.0");
+        }
+
+        return client;
+    }
+
     public async Task<GroupSummary?> GetCurrentGroupAsync(CancellationToken cancellationToken = default)
     {
         var groups = await GetGroupsAsync(cancellationToken);
@@ -92,6 +107,87 @@ public sealed class HttpSetlistService(HttpAuthService auth) : ISetlistService
         var memberId = auth.MemberId ?? throw new InvalidOperationException("You're not logged in.");
         await ChangeAsync("member", memberId, member => member["joinedGroupId"] = groupId.ToString(), cancellationToken);
         auth.JoinedGroupId = groupId;
+    }
+
+    public async Task<IReadOnlyList<InternetSong>> SearchInternetAsync(string query, CancellationToken cancellationToken = default)
+    {
+        using var response = await Lrclib.GetAsync($"api/search?q={Uri.EscapeDataString(query)}", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException($"The lyrics database answered {(int)response.StatusCode} {response.ReasonPhrase}.", null, response.StatusCode);
+        }
+
+        var tracks = await response.Content.ReadFromJsonAsync(ClientJsonContext.Default.LrclibTrackArray, cancellationToken) ?? [];
+        return tracks
+            .Where(track => !string.IsNullOrWhiteSpace(track.TrackName))
+            .Select(track => new InternetSong(
+                track.TrackName!.Trim(),
+                track.ArtistName?.Trim() ?? "",
+                track.AlbumName?.Trim() ?? "",
+                TimeSpan.FromSeconds(track.Duration ?? 0),
+                track.PlainLyrics?.Trim() ?? "",
+                track.Instrumental))
+            .ToArray();
+    }
+
+    public async Task<SongDetails> CreateSongAsync(Guid groupId, string name, string lyrics, TimeSpan duration, CancellationToken cancellationToken = default)
+    {
+        var songbook = (await GetAsync("api/songbook", ClientJsonContext.Default.SongbookDtoArray, cancellationToken) ?? [])
+                       .Where(book => book.GroupId == groupId && !book.Removed)
+                       .OrderBy(book => book.Name, StringComparer.CurrentCultureIgnoreCase)
+                       .FirstOrDefault()
+                       ?? throw new InvalidOperationException("The band has no songbook.");
+
+        // The server keeps at most 100 characters of name and 5000 of lyrics. Ids are chosen by the client.
+        var now = DateTime.Now;
+        var song = new NewSongDto(
+            Guid.NewGuid(),
+            name.Length > 100 ? name[..100] : name,
+            Key: "",
+            Tempo: 120,
+            Beat: "4/4",
+            LengthMilliSeconds: duration > TimeSpan.Zero ? (int)duration.TotalMilliseconds : (int)TimeSpan.FromMinutes(3).TotalMilliseconds,
+            Lyrics: lyrics.Length > 5000 ? lyrics[..5000] : lyrics,
+            songbook.Id, now, now, Removed: false);
+        await PostAsync("api/song", [song], ClientJsonContext.Default.NewSongDtoArray, cancellationToken);
+        return new SongDetails(song.Id, song.Name, song.Key, song.Tempo, song.Beat, song.Lyrics);
+    }
+
+    /// <summary>Deletes the setlist (the API keeps it, marked as removed). Its songs stay in the songbook.</summary>
+    public Task DeleteSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default)
+        => DeleteAsync($"api/setlist/{setlistId}", cancellationToken);
+
+    /// <summary>
+    /// Deletes the song. The API keeps it, marked as removed; setlist entries that point to it
+    /// are left as they are and skipped when a setlist is read (<see cref="GetEntriesAsync"/>).
+    /// </summary>
+    public Task DeleteSongAsync(Guid songId, CancellationToken cancellationToken = default)
+        => DeleteAsync($"api/song/{songId}", cancellationToken);
+
+    private async Task DeleteAsync(string path, CancellationToken cancellationToken)
+    {
+        using var request = Authorized(HttpMethod.Delete, path);
+        using var response = await Http.SendAsync(request, cancellationToken);
+        ThrowIfFailed(response);
+    }
+
+    public async Task<SongDetails> UpdateSongAsync(SongDetails song, CancellationToken cancellationToken = default)
+    {
+        // The server's limits: name 100 characters, key and beat 10, lyrics 5000.
+        static string Limit(string value, int max) => value.Length > max ? value[..max] : value;
+
+        await ChangeAsync("song", song.Id, json =>
+        {
+            json["name"] = Limit(song.Name, 100);
+            json["key"] = Limit(song.Key, 10);
+            json["tempo"] = song.Tempo;
+            json["beat"] = Limit(song.Beat, 10);
+            json["lyrics"] = Limit(song.Lyrics, 5000);
+        }, cancellationToken);
+
+        var stored = await GetAsync($"api/song/{song.Id}", ClientJsonContext.Default.SongDto, cancellationToken)
+                     ?? throw new InvalidOperationException("The song no longer exists.");
+        return ToDetails(stored);
     }
 
     public async Task<SongDetails> UpdateLyricsAsync(Guid songId, string lyrics, CancellationToken cancellationToken = default)

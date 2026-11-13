@@ -15,15 +15,16 @@ namespace Lyrious.UILib.Setlists
 		/// <paramref name="titleAction"/> is a control (e.g. an add button) shown at the right of the title.
 		/// </summary>
 		public static Control Page(string title, Control content, string? backText = null, Action? back = null, string? subtitle = null, Control? titleAction = null)
+			=> Page(title, content, backText != null && back != null ? BackLink(backText, back) : null, subtitle, titleAction);
+
+		private static Control Page(string title, Control content, Control? backLink, string? subtitle = null, Control? titleAction = null)
 		{
 			var column = new DockPanel { MaxWidth = 640, Margin = new Thickness(16), HorizontalAlignment = HorizontalAlignment.Stretch };
 
 			var header = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 16) };
-			if (backText != null && back != null)
+			if (backLink != null)
 			{
-				var link = new HyperlinkButton { Content = backText, Padding = new Thickness(0) };
-				link.Click += (_, _) => back();
-				header.Children.Add(link);
+				header.Children.Add(backLink);
 			}
 
 			var titleText = new TextBlock { Text = title, FontSize = 28, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
@@ -59,6 +60,21 @@ namespace Lyrious.UILib.Setlists
 		public static (Button AddButton, Control NameRow) AddByName(string description, string placeholder, Action<string> add)
 		{
 			var addButton = HomeView.IconButton(AddIcon, description);
+			var (row, show) = NameRow(placeholder, add);
+			addButton.Click += (_, _) => show();
+			return (addButton, row);
+		}
+
+		/// <summary>A "+" button for a page title (e.g. to open a menu of ways to add something).</summary>
+		public static Button AddButton(string description) => HomeView.IconButton(AddIcon, description);
+
+		/// <summary>
+		/// A hidden row with a name box, Add and Cancel; <c>Show</c> reveals it and focuses the box.
+		/// Add (or Enter) passes the trimmed name to <paramref name="add"/>; Cancel (or Escape) hides it.
+		/// Dock the row at the top of the page content.
+		/// </summary>
+		public static (Control Row, Action Show) NameRow(string placeholder, Action<string> add)
+		{
 			var nameBox = new TextBox { PlaceholderText = placeholder };
 			var confirm = new Button { Content = "Add", IsEnabled = false };
 			confirm.Classes.Add("accent");
@@ -84,11 +100,12 @@ namespace Lyrious.UILib.Setlists
 				}
 			}
 
-			addButton.Click += (_, _) =>
+			void Show()
 			{
 				row.IsVisible = true;
 				nameBox.Focus();
-			};
+			}
+
 			nameBox.TextChanged += (_, _) => confirm.IsEnabled = !string.IsNullOrWhiteSpace(nameBox.Text);
 			nameBox.KeyDown += (_, e) =>
 			{
@@ -105,11 +122,33 @@ namespace Lyrious.UILib.Setlists
 			};
 			confirm.Click += (_, _) => Submit();
 			cancel.Click += (_, _) => Close();
-			return (addButton, row);
+			return (row, Show);
+		}
+
+		/// <summary>A back link for a page header, e.g. "‹ Setlist 1".</summary>
+		private static HyperlinkButton BackLink(string text, Action back)
+		{
+			var link = new HyperlinkButton { Content = text, Padding = new Thickness(0) };
+			link.Click += (_, _) => back();
+			return link;
 		}
 
 		/// <summary>A full-width, left-aligned button for one list row (easy to tap on phones).</summary>
 		public static Button ListRow(string text, string? detail, Action onClick)
+		{
+			var button = new Button
+			{
+				Content = RowContent(text, detail),
+				HorizontalAlignment = HorizontalAlignment.Stretch,
+				HorizontalContentAlignment = HorizontalAlignment.Stretch,
+				Padding = new Thickness(16, 12),
+			};
+			button.Click += (_, _) => onClick();
+			return button;
+		}
+
+		/// <summary>A list row's text, with an optional detail at the right (e.g. key, tempo and beat).</summary>
+		public static Control RowContent(string text, string? detail)
 		{
 			var row = new DockPanel();
 			if (!string.IsNullOrEmpty(detail))
@@ -120,15 +159,62 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			row.Children.Add(new TextBlock { Text = text, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+			return row;
+		}
 
-			var button = new Button
+		// An arrow into a box's opening: "open this".
+		private const string OpenIcon = "M9,6 L15,12 L9,18";
+
+		// A trash can: lid, handle, can and two lines on it.
+		private const string TrashIcon = "M5,7 H19 M10,7 V5 H14 V7 M7,7 L8,20 H16 L17,7 M10,11 V16 M14,11 V16";
+
+		// A pencil: the body, its tip, and the line where the tip meets the body.
+		private const string EditIcon = "M4,20 L8,19 L19,8 L16,5 L5,16 Z M14,7 L17,10";
+
+		/// <summary>A toolbar button that edits the selected item.</summary>
+		public static Button EditButton(string description, Action edit)
+		{
+			var button = HomeView.IconButton(EditIcon, description);
+			button.Click += (_, _) => edit();
+			return button;
+		}
+
+		/// <summary>A toolbar button that opens (makes current) the selected item, like a double click does.</summary>
+		public static Button OpenButton(string description, Action open)
+		{
+			var button = HomeView.IconButton(OpenIcon, description);
+			button.Click += (_, _) => open();
+			return button;
+		}
+
+		/// <summary>A trash button that asks first, in a small popup with <paramref name="question"/>, Delete and Cancel.</summary>
+		public static Button DeleteButton(string description, string question, Action delete)
+		{
+			var button = HomeView.IconButton(TrashIcon, description);
+
+			var confirm = new Button { Content = "Delete", Foreground = Brushes.White };
+			confirm.Bind(Button.BackgroundProperty, confirm.GetResourceObservable(LyriousTheme.ErrorBrush));
+			var cancel = new Button { Content = "Cancel" };
+			var flyout = new Flyout
 			{
-				Content = row,
-				HorizontalAlignment = HorizontalAlignment.Stretch,
-				HorizontalContentAlignment = HorizontalAlignment.Stretch,
-				Padding = new Thickness(16, 12),
+				Content = new StackPanel
+				{
+					Spacing = 12,
+					MaxWidth = 280,
+					Children =
+					{
+						new TextBlock { Text = question, TextWrapping = TextWrapping.Wrap },
+						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { confirm, cancel } },
+					},
+				},
 			};
-			button.Click += (_, _) => onClick();
+			confirm.Click += (_, _) =>
+			{
+				flyout.Hide();
+				delete();
+			};
+			cancel.Click += (_, _) => flyout.Hide();
+			button.Flyout = flyout;
 			return button;
 		}
 

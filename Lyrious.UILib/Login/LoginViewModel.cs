@@ -37,6 +37,9 @@ namespace Lyrious.UILib.Login
 			SuccessMessage = message;
 		}
 
+		/// <summary>Shows an error above the form, e.g. when logging in with the saved password failed.</summary>
+		public void ShowError(string message) => ErrorMessage = message;
+
 		public Task LogInAsync() => RunAsync(async () =>
 		{
 			var credential = new SavedCredential(UserName.Trim(), Password);
