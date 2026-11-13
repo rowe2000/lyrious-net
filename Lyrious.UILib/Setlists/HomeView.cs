@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Lyrious.UILib.Login;
 using Path = Avalonia.Controls.Shapes.Path;
 using Shape = Avalonia.Controls.Shapes.Shape;
@@ -21,6 +22,9 @@ namespace Lyrious.UILib.Setlists
 	/// after use. Opens on the page chosen by <see cref="StartPage.DetermineAsync"/> and saves the
 	/// selected setlist and song to the group, so the next login resumes there. Tapping the lyrics
 	/// turns focus mode on or off: drawers and their buttons are hidden, leaving just the song.
+	/// The band shown is the member's joined band (<c>Member.JoinedGroup</c>): the one they follow
+	/// live. When another member changes its current setlist or song, or starts or stops playing,
+	/// the app follows.
 	/// </summary>
 	public sealed class HomeView : UserControl
 	{
@@ -51,7 +55,7 @@ namespace Lyrious.UILib.Setlists
 		private readonly Grid topRow;
 		private readonly PlaybackBar playbackBar = new() { IsVisible = false };
 
-		// The current setlist's songs, for previous and next in the playback toolbar.
+		// The current setlist's songs, for the next song in the playback toolbar.
 		private IReadOnlyList<SetlistEntry> playbackEntries = [];
 
 		// Focus mode: only the lyrics page, without drawers or their buttons. How each drawer was
@@ -75,6 +79,9 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Raised when the user wants to change their password.</summary>
 		public event Action? ChangePasswordRequested;
+
+		/// <summary>Raised when the user wants to see or change the server (host) the app syncs with.</summary>
+		public event Action? SyncRequested;
 
 		/// <summary>Raised when the user wants to log out.</summary>
 		public event Action? LogOutRequested;
@@ -129,17 +136,12 @@ namespace Lyrious.UILib.Setlists
 				if (page.Content is LyricScrollView lyrics)
 				{
 					lyrics.SetAutoScroll(!lyrics.IsAutoScrolling);
+					// The other members that have joined the band start or stop too.
+					_ = SendPlaybackAsync(lyrics.IsAutoScrolling);
 				}
 			};
-			playbackBar.SpeedChanged += () =>
-			{
-				if (page.Content is LyricScrollView lyrics)
-				{
-					lyrics.ScrollSpeed = ScrollSpeed;
-				}
-			};
-			playbackBar.PreviousRequested += () => StepSong(-1);
-			playbackBar.NextRequested += () => StepSong(+1);
+			playbackBar.RestartRequested += () => (page.Content as LyricScrollView)?.ScrollToStart();
+			playbackBar.NextRequested += NextSong;
 			setlistDrawer.Pane = SetlistDrawerContent(setlistButton);
 
 			menuDrawer = Drawer(SplitViewPanePlacement.Left, 280);
@@ -187,7 +189,135 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 
+			// Follow the joined band's current setlist and song, and its play/stop, when another member changes them.
+			service.GroupChanged += OnGroupChanged;
+			service.PlaybackChanged += OnPlaybackChanged;
+			_ = StartLiveUpdatesAsync();
+
 			_ = StartAsync();
+		}
+
+		/// <summary>Starts receiving other members' changes; the app works without them if the hub can't be reached.</summary>
+		private async Task StartLiveUpdatesAsync()
+		{
+			try
+			{
+				await service.StartLiveUpdatesAsync();
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Live updates aren't available: {ex.Message}");
+			}
+		}
+
+		/// <summary>Stops following other members' changes, e.g. before switching to another server.</summary>
+		public void Close() => StopLiveUpdates();
+
+		/// <summary>Stops following other members' changes (on logout); the service outlives this view.</summary>
+		private void StopLiveUpdates()
+		{
+			service.GroupChanged -= OnGroupChanged;
+			service.PlaybackChanged -= OnPlaybackChanged;
+			_ = service.StopLiveUpdatesAsync();
+		}
+
+		private async Task SendPlaybackAsync(bool playing)
+		{
+			try
+			{
+				await service.SendPlaybackAsync(playing);
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't send play/stop to the band: {ex.Message}");
+			}
+		}
+
+		private void OnPlaybackChanged(Guid groupId, bool playing) => Dispatcher.UIThread.Post(() =>
+		{
+			// Only for the joined band, on its lyrics page (not while editing). Focus mode follows,
+			// as when pressing play/pause here. Not sent on, so it doesn't bounce back and forth.
+			if (currentGroup?.Id == groupId && page.Content is LyricScrollView { IsEditing: false } lyrics)
+			{
+				lyrics.SetAutoScroll(playing);
+			}
+		});
+
+		private void OnGroupChanged(GroupSummary group) => Dispatcher.UIThread.Post(() => _ = FollowGroupAsync(group));
+
+		/// <summary>
+		/// When another member changes the current setlist or song of the band this member has
+		/// selected, follow: open the new current song, or the new setlist when no song in it is
+		/// current. While playing, the new song plays on. Pages where the member is busy (editing,
+		/// adding songs, searching, other lists) aren't replaced: the drawers and buttons switch, and
+		/// the page stays until they move on.
+		/// </summary>
+		private async Task FollowGroupAsync(GroupSummary group)
+		{
+			if (currentGroup?.Id != group.Id)
+			{
+				return;
+			}
+
+			var setlistChanged = group.CurrentSetlistId is { } newSetlistId && newSetlistId != currentSetlist?.Id;
+			var songChanged = group.CurrentSetlistItemId is { } newItemId && newItemId != currentEntryId;
+			if (!setlistChanged && !songChanged)
+			{
+				return;
+			}
+
+			try
+			{
+				var setlist = setlistChanged ? await service.GetSetlistAsync(group.CurrentSetlistId!.Value) : currentSetlist;
+				if (setlist == null || currentGroup?.Id != group.Id)
+				{
+					return;
+				}
+
+				var entry = group.CurrentSetlistItemId is { } itemId ? await service.GetEntryAsync(itemId) : null;
+				if (entry?.SetlistId != setlist.Id)
+				{
+					entry = null;
+				}
+
+				if (!setlistChanged && entry == null)
+				{
+					return; // The new current song is gone already, or not in this setlist.
+				}
+
+				var canReplacePage = page.Content is SetlistView or SetlistsView or LyricScrollView { IsEditing: false };
+				if (!canReplacePage)
+				{
+					SetCurrentSetlist(setlist);
+					SetCurrentSong(entry?.Song, entry?.Id);
+					if (setlistChanged)
+					{
+						playbackEntries = [];
+					}
+
+					RefreshSetlistDrawer(reload: setlistChanged);
+					return;
+				}
+
+				if (entry != null)
+				{
+					var wasPlaying = page.Content is LyricScrollView { IsAutoScrolling: true };
+					ShowLyrics(group, setlist, entry);
+					if (wasPlaying && page.Content is LyricScrollView lyrics)
+					{
+						lyrics.SetAutoScroll(true);
+					}
+				}
+				else
+				{
+					SetCurrentSong(null, null);
+					await RunAsync(() => ShowSetlistAsync(group, setlist));
+				}
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't follow the band's setlist or song: {ex.Message}");
+			}
 		}
 
 		/// <summary>A drawer, unpinned: it slides over the page and closes when tapping outside it.</summary>
@@ -307,6 +437,13 @@ namespace Lyrious.UILib.Setlists
 			var buttons = DrawerButtons(menuDrawer, openButton, "menu");
 			DockPanel.SetDock(buttons, Dock.Right);
 
+			var sync = DrawerItem("Sync");
+			sync.Click += (_, _) =>
+			{
+				CloseUnlessPinned(menuDrawer);
+				SyncRequested?.Invoke();
+			};
+
 			var changePassword = DrawerItem("Change password");
 			changePassword.Click += (_, _) =>
 			{
@@ -318,6 +455,7 @@ namespace Lyrious.UILib.Setlists
 			logOut.Click += (_, _) =>
 			{
 				menuDrawer.IsPaneOpen = false;
+				StopLiveUpdates();
 				LogOutRequested?.Invoke();
 			};
 
@@ -336,7 +474,7 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(header, Dock.Top);
 
 			// The account actions sit at the bottom of the drawer.
-			var account = new StackPanel { Spacing = 4, Children = { changePassword } };
+			var account = new StackPanel { Spacing = 4, Children = { sync, changePassword } };
 			DockPanel.SetDock(account, Dock.Bottom);
 
 			if (offerForgetSavedPassword)
@@ -905,19 +1043,25 @@ namespace Lyrious.UILib.Setlists
 		{
 			view.FocusModeToggled += () => SetFocusMode(!focusMode);
 			view.SetFocusMode(focusMode);
-			view.ScrollSpeed = ScrollSpeed;
-			view.AutoScrollChanged += () => playbackBar.SetPlaying(view.IsAutoScrolling);
+			// Playing turns focus mode on, stopping (pause, or editing) turns it off.
+			// A page that's been replaced (e.g. by the next song) no longer counts.
+			view.AutoScrollChanged += () =>
+			{
+				if (page.Content == view)
+				{
+					playbackBar.SetPlaying(view.IsAutoScrolling);
+					SetFocusMode(view.IsAutoScrolling);
+				}
+			};
 			playbackBar.SetPlaying(false);
 			page.Content = view;
 			_ = UpdatePlaybackNavigationAsync();
 		}
 
-		/// <summary>The normal auto-scroll speed in pixels per second, times the toolbar's speed.</summary>
-		private double ScrollSpeed => 12 * playbackBar.Speed;
-
 		/// <summary>
-		/// Loads the current setlist's songs for previous/next, and enables them where the current
-		/// song has a neighbour. A song shown from the songbook (not from a setlist) has none.
+		/// Loads the current setlist's songs, to show the next song's name in the playback toolbar
+		/// where there's one after the current song. A song shown from the songbook (not from a
+		/// setlist) has none.
 		/// </summary>
 		private async Task UpdatePlaybackNavigationAsync()
 		{
@@ -926,7 +1070,7 @@ namespace Lyrious.UILib.Setlists
 			if (setlist == null || entryId == null)
 			{
 				playbackEntries = [];
-				playbackBar.SetNavigation(false, false);
+				playbackBar.SetNextSong(null);
 				return;
 			}
 
@@ -942,12 +1086,14 @@ namespace Lyrious.UILib.Setlists
 
 				playbackEntries = entries;
 				var index = IndexOfEntry(entries, entryId.Value);
-				playbackBar.SetNavigation(index > 0, index >= 0 && index < entries.Count - 1);
+				var nextSong = index >= 0 && index < entries.Count - 1 ? entries[index + 1].Song : null;
+				var isLast = index >= 0 && index == entries.Count - 1;
+				playbackBar.SetNextSong(nextSong?.Name, nextSong == null ? null : PageLayout.SongInfo(nextSong), lastInSetlist: isLast);
 			}
 			catch (Exception ex)
 			{
-				System.Diagnostics.Debug.WriteLine($"Couldn't load the setlist for previous/next: {ex.Message}");
-				playbackBar.SetNavigation(false, false);
+				System.Diagnostics.Debug.WriteLine($"Couldn't load the setlist for the next song: {ex.Message}");
+				playbackBar.SetNextSong(null);
 			}
 		}
 
@@ -964,8 +1110,8 @@ namespace Lyrious.UILib.Setlists
 			return -1;
 		}
 
-		/// <summary>Shows the previous (-1) or next (+1) song in the current setlist.</summary>
-		private void StepSong(int step)
+		/// <summary>Shows the next song in the current setlist.</summary>
+		private void NextSong()
 		{
 			if (currentGroup is not { } group || currentSetlist is not { } setlist || currentEntryId is not { } entryId)
 			{
@@ -973,10 +1119,16 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var current = IndexOfEntry(playbackEntries, entryId);
-			var target = current + step;
-			if (current >= 0 && target >= 0 && target < playbackEntries.Count)
+			var target = current + 1;
+			if (current >= 0 && target < playbackEntries.Count)
 			{
+				// While playing, the next song plays on (and focus mode stays on).
+				var wasPlaying = page.Content is LyricScrollView { IsAutoScrolling: true };
 				SelectSong(group, setlist, playbackEntries[target]);
+				if (wasPlaying && page.Content is LyricScrollView next)
+				{
+					next.SetAutoScroll(true);
+				}
 			}
 		}
 

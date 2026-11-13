@@ -12,7 +12,31 @@ namespace Lyrious.UILib.Setlists
 	/// </summary>
 	public interface ISetlistService
 	{
-		/// <summary>The logged-in member's group (their joined group, else their first group), or null if they have none.</summary>
+		/// <summary>
+		/// Raised (on a background thread) when another member changes one of the member's groups,
+		/// e.g. its current setlist. Only while live updates are started.
+		/// </summary>
+		event Action<GroupSummary>? GroupChanged;
+
+		/// <summary>
+		/// Raised (on a background thread) with the band and true/false when another member of the
+		/// member's joined band starts or stops playing. Only while live updates are started.
+		/// </summary>
+		event Action<Guid, bool>? PlaybackChanged;
+
+		/// <summary>Tells the other members of the joined band that this member started or stopped playing.</summary>
+		Task SendPlaybackAsync(bool playing);
+
+		/// <summary>Starts receiving changes made by other members (after login). Throws if the server can't be reached.</summary>
+		Task StartLiveUpdatesAsync();
+
+		/// <summary>Stops receiving changes (on logout).</summary>
+		Task StopLiveUpdatesAsync();
+
+		/// <summary>
+		/// The logged-in member's joined group: the one they follow live. If they haven't joined one (or
+		/// it's gone), their first group is joined. Null if they're in no group.
+		/// </summary>
 		Task<GroupSummary?> GetCurrentGroupAsync(CancellationToken cancellationToken = default);
 
 		/// <summary>The groups the logged-in member belongs to, by name.</summary>
@@ -95,6 +119,12 @@ namespace Lyrious.UILib.Setlists
 	public sealed class UnconfiguredSetlistService : ISetlistService
 	{
 		private static Exception NotConnected() => new InvalidOperationException("This app isn't connected to a Lyrious server yet.");
+
+		public event Action<GroupSummary>? GroupChanged { add { } remove { } }
+		public event Action<Guid, bool>? PlaybackChanged { add { } remove { } }
+		public Task SendPlaybackAsync(bool playing) => Task.CompletedTask;
+		public Task StartLiveUpdatesAsync() => Task.CompletedTask;
+		public Task StopLiveUpdatesAsync() => Task.CompletedTask;
 
 		public Task<GroupSummary?> GetCurrentGroupAsync(CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<GroupSummary>> GetGroupsAsync(CancellationToken cancellationToken = default) => throw NotConnected();

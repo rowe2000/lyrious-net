@@ -7,6 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Live updates from the API's hub (works in the browser too, over WebSockets). -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.15" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Lyrious.UILib\Lyrious.UILib.csproj" />
   </ItemGroup>
 </Project>

@@ -18,9 +18,32 @@ namespace Lyrious.Client;
 /// Setlist and song data from the Lyrious REST API, authenticated with the token from
 /// <see cref="HttpAuthService"/>. The API only returns what the member may see.
 /// </summary>
-public sealed class HttpSetlistService(HttpAuthService auth) : ISetlistService
+public sealed class HttpSetlistService : ISetlistService
 {
+    private readonly HttpAuthService auth;
+    private readonly LiveUpdates live;
+
+    public HttpSetlistService(HttpAuthService auth)
+    {
+        this.auth = auth;
+        live = new LiveUpdates(auth);
+        live.GroupChanged += group => GroupChanged?.Invoke(ToSummary(group));
+        live.PlaybackChanged += (groupId, playing) => PlaybackChanged?.Invoke(groupId, playing);
+    }
+
     private HttpClient Http => auth.Http;
+
+    public event Action<GroupSummary>? GroupChanged;
+
+    public event Action<Guid, bool>? PlaybackChanged;
+
+    public Task SendPlaybackAsync(bool playing) => live.SetPlaybackAsync(playing);
+
+    public Task StartLiveUpdatesAsync() => live.StartAsync();
+
+    public Task StopLiveUpdatesAsync() => live.StopAsync();
+
+    private static GroupSummary ToSummary(GroupDto group) => new(group.Id, group.Name, group.CurrentSetlistId, group.CurrentSetlistItemId);
 
     /// <summary>LRCLIB, a free online lyrics database; it allows calls from any web page (CORS).</summary>
     private static readonly HttpClient Lrclib = CreateLrclibClient();
@@ -40,7 +63,19 @@ public sealed class HttpSetlistService(HttpAuthService auth) : ISetlistService
     public async Task<GroupSummary?> GetCurrentGroupAsync(CancellationToken cancellationToken = default)
     {
         var groups = await GetGroupsAsync(cancellationToken);
-        return groups.FirstOrDefault(group => group.Id == auth.JoinedGroupId) ?? groups.FirstOrDefault();
+        if (groups.FirstOrDefault(group => group.Id == auth.JoinedGroupId) is { } joined)
+        {
+            return joined;
+        }
+
+        // Not joined to any (existing) group: join the first, so the band shown is the one followed live.
+        if (groups.FirstOrDefault() is not { } first)
+        {
+            return null;
+        }
+
+        await SelectGroupAsync(first.Id, cancellationToken);
+        return first;
     }
 
     public async Task<IReadOnlyList<GroupSummary>> GetGroupsAsync(CancellationToken cancellationToken = default)
@@ -48,7 +83,7 @@ public sealed class HttpSetlistService(HttpAuthService auth) : ISetlistService
         return (await GetAsync("api/group", ClientJsonContext.Default.GroupDtoArray, cancellationToken) ?? [])
             .Where(group => !group.Removed)
             .OrderBy(group => group.Name, StringComparer.CurrentCultureIgnoreCase)
-            .Select(group => new GroupSummary(group.Id, group.Name, group.CurrentSetlistId, group.CurrentSetlistItemId))
+            .Select(ToSummary)
             .ToArray();
     }
 
@@ -359,6 +394,12 @@ public sealed class HttpSetlistService(HttpAuthService auth) : ISetlistService
         if (!string.IsNullOrEmpty(auth.AccessToken))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.AccessToken);
+        }
+
+        // So the server's live update for this write isn't sent back to this app.
+        if (live.ConnectionId is { } connectionId)
+        {
+            request.Headers.Add("X-Lyrious-ConnectionId", connectionId);
         }
 
         return request;

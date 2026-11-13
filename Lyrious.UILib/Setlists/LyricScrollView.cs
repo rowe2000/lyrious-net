@@ -47,10 +47,13 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>How fast the lyrics scroll by themselves, in pixels per second.</summary>
 		public double ScrollSpeed { get; set; } = 12;
 
+		/// <summary>Whether the lyrics editor is open (so the page shouldn't be replaced under the user).</summary>
+		public bool IsEditing => titleActions.Content != editButton;
+
 		/// <summary>Whether the lyrics are scrolling by themselves.</summary>
 		public bool IsAutoScrolling => scrollTimer.IsEnabled;
 
-		/// <summary>Raised when scrolling by itself starts or stops (also when it reaches the end).</summary>
+		/// <summary>Raised when scrolling by itself starts or stops. Reaching the end doesn't stop it.</summary>
 		public event Action? AutoScrollChanged;
 		private SongDetails song;
 
@@ -92,6 +95,16 @@ namespace Lyrious.UILib.Setlists
 		{
 			editButton.Opacity = focused ? 0 : 1;
 			editButton.IsHitTestVisible = !focused;
+		}
+
+		/// <summary>Scrolls the lyrics back to the start; if they're scrolling by themselves, they go on from there.</summary>
+		public void ScrollToStart()
+		{
+			if (scroller != null)
+			{
+				scroller.Offset = new Vector(scroller.Offset.X, 0);
+				scrollRemainder = 0;
+			}
 		}
 
 		/// <summary>Starts or stops scrolling the lyrics by themselves (not while editing).</summary>
@@ -139,6 +152,11 @@ namespace Lyrious.UILib.Setlists
 
 			var seconds = scrollClock.Elapsed.TotalSeconds;
 			scrollClock.Restart();
+			if (scroller.Extent.Height <= 0)
+			{
+				return; // Not laid out yet (just opened); the end isn't known.
+			}
+
 			// Offsets snap to whole pixels on some platforms, so the fractions are carried over.
 			scrollRemainder += ScrollSpeed * seconds;
 			var step = Math.Floor(scrollRemainder);
@@ -148,13 +166,9 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			scrollRemainder -= step;
-			var max = MaxOffset(scroller);
-			var y = Math.Min(scroller.Offset.Y + step, max);
+			// At the end it simply stays there, still playing, until the user stops it.
+			var y = Math.Min(scroller.Offset.Y + step, MaxOffset(scroller));
 			scroller.Offset = new Vector(scroller.Offset.X, y);
-			if (y >= max)
-			{
-				SetAutoScroll(false);
-			}
 		}
 
 		private static double MaxOffset(ScrollViewer viewer) => Math.Max(0, viewer.Extent.Height - viewer.Viewport.Height);

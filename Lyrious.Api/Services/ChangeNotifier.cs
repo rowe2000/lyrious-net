@@ -33,6 +33,12 @@ public sealed class ChangeNotifier(IHubContext<LyriousHub> hub, LyriousRepositor
 					list.Add(payload);
 				}
 
+				if (entity is Member member)
+				{
+					// The member may have joined another group: move their connections to its channel.
+					await UpdateJoinedSubscriptionsAsync(member);
+				}
+
 				if (entity is Membership membership)
 				{
 					// Subscribe (or unsubscribe) the member's live connections before anything is sent to the
@@ -55,6 +61,32 @@ public sealed class ChangeNotifier(IHubContext<LyriousHub> hub, LyriousRepositor
 		{
 			// Notifications are best-effort: the write itself has succeeded.
 			logger.LogError(ex, "Failed to notify {EntityType} changes", typeof(TEntity).Name);
+		}
+	}
+
+	/// <summary>
+	/// Puts the member's live connections in the "joined" channel of their joined group only. Only
+	/// members change their own Member entity, so the repository's identity is that member.
+	/// </summary>
+	private async Task UpdateJoinedSubscriptionsAsync(Member member)
+	{
+		var connections = registry.GetConnections(member.Id.ToString());
+		if (connections.Count == 0)
+		{
+			return;
+		}
+
+		foreach (var connectionId in connections)
+		{
+			foreach (var groupId in repo.GetMyGroupIds())
+			{
+				await hub.Groups.RemoveFromGroupAsync(connectionId, LyriousHub.JoinedGroupName(groupId));
+			}
+
+			if (member.JoinedGroupId is { } joined && repo.IsMember(joined))
+			{
+				await hub.Groups.AddToGroupAsync(connectionId, LyriousHub.JoinedGroupName(joined));
+			}
 		}
 	}
 

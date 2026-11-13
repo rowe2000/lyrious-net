@@ -20,6 +20,19 @@ globalThis.lyriousCredentials = {
     },
 };
 
+// Settings kept between visits (BrowserSettingsStore.cs). Storage can be blocked (e.g. private
+// browsing), in which case settings simply aren't kept.
+globalThis.lyriousSettings = {
+    get: (key) => {
+        try { return localStorage.getItem(key); } catch { return null; }
+    },
+    set: (key, value) => {
+        try {
+            if (value == null) localStorage.removeItem(key); else localStorage.setItem(key, value);
+        } catch { /* not kept */ }
+    },
+};
+
 const dotnetRuntime = await dotnet
     .withDiagnosticTracing(false)
     .withApplicationArgumentsFromQuery()

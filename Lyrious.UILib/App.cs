@@ -27,6 +27,12 @@ namespace Lyrious.UILib
 		/// </summary>
 		public static ICredentialStore CredentialStore { get; set; } = new NoCredentialStore();
 
+		/// <summary>
+		/// Settings kept on this device (e.g. the API host). Hosts set this before starting the app;
+		/// by default settings last only while the app runs.
+		/// </summary>
+		public static ISettingsStore Settings { get; set; } = new MemorySettingsStore();
+
 		public override void Initialize()
 		{
 			// Default follows the system theme; ThemeVariant.Dark or ThemeVariant.Light force one.

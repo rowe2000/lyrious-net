@@ -222,6 +222,7 @@ namespace Lyrious.UILib
 			var home = new HomeView(user, App.SetlistService, offerForgetSavedPassword: store.CanForget && IsSavedFor(credential.UserName));
 			home.ChangePasswordRequested += () => ShowChangePassword(home, credential.UserName);
 			home.ForgetSavedPasswordRequested += () => _ = ForgetSavedPasswordAsync();
+			home.SyncRequested += () => ShowSync(home);
 			home.LogOutRequested += () =>
 			{
 				App.AuthService.LogOut();
@@ -243,6 +244,36 @@ namespace Lyrious.UILib
 
 			savedCredential = null;
 		}
+
+		/// <summary>
+		/// The Sync page: the server (host) the app talks to. A new host is remembered on this device
+		/// and, since the login belongs to the old server, leads back to the login page.
+		/// </summary>
+		private void ShowSync(HomeView home)
+		{
+			var auth = App.AuthService;
+			var current = auth.ServerAddress;
+			var view = new SyncView(current, address => SameHost(address, current)
+				? Task.FromResult<string?>(null)
+				: auth.ChangeServerAsync(address));
+			view.Cancelled += () => Content = home;
+			view.Saved += _ =>
+			{
+				if (auth.ServerAddress == current)
+				{
+					Content = home; // Unchanged.
+					return;
+				}
+
+				App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
+				home.Close();
+				ShowLogin($"Now syncing with {auth.ServerAddress}. Log in to continue.", null);
+			};
+			Content = view;
+		}
+
+		private static bool SameHost(string address, string current)
+			=> string.Equals(address.Trim().TrimEnd('/'), current.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 
 		// Back returns to the same home view, so the page the user was on is kept.
 		private void ShowChangePassword(HomeView home, string userName)

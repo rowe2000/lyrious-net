@@ -33,6 +33,15 @@ namespace Lyrious.UILib.Login
 		/// longer made as them.
 		/// </summary>
 		void LogOut();
+
+		/// <summary>The address of the server (host) the app talks to, e.g. http://localhost:7000.</summary>
+		string ServerAddress { get; }
+
+		/// <summary>
+		/// Switches to another server, after checking it answers; the member is logged out, since
+		/// their login belongs to the old server. Returns null when done, else a message for the user.
+		/// </summary>
+		Task<string?> ChangeServerAsync(string address, CancellationToken cancellationToken = default);
 	}
 
 	/// <summary>The signed-in member, as far as the UI needs to know.</summary>
@@ -60,6 +69,11 @@ namespace Lyrious.UILib.Login
 	public sealed class UnconfiguredAuthService : IAuthService
 	{
 		private const string NotConnected = "This app isn't connected to a Lyrious server yet.";
+
+		public string ServerAddress => "";
+
+		public Task<string?> ChangeServerAsync(string address, CancellationToken cancellationToken = default)
+			=> Task.FromResult<string?>(NotConnected);
 
 		public Task<LoginResult> LoginAsync(string userName, string password, CancellationToken cancellationToken = default)
 			=> Task.FromResult(LoginResult.Failure(NotConnected));

@@ -35,6 +35,50 @@ public sealed class HttpAuthService(HttpClient http) : IAuthService
     /// <summary>The HttpClient (with the API base address), shared with the other API services.</summary>
     internal HttpClient Http => http;
 
+    public string ServerAddress => http.BaseAddress?.ToString().TrimEnd('/') ?? "";
+
+    /// <summary>
+    /// Checks <paramref name="address"/> answers like a Lyrious API (POST api/ping), then uses it for
+    /// all calls from now on, and logs out. "http://" is assumed when no scheme is given.
+    /// </summary>
+    public async Task<string?> ChangeServerAsync(string address, CancellationToken cancellationToken = default)
+    {
+        var text = address.Trim();
+        if (!text.Contains("://"))
+        {
+            text = "http://" + text;
+        }
+
+        if (!System.Uri.TryCreate(text.TrimEnd('/') + "/", System.UriKind.Absolute, out var uri)
+            || (uri.Scheme != System.Uri.UriSchemeHttp && uri.Scheme != System.Uri.UriSchemeHttps))
+        {
+            return "That isn't a web address. Use for example http://localhost:7000.";
+        }
+
+        // A separate client: the current one keeps working if the new host doesn't answer.
+        var candidate = new HttpClient { BaseAddress = uri };
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(System.TimeSpan.FromSeconds(10));
+            using var response = await candidate.PostAsync("api/ping", content: null, timeout.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                candidate.Dispose();
+                return $"{uri.ToString().TrimEnd('/')} answered {(int)response.StatusCode} {response.ReasonPhrase}; it doesn't look like a Lyrious server.";
+            }
+        }
+        catch (System.Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            candidate.Dispose();
+            return $"Couldn't reach {uri.ToString().TrimEnd('/')}. Check the address, and that the server is running.";
+        }
+
+        LogOut();
+        http = candidate;
+        return null;
+    }
+
     public async Task<LoginResult> LoginAsync(string userName, string password, CancellationToken cancellationToken = default)
     {
         AccessToken = null;

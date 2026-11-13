@@ -75,6 +75,8 @@ internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int Membershi
 [JsonSerializable(typeof(SongDto[]))]
 [JsonSerializable(typeof(SongbookDto[]))]
 [JsonSerializable(typeof(MembershipDto[]))]
+[JsonSerializable(typeof(System.Guid))]
+[JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(MemberDto[]))]
 [JsonSerializable(typeof(NewSongDto[]))]
 [JsonSerializable(typeof(LrclibTrack[]))]
