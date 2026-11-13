@@ -52,7 +52,24 @@ internal class Program
 		builder.Services.AddSingleton<Cache>();
 		builder.Services.AddScoped<LyriousRepository>();
 
-		builder.Services.AddDbContext<LyriousContext>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+		// Database: SQL Server or SQLite, chosen by Database:Provider. When it isn't set: SQL Server on
+		// Windows (the SQL Express setup) and SQLite elsewhere, so the API runs on a Mac or Linux with
+		// no database install. The SQLite file lives next to the project, whatever the working directory.
+		var provider = builder.Configuration["Database:Provider"];
+		var useSqlite = string.IsNullOrWhiteSpace(provider)
+			? !OperatingSystem.IsWindows()
+			: provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase);
+		if (useSqlite)
+		{
+			var file = Path.Combine(builder.Environment.ContentRootPath, builder.Configuration["Database:SqliteFile"] ?? "lyrious-api.db");
+			Console.WriteLine($"Database: SQLite ({file})");
+			builder.Services.AddDbContext<LyriousContext>(options => options.UseSqlite($"Data Source={file}"));
+		}
+		else
+		{
+			Console.WriteLine("Database: SQL Server");
+			builder.Services.AddDbContext<LyriousContext>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+		}
 
 		// Identity for users, roles and password checks only. AddIdentityCore (unlike AddIdentity)
 		// registers no cookie schemes, so JWT bearer is the API's only authentication.

@@ -26,8 +26,11 @@ public sealed class HttpAuthService(HttpClient http) : IAuthService
     /// <summary>The bearer token from the last successful login, for authenticated API calls.</summary>
     public string? AccessToken { get; private set; }
 
-    /// <summary>The group the member last joined, from the last successful login.</summary>
-    public System.Guid? JoinedGroupId { get; private set; }
+    /// <summary>The logged-in member's id, from the last successful login.</summary>
+    public System.Guid? MemberId { get; private set; }
+
+    /// <summary>The group the member last joined: from the last successful login, or chosen since.</summary>
+    public System.Guid? JoinedGroupId { get; internal set; }
 
     /// <summary>The HttpClient (with the API base address), shared with the other API services.</summary>
     internal HttpClient Http => http;
@@ -35,6 +38,7 @@ public sealed class HttpAuthService(HttpClient http) : IAuthService
     public async Task<LoginResult> LoginAsync(string userName, string password, CancellationToken cancellationToken = default)
     {
         AccessToken = null;
+        MemberId = null;
         JoinedGroupId = null;
 
         // Throws when the server can't be reached (or CORS blocks the call); the pages report that.
@@ -58,6 +62,7 @@ public sealed class HttpAuthService(HttpClient http) : IAuthService
         }
 
         AccessToken = body.Token;
+        MemberId = member.Id;
         JoinedGroupId = member.JoinedGroupId;
         var name = string.IsNullOrWhiteSpace(member.Name) ? userName : member.Name;
         return LoginResult.Success(new AuthenticatedUser(member.UserName ?? userName, name));
@@ -105,6 +110,7 @@ public sealed class HttpAuthService(HttpClient http) : IAuthService
     public void LogOut()
     {
         AccessToken = null;
+        MemberId = null;
         JoinedGroupId = null;
     }
 

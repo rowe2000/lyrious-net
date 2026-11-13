@@ -15,6 +15,21 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The logged-in member's group (their joined group, else their first group), or null if they have none.</summary>
 		Task<GroupSummary?> GetCurrentGroupAsync(CancellationToken cancellationToken = default);
 
+		/// <summary>The groups the logged-in member belongs to, by name.</summary>
+		Task<IReadOnlyList<GroupSummary>> GetGroupsAsync(CancellationToken cancellationToken = default);
+
+		/// <summary>The members of each of the logged-in member's groups (invited ones too), keyed by group id.</summary>
+		Task<IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>>> GetGroupMembersAsync(CancellationToken cancellationToken = default);
+
+		/// <summary>
+		/// Starts a new group with the member as its admin, a "Default" songbook and a first setlist,
+		/// like the console's CreateGroup. It doesn't become the current group; see <see cref="SelectGroupAsync"/>.
+		/// </summary>
+		Task<GroupSummary> CreateGroupAsync(string name, CancellationToken cancellationToken = default);
+
+		/// <summary>Makes the group the member's current one (they join it), also for later logins.</summary>
+		Task SelectGroupAsync(Guid groupId, CancellationToken cancellationToken = default);
+
 		Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default);
 
 		/// <summary>The setlist, or null if it doesn't exist (any more).</summary>
@@ -28,6 +43,15 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>One setlist entry with its song, or null if it doesn't exist (any more).</summary>
 		Task<SetlistEntry?> GetEntryAsync(Guid setlistItemId, CancellationToken cancellationToken = default);
 
+		/// <summary>The songs in the group's songbooks, by name.</summary>
+		Task<IReadOnlyList<SongDetails>> GetSongbookSongsAsync(Guid groupId, CancellationToken cancellationToken = default);
+
+		/// <summary>Replaces the song's lyrics and returns the updated song.</summary>
+		Task<SongDetails> UpdateLyricsAsync(Guid songId, string lyrics, CancellationToken cancellationToken = default);
+
+		/// <summary>Appends the songs to the end of the setlist, in the given order.</summary>
+		Task AddSongsAsync(Guid setlistId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default);
+
 		/// <summary>Makes the setlist the group's current one (and clears the current song).</summary>
 		Task SelectSetlistAsync(Guid groupId, Guid setlistId, CancellationToken cancellationToken = default);
 
@@ -36,6 +60,11 @@ namespace Lyrious.UILib.Setlists
 	}
 
 	public sealed record GroupSummary(Guid Id, string Name, Guid? CurrentSetlistId, Guid? CurrentSetlistItemId);
+
+	public enum GroupRole { Member, Conductor, Admin }
+
+	/// <summary>A member of a group: their role, and whether they have accepted the invitation yet.</summary>
+	public sealed record GroupMember(Guid MemberId, string Name, GroupRole Role, bool Approved);
 
 	public sealed record SetlistSummary(Guid Id, string Name, Guid GroupId);
 
@@ -50,11 +79,18 @@ namespace Lyrious.UILib.Setlists
 		private static Exception NotConnected() => new InvalidOperationException("This app isn't connected to a Lyrious server yet.");
 
 		public Task<GroupSummary?> GetCurrentGroupAsync(CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<IReadOnlyList<GroupSummary>> GetGroupsAsync(CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>>> GetGroupMembersAsync(CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<GroupSummary> CreateGroupAsync(string name, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task SelectGroupAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary?> GetSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary> CreateSetlistAsync(Guid groupId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistEntry>> GetEntriesAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistEntry?> GetEntryAsync(Guid setlistItemId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<IReadOnlyList<SongDetails>> GetSongbookSongsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<SongDetails> UpdateLyricsAsync(Guid songId, string lyrics, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task AddSongsAsync(Guid setlistId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SelectSetlistAsync(Guid groupId, Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SelectSongAsync(Guid groupId, SetlistEntry entry, CancellationToken cancellationToken = default) => throw NotConnected();
 	}

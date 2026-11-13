@@ -7,7 +7,7 @@ internal sealed record LoginRequest(string Username, string Password);
 
 internal sealed record LoginResponse(string? Token, MemberProfile? Member);
 
-internal sealed record MemberProfile(string? UserName, string? Name, System.Guid? JoinedGroupId);
+internal sealed record MemberProfile(System.Guid Id, string? UserName, string? Name, System.Guid? JoinedGroupId);
 
 internal sealed record RegisterRequest(string UserName, string Password, string Name, string? Email, string? PhoneNumber);
 
@@ -36,7 +36,15 @@ internal sealed record SetlistDto(System.Guid Id, string Name, System.Guid Group
 
 internal sealed record SetlistItemDto(System.Guid Id, int Position, System.Guid SongId, System.Guid SetlistId, bool Removed);
 
-internal sealed record SongDto(System.Guid Id, string Name, string? Key, float Tempo, string? Beat, string? Lyrics, bool Removed);
+internal sealed record SongDto(System.Guid Id, string Name, string? Key, float Tempo, string? Beat, string? Lyrics, System.Guid SongbookId, bool Removed);
+
+internal sealed record SongbookDto(System.Guid Id, string Name, System.Guid? GroupId, bool Removed);
+
+/// <summary>A membership; the role (0 Member, 1 Conductor, 2 Admin) and status (2 Approved) are sent as numbers, as the API does.</summary>
+/// <summary>A member's public name only; the API sends more, which is ignored.</summary>
+internal sealed record MemberDto(System.Guid Id, string? Name, string? UserName);
+
+internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int MembershipStatusEnum, System.Guid GroupId, System.Guid MemberId, bool Removed);
 
 /// <summary>
 /// Source-generated JSON, so serialization keeps working when a Release build trims unused code
@@ -57,4 +65,7 @@ internal sealed record SongDto(System.Guid Id, string Name, string? Key, float T
 [JsonSerializable(typeof(SetlistItemDto[]))]
 [JsonSerializable(typeof(SongDto))]
 [JsonSerializable(typeof(SongDto[]))]
+[JsonSerializable(typeof(SongbookDto[]))]
+[JsonSerializable(typeof(MembershipDto[]))]
+[JsonSerializable(typeof(MemberDto[]))]
 internal sealed partial class ClientJsonContext : JsonSerializerContext;

@@ -452,3 +452,11 @@ $RECYCLE.BIN/
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+
+# Local SQLite database of the API (used when not running against SQL Server)
+Lyrious.Api/*.db
+Lyrious.Api/*.db-shm
+Lyrious.Api/*.db-wal
+
+# Logs of locally started services
+.claude-run/
