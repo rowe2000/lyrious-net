@@ -34,7 +34,7 @@ namespace Lyrious.UILib.Login
 		/// </summary>
 		void LogOut();
 
-		/// <summary>The address of the server (host) the app talks to, e.g. http://localhost:7000.</summary>
+		/// <summary>The address of the server (host) the app talks to, e.g. http://localhost:5180.</summary>
 		string ServerAddress { get; }
 
 		/// <summary>

@@ -15,7 +15,7 @@ namespace Lyrious.Web;
 /// </summary>
 internal sealed partial class Program
 {
-    private const string DefaultApiBaseUrl = "http://localhost:7000/";
+    private const string DefaultApiBaseUrl = "http://localhost:5180/";
 
     /// <param name="args">
     /// [0] is the page URL (see wwwroot/main.js); <c>?api=...</c> sets the API address. Else the
@@ -26,9 +26,11 @@ internal sealed partial class Program
         var settings = new BrowserSettingsStore();
         App.Settings = settings;
         var apiBaseUrl = GetApiBaseUrl(args.FirstOrDefault(), settings.Get(SettingKeys.Host));
-        var auth = new HttpAuthService(new HttpClient { BaseAddress = apiBaseUrl });
+        // The offline cache and offline logins, kept apart from the settings.
+        var offline = new BrowserSettingsStore("lyrious.offline.");
+        var auth = new HttpAuthService(new HttpClient { BaseAddress = apiBaseUrl }, offline);
         App.AuthService = auth;
-        App.SetlistService = new HttpSetlistService(auth);
+        App.SetlistService = new HttpSetlistService(auth, offline);
         App.CredentialStore = new BrowserCredentialStore();
 
         return BuildAvaloniaApp()

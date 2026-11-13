@@ -17,7 +17,7 @@ namespace Lyrious.UILib
 	/// <summary>Keys of the settings the app uses.</summary>
 	public static class SettingKeys
 	{
-		/// <summary>The address of the Lyrious API to sync with, e.g. http://localhost:7000.</summary>
+		/// <summary>The address of the Lyrious API to sync with, e.g. http://localhost:5180.</summary>
 		public const string Host = "host";
 	}
 

@@ -12,17 +12,19 @@ internal class Program
     // yet and stuff might break.
     /// <param name="args">
     /// Optional: [0] Lyrious API base address. Else the host chosen on the Sync page last time, else
-    /// http://localhost:7000.
+    /// http://localhost:5180.
     /// </param>
     [STAThread]
     public static void Main(string[] args)
     {
         var settings = new FileSettingsStore();
         App.Settings = settings;
-        var host = args.Length > 0 ? args[0] : settings.Get(SettingKeys.Host) ?? "http://localhost:7000";
-        var auth = new HttpAuthService(host);
+        var host = args.Length > 0 ? args[0] : settings.Get(SettingKeys.Host) ?? "http://localhost:5180";
+        // The offline cache and offline logins, in their own file (it's rewritten on every change).
+        var offline = new FileSettingsStore("offline.json");
+        var auth = new HttpAuthService(host, offline);
         App.AuthService = auth;
-        App.SetlistService = new HttpSetlistService(auth);
+        App.SetlistService = new HttpSetlistService(auth, offline);
         App.CredentialStore = DesktopCredentialStore.Create();
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);

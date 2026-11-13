@@ -8,12 +8,13 @@ namespace Lyrious.Desktop;
 
 /// <summary>
 /// Settings in a JSON file in the user's application data folder (on macOS
-/// ~/Library/Application Support/Lyrious/settings.json). A missing or unreadable file means no settings.
+/// ~/Library/Application Support/Lyrious/). A missing or unreadable file means no settings.
 /// </summary>
-internal sealed class FileSettingsStore : ISettingsStore
+/// <param name="fileName">E.g. settings.json, or offline.json for the offline cache and logins.</param>
+internal sealed class FileSettingsStore(string fileName = "settings.json") : ISettingsStore
 {
     private readonly string path = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Lyrious", "settings.json");
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Lyrious", fileName);
 
     public string? Get(string key) => Read().TryGetValue(key, out var value) ? value : null;
 

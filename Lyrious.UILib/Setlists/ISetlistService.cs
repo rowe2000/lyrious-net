@@ -12,6 +12,21 @@ namespace Lyrious.UILib.Setlists
 	/// </summary>
 	public interface ISetlistService
 	{
+		/// <summary>Whether the server can be reached, and how many changes made here it hasn't got yet.</summary>
+		SyncStatus Status { get; }
+
+		/// <summary>Raised (on any thread) when <see cref="Status"/> changes.</summary>
+		event Action? StatusChanged;
+
+		/// <summary>Sends the changes made here and fetches others' now (if the server can be reached).</summary>
+		Task SyncNowAsync();
+
+		/// <summary>
+		/// Raised (on a background thread) with the group the logged-in member joined in another
+		/// session (another device or window): this session should switch to it too.
+		/// </summary>
+		event Action<Guid>? JoinedGroupChanged;
+
 		/// <summary>
 		/// Raised (on a background thread) when another member changes one of the member's groups,
 		/// e.g. its current setlist. Only while live updates are started.
@@ -98,6 +113,12 @@ namespace Lyrious.UILib.Setlists
 		Task SelectSongAsync(Guid groupId, SetlistEntry entry, CancellationToken cancellationToken = default);
 	}
 
+	/// <param name="Online">Whether the server could be reached last time it was tried.</param>
+	/// <param name="PendingChanges">Changes made on this device that the server hasn't got yet.</param>
+	/// <param name="LastSynced">When this device last got a full copy from the server; null if never.</param>
+	/// <param name="Problem">The last sync problem worth telling the member (e.g. a change the server refused).</param>
+	public sealed record SyncStatus(bool Online, int PendingChanges, DateTime? LastSynced, string? Problem);
+
 	public sealed record GroupSummary(Guid Id, string Name, Guid? CurrentSetlistId, Guid? CurrentSetlistItemId);
 
 	public enum GroupRole { Member, Conductor, Admin }
@@ -120,7 +141,11 @@ namespace Lyrious.UILib.Setlists
 	{
 		private static Exception NotConnected() => new InvalidOperationException("This app isn't connected to a Lyrious server yet.");
 
+		public SyncStatus Status => new(false, 0, null, null);
+		public event Action? StatusChanged { add { } remove { } }
+		public Task SyncNowAsync() => Task.CompletedTask;
 		public event Action<GroupSummary>? GroupChanged { add { } remove { } }
+		public event Action<Guid>? JoinedGroupChanged { add { } remove { } }
 		public event Action<Guid, bool>? PlaybackChanged { add { } remove { } }
 		public Task SendPlaybackAsync(bool playing) => Task.CompletedTask;
 		public Task StartLiveUpdatesAsync() => Task.CompletedTask;

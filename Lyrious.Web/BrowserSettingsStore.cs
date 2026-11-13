@@ -5,14 +5,13 @@ using Lyrious.UILib;
 namespace Lyrious.Web;
 
 /// <summary>Settings in the browser's local storage (functions in wwwroot/main.js), so they last between visits.</summary>
+/// <param name="prefix">Keeps different stores apart, e.g. settings and the offline cache.</param>
 [SupportedOSPlatform("browser")]
-internal sealed partial class BrowserSettingsStore : ISettingsStore
+internal sealed partial class BrowserSettingsStore(string prefix = "lyrious.") : ISettingsStore
 {
-    private const string Prefix = "lyrious.";
+    public string? Get(string key) => GetItem(prefix + key);
 
-    public string? Get(string key) => GetItem(Prefix + key);
-
-    public void Set(string key, string? value) => SetItem(Prefix + key, value);
+    public void Set(string key, string? value) => SetItem(prefix + key, value);
 
     [JSImport("globalThis.lyriousSettings.get")]
     private static partial string? GetItem(string key);

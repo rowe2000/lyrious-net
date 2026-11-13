@@ -29,7 +29,7 @@ internal class Program
 
 		builder.WebHost.ConfigureKestrel(options =>
 		{
-			options.ListenLocalhost(7000);
+			options.ListenLocalhost(5180);
 		});
 
 		// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle

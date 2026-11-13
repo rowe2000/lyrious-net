@@ -11,7 +11,7 @@ internal class Program
 	{
 		Console.WriteLine("Hello, Lyrious!");
 
-		var remoteAddress = args.ElementAtOrDefault(0) ?? "http://localhost:7000";
+		var remoteAddress = args.ElementAtOrDefault(0) ?? "http://localhost:5180";
 		var script = args.ElementAtOrDefault(1) ?? "populate.cmd";
 
 		var cache = new Cache();

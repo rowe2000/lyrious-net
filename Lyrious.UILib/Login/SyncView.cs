@@ -10,8 +10,9 @@ using Lyrious.UILib.Setlists;
 namespace Lyrious.UILib.Login
 {
 	/// <summary>
-	/// "Sync": which Lyrious server (host) the app talks to. Save (✓) checks the server answers before
-	/// switching; Cancel (✕) goes back. If saving fails, the error is shown and the address kept.
+	/// "Sync": whether the data is in sync with the server (and "Sync now"), and which Lyrious server
+	/// (host) the app talks to. Save (✓) checks the server answers before switching; Cancel (✕) goes
+	/// back. If saving fails, the error is shown and the address kept.
 	/// </summary>
 	public sealed class SyncView : UserControl
 	{
@@ -19,6 +20,10 @@ namespace Lyrious.UILib.Login
 		private const string CancelIcon = "M6,6 L18,18 M18,6 L6,18";
 
 		private readonly TextBox host;
+		private readonly ISetlistService? sync;
+		private readonly TextBlock statusTitle = new() { FontSize = 18, FontWeight = FontWeight.SemiBold };
+		private readonly TextBlock statusText = new() { Opacity = 0.8, TextWrapping = TextWrapping.Wrap };
+		private readonly TextBlock problemText = new() { TextWrapping = TextWrapping.Wrap, IsVisible = false };
 
 		/// <summary>Raised when the user cancels.</summary>
 		public event Action? Cancelled;
@@ -27,9 +32,11 @@ namespace Lyrious.UILib.Login
 		public event Action<string>? Saved;
 
 		/// <param name="save">Switches to the host; returns null when done, else a message for the user.</param>
-		public SyncView(string currentHost, Func<string, Task<string?>> save)
+		/// <param name="sync">The data sync, to show its status and sync now; null to leave that out.</param>
+		public SyncView(string currentHost, Func<string, Task<string?>> save, ISetlistService? sync = null)
 		{
-			host = new TextBox { Text = currentHost, PlaceholderText = "e.g. http://localhost:7000" };
+			this.sync = sync;
+			host = new TextBox { Text = currentHost, PlaceholderText = "e.g. http://localhost:5180" };
 
 			var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
 			error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable(LyriousTheme.ErrorBrush));
@@ -81,11 +88,34 @@ namespace Lyrious.UILib.Login
 				}
 			};
 
+			var syncNow = new Button { Content = "Sync now", HorizontalAlignment = HorizontalAlignment.Left };
+			syncNow.Click += async (_, _) =>
+			{
+				syncNow.IsEnabled = false;
+				try
+				{
+					await sync!.SyncNowAsync();
+				}
+				finally
+				{
+					syncNow.IsEnabled = true;
+					ShowStatus();
+				}
+			};
+			problemText.Bind(TextBlock.ForegroundProperty, problemText.GetResourceObservable(LyriousTheme.ErrorBrush));
+
 			var form = new StackPanel
 			{
 				Spacing = 12,
 				Children =
 				{
+					new StackPanel
+					{
+						Spacing = 8,
+						IsVisible = sync != null,
+						Margin = new Thickness(0, 0, 0, 16),
+						Children = { statusTitle, statusText, problemText, syncNow },
+					},
 					new StackPanel { Spacing = 4, Children = { new TextBlock { Text = "Host", FontSize = 13, Opacity = 0.75 }, host } },
 					error,
 					new TextBlock
@@ -107,8 +137,36 @@ namespace Lyrious.UILib.Login
 		protected override void OnLoaded(Avalonia.Interactivity.RoutedEventArgs e)
 		{
 			base.OnLoaded(e);
-			host.Focus();
-			host.SelectAll();
+			if (sync != null)
+			{
+				sync.StatusChanged += OnStatusChanged;
+				ShowStatus();
+			}
+		}
+
+		protected override void OnUnloaded(Avalonia.Interactivity.RoutedEventArgs e)
+		{
+			base.OnUnloaded(e);
+			if (sync != null)
+			{
+				sync.StatusChanged -= OnStatusChanged;
+			}
+		}
+
+		private void OnStatusChanged() => Avalonia.Threading.Dispatcher.UIThread.Post(ShowStatus);
+
+		private void ShowStatus()
+		{
+			if (sync == null)
+			{
+				return;
+			}
+
+			var status = sync.Status;
+			statusTitle.Text = SyncStatusText.Short(status);
+			statusText.Text = SyncStatusText.Long(status);
+			problemText.Text = status.Problem;
+			problemText.IsVisible = status.Problem != null;
 		}
 	}
 }

@@ -255,7 +255,7 @@ namespace Lyrious.UILib
 			var current = auth.ServerAddress;
 			var view = new SyncView(current, address => SameHost(address, current)
 				? Task.FromResult<string?>(null)
-				: auth.ChangeServerAsync(address));
+				: auth.ChangeServerAsync(address), App.SetlistService);
 			view.Cancelled += () => Content = home;
 			view.Saved += _ =>
 			{

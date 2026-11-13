@@ -23,7 +23,7 @@ namespace Lyrious.UILib.Setlists
 	/// selected setlist and song to the group, so the next login resumes there. Tapping the lyrics
 	/// turns focus mode on or off: drawers and their buttons are hidden, leaving just the song.
 	/// The band shown is the member's joined band (<c>Member.JoinedGroup</c>): the one they follow
-	/// live. When another member changes its current setlist or song, or starts or stops playing,
+	/// live. Joining another band in one session switches all the member's sessions to it. When another member changes its current setlist or song, or starts or stops playing,
 	/// the app follows.
 	/// </summary>
 	public sealed class HomeView : UserControl
@@ -48,6 +48,7 @@ namespace Lyrious.UILib.Setlists
 		private readonly Button chooseSongButton;
 		private readonly Button findSongButton;
 		private readonly Button chooseGroupButton;
+		private readonly TextBlock syncStatus = new() { FontSize = 13, Opacity = 0.7 };
 		private readonly Button addSongsButton = IconButton(AddIcon, "Add a song to the setlist");
 		private readonly ContentControl page = new();
 		private readonly SplitView menuDrawer;
@@ -57,6 +58,9 @@ namespace Lyrious.UILib.Setlists
 
 		// The current setlist's songs, for the next song in the playback toolbar.
 		private IReadOnlyList<SetlistEntry> playbackEntries = [];
+
+		// A group the member joined in another session, to switch to once they're done editing.
+		private Guid? pendingJoinedGroup;
 
 		// Focus mode: only the lyrics page, without drawers or their buttons. How each drawer was
 		// hidden is remembered, to bring it back afterwards; pinned drawers stay pinned.
@@ -173,6 +177,12 @@ namespace Lyrious.UILib.Setlists
 
 				var isLyrics = e.NewValue is LyricScrollView;
 				playbackBar.IsVisible = isLyrics;
+
+				// The member joined another group in another session while busy here: switch now.
+				if (pendingJoinedGroup != null && !IsBusy(e.NewValue) && e.NewValue is not ProgressBar)
+				{
+					Dispatcher.UIThread.Post(SwitchToJoinedGroup);
+				}
 				if (focusMode && !isLyrics)
 				{
 					SetFocusMode(false);
@@ -192,6 +202,9 @@ namespace Lyrious.UILib.Setlists
 			// Follow the joined band's current setlist and song, and its play/stop, when another member changes them.
 			service.GroupChanged += OnGroupChanged;
 			service.PlaybackChanged += OnPlaybackChanged;
+			service.StatusChanged += OnStatusChanged;
+			service.JoinedGroupChanged += OnJoinedGroupChanged;
+			OnStatusChanged();
 			_ = StartLiveUpdatesAsync();
 
 			_ = StartAsync();
@@ -218,8 +231,40 @@ namespace Lyrious.UILib.Setlists
 		{
 			service.GroupChanged -= OnGroupChanged;
 			service.PlaybackChanged -= OnPlaybackChanged;
+			service.StatusChanged -= OnStatusChanged;
+			service.JoinedGroupChanged -= OnJoinedGroupChanged;
 			_ = service.StopLiveUpdatesAsync();
 		}
+
+		private void OnJoinedGroupChanged(Guid groupId) => Dispatcher.UIThread.Post(() =>
+		{
+			if (currentGroup?.Id == groupId)
+			{
+				return;
+			}
+
+			// Don't pull the page away while the member is busy; switch when they move on.
+			if (IsBusy(page.Content))
+			{
+				pendingJoinedGroup = groupId;
+				return;
+			}
+
+			SwitchToJoinedGroup();
+		});
+
+		/// <summary>Opens the start page of the member's joined group (joined in another session).</summary>
+		private void SwitchToJoinedGroup()
+		{
+			pendingJoinedGroup = null;
+			_ = RunAsync(() => OpenStartPageAsync());
+		}
+
+		/// <summary>Pages where the member is in the middle of something that a switch would throw away.</summary>
+		private static bool IsBusy(object? content)
+			=> content is SongEditView or AddSongsView or InternetSongView or LyricScrollView { IsEditing: true };
+
+		private void OnStatusChanged() => Dispatcher.UIThread.Post(() => syncStatus.Text = SyncStatusText.Short(service.Status));
 
 		private async Task SendPlaybackAsync(bool playing)
 		{
@@ -438,6 +483,12 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(buttons, Dock.Right);
 
 			var sync = DrawerItem("Sync");
+			// Under "Sync": whether the server can be reached and how many changes are waiting.
+			sync.Content = new StackPanel
+			{
+				Spacing = 2,
+				Children = { new TextBlock { Text = "Sync" }, syncStatus },
+			};
 			sync.Click += (_, _) =>
 			{
 				CloseUnlessPinned(menuDrawer);
@@ -834,7 +885,10 @@ namespace Lyrious.UILib.Setlists
 					ShowSetlists(start.Group!, start.Setlists!);
 					break;
 				default:
-					ShowMessage("You're not a member of a band yet. Ask a band admin to invite you.");
+					// Offline with no copy on this device yet, nothing can be shown: say why.
+					ShowMessage(service.Status is { Online: false, LastSynced: null }
+						? "You're offline, and this device has no copy of your bands yet. Connect to the server once to sync, then the app works offline too."
+						: "You're not a member of a band yet. Ask a band admin to invite you.");
 					break;
 			}
 
