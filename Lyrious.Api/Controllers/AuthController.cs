@@ -47,6 +47,8 @@ public class AuthController(
 			return Unauthorized("Invalid username or password.");
 		}
 
+		member.LastLoginAt = DateTime.Now;
+		await userManager.UpdateAsync(member);
 		return Ok(new TokenModel { Token = jwtSettings.CreateToken(member), Member = PublicProfile(member) });
 	}
 

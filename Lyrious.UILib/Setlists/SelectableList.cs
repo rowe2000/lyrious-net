@@ -18,6 +18,14 @@ namespace Lyrious.UILib.Setlists
 	{
 		private readonly List<(T Item, Border Outline, Control Tools)> rows = [];
 
+		private IDisposable? selectedOutline;
+
+		/// <summary>The selected item (outlined), if any.</summary>
+		public T? Selected { get; private set; }
+
+		/// <summary>Raised when another row is selected (a click).</summary>
+		public event Action<T?>? SelectionChanged;
+
 		/// <param name="content">What a row shows for an item.</param>
 		/// <param name="isCurrent">Whether the item is the current one (blue highlight).</param>
 		/// <param name="tools">The buttons of the toolbar shown beside the selected row.</param>
@@ -87,8 +95,14 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>Selects the item (or nothing): outlines its row and shows its toolbar.</summary>
-		private void Select(T? item)
+		public void Select(T? item)
 		{
+			var changed = !EqualityComparer<T?>.Default.Equals(Selected, item);
+			Selected = item;
+			// Only the selected row's outline follows the selection colour, so the others stay
+			// plain when the colours (resources) change.
+			selectedOutline?.Dispose();
+			selectedOutline = null;
 			foreach (var (rowItem, outline, tools) in rows)
 			{
 				var selected = item is not null && EqualityComparer<T>.Default.Equals(rowItem, item);
@@ -96,12 +110,17 @@ namespace Lyrious.UILib.Setlists
 				tools.IsVisible = selected && tools is Panel { Children.Count: > 0 };
 				if (selected)
 				{
-					outline.Bind(Border.BorderBrushProperty, outline.GetResourceObservable(LyriousTheme.SelectionBrush));
+					selectedOutline = outline.Bind(Border.BorderBrushProperty, outline.GetResourceObservable(LyriousTheme.SelectionBrush));
 				}
 				else
 				{
 					outline.BorderBrush = Brushes.Transparent;
 				}
+			}
+
+			if (changed)
+			{
+				SelectionChanged?.Invoke(item);
 			}
 		}
 	}

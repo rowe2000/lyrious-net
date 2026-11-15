@@ -246,7 +246,8 @@ public class LyriousRepository(LyriousContext context)
 		{
 			Member member => member.Id == Me.Id || SharesGroupWith(member.Id),
 			Role => true,
-			Group group => group.Id == Me.JoinedGroupId || IsMemberOf(group.Id),
+			// Only bands they're in (a member removed from their joined band no longer sees it).
+			Group group => IsMemberOf(group.Id),
 			_ => IsMemberOf(GroupIdOf(entity))
 		};
 	}
@@ -265,7 +266,67 @@ public class LyriousRepository(LyriousContext context)
 		if (existing == null)
 			return CanCreate(entity);
 
-		return CanModify(existing) && CanModify(entity);
+		return existing switch
+		{
+			Membership stored when entity is Membership changed => CanChangeMembership(stored, changed),
+			// Their own: the joined group they move to must be one of theirs (the one they leave may
+			// not be any more, e.g. after being removed from it).
+			Member stored when entity is Member changed => stored.Id == Me.Id && CanModify(changed),
+			// Any member may change the band (its name, current setlist and song); only an admin may delete it.
+			Group stored when entity is Group changed && changed.Removed && !stored.Removed => IsAdminOf(stored.Id),
+			_ => CanModify(existing) && CanModify(entity),
+		};
+	}
+
+	/// <summary>
+	/// Members are managed by the band's admins: they invite, change roles and remove. A member may
+	/// accept their own invitation and leave, but not change their own role. The last admin can't be
+	/// demoted or removed (the band would have no one to manage it).
+	/// </summary>
+	private bool CanChangeMembership(Membership stored, Membership changed)
+	{
+		if (changed.GroupId != stored.GroupId || changed.MemberId != stored.MemberId || !IsMemberOf(stored.GroupId))
+			return false;
+
+		var loses = stored.RoleEnum == RoleEnum.Admin && !stored.Removed && (changed.Removed || changed.RoleEnum != RoleEnum.Admin);
+		if (loses && !HasOtherAdmin(stored))
+			return false;
+
+		if (IsAdminOf(stored.GroupId))
+			return true;
+
+		// Their own: accepting (status) or leaving, with the role as it was.
+		return stored.MemberId == Me!.Id && changed.RoleEnum == stored.RoleEnum;
+	}
+
+	private bool HasOtherAdmin(Membership membership)
+		=> context.Memberships.Any(o => o.GroupId == membership.GroupId && o.Id != membership.Id && !o.Removed && o.RoleEnum == RoleEnum.Admin);
+
+	/// <summary>Whether the current member is an admin of the group.</summary>
+	public bool IsAdminOf(Guid? groupId)
+	{
+		if (Me == null || groupId == null)
+			return false;
+
+		var meId = Me.Id;
+		return context.Memberships.Any(m => m.GroupId == groupId && m.MemberId == meId && !m.Removed && m.RoleEnum == RoleEnum.Admin);
+	}
+
+	/// <summary>The members of the current member's groups (themselves included), invited ones too.</summary>
+	public Guid[] GetMyBandmateIds()
+	{
+		var groupIds = GetMyGroupIds();
+		return context.Memberships.Where(m => groupIds.Contains(m.GroupId) && !m.Removed).Select(m => m.MemberId).Distinct().ToArray();
+	}
+
+	/// <summary>Notes that the current member has just logged in (or opened the app connected).</summary>
+	public void RecordLogin()
+	{
+		if (Me == null)
+			return;
+
+		Me.LastLoginAt = DateTime.Now;
+		context.SaveChanges();
 	}
 
 	/// <summary>
@@ -278,7 +339,15 @@ public class LyriousRepository(LyriousContext context)
 			return false;
 
 		var existing = context.Find<TEntity>(id);
-		return existing != null && CanModify(existing);
+		return existing switch
+		{
+			null => false,
+			// Removing a member: as for marking the membership removed.
+			Membership membership => CanChangeMembership(membership, new Membership { Id = membership.Id, GroupId = membership.GroupId, MemberId = membership.MemberId, RoleEnum = membership.RoleEnum, Removed = true }),
+			// Deleting a band: its admins only.
+			Group group => IsAdminOf(group.Id),
+			_ => CanModify(existing),
+		};
 	}
 
 	private bool CanCreate(IEntity entity)
@@ -291,6 +360,9 @@ public class LyriousRepository(LyriousContext context)
 			Membership m when m.MemberId == Me!.Id
 			                  && context.Groups.Any(g => g.Id == m.GroupId)
 			                  && !context.Memberships.Any(o => o.GroupId == m.GroupId && !o.Removed) => true,
+			// Inviting: the band's admins, and a member can't be in a band twice.
+			Membership m => IsAdminOf(m.GroupId)
+			                && !context.Memberships.Any(o => o.GroupId == m.GroupId && o.MemberId == m.MemberId && !o.Removed),
 			_ => CanModify(entity)
 		};
 	}

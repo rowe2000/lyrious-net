@@ -20,6 +20,26 @@ public sealed class Member : IdentityUser<Guid>, IEntity, IName
     [DataMember] public Guid? JoinedGroupId { get; set; }
     [JsonIgnore] public Group? JoinedGroup { get; set; }
 
+    /// <summary>When the member last logged in or opened the app connected to the server; null if never since this was recorded.</summary>
+    [DataMember] public DateTime? LastLoginAt { get; set; }
+
+    /// <summary>
+    /// What other members may see of a member: name, joined group and last login. Identity fields
+    /// (password hash, security stamp, email, phone) stay on the server.
+    /// </summary>
+    public Member ToPublicProfile() => new()
+    {
+	    Id = Id,
+	    UserName = UserName,
+	    Name = Name,
+	    JoinedGroupId = JoinedGroupId,
+	    LastLoginAt = LastLoginAt,
+	    CreatedAt = CreatedAt,
+	    ChangedAt = ChangedAt,
+	    Removed = Removed,
+	    Checksum = Checksum,
+    };
+
 	[JsonIgnore] public ObservableList<Membership> Memberships { get; set; } = [];
 
 

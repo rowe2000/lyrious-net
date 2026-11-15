@@ -301,6 +301,7 @@ namespace Lyrious.UILib.Setlists
 			// Follow the joined band's current setlist and song, and its play/stop, when another member changes them.
 			service.GroupChanged += OnGroupChanged;
 			service.PlaybackChanged += OnPlaybackChanged;
+			service.MemberConnectionChanged += OnMemberConnectionChanged;
 			service.StatusChanged += OnStatusChanged;
 			service.JoinedGroupChanged += OnJoinedGroupChanged;
 			OnStatusChanged();
@@ -330,6 +331,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			service.GroupChanged -= OnGroupChanged;
 			service.PlaybackChanged -= OnPlaybackChanged;
+			service.MemberConnectionChanged -= OnMemberConnectionChanged;
 			service.StatusChanged -= OnStatusChanged;
 			service.JoinedGroupChanged -= OnJoinedGroupChanged;
 			_ = service.StopLiveUpdatesAsync();
@@ -585,6 +587,15 @@ namespace Lyrious.UILib.Setlists
 			if (bandSync && currentGroup?.Id == groupId && page.Content is LyricScrollView { IsEditing: false } lyrics)
 			{
 				lyrics.SetAutoScroll(playing);
+			}
+		});
+
+		/// <summary>A bandmate came online or went offline: the band page (if showing) shows it.</summary>
+		private void OnMemberConnectionChanged(Guid memberId, bool connected) => Dispatcher.UIThread.Post(() =>
+		{
+			if (page.Content is GroupsView bands)
+			{
+				_ = RunAsync(() => ShowGroupsAsync(bands.SelectedGroupId, replace: true));
 			}
 		});
 
@@ -993,7 +1004,7 @@ namespace Lyrious.UILib.Setlists
 			};
 			DockPanel.SetDock(header, Dock.Top);
 
-			return new DockPanel { Margin = new Thickness(16, 8, 8, 16), Children = { header, setlistDrawerBody } };
+			return new DockPanel { Margin = new Thickness(16, 8, 8, 0), Children = { header, setlistDrawerBody } };
 		}
 
 		/// <summary>
@@ -1278,19 +1289,63 @@ namespace Lyrious.UILib.Setlists
 			RefreshSetlistDrawer(reload: true);
 		}
 
-		/// <summary>The member's bands with their members, to choose the one to work with.</summary>
-		private async Task ShowGroupsAsync()
+		/// <summary>The member's bands with their members, to choose the one to work with, and manage it.</summary>
+		/// <param name="selectedGroupId">The band to show selected (e.g. the one just managed); else the joined one.</param>
+		private async Task ShowGroupsAsync() => await ShowGroupsAsync(null);
+
+		/// <param name="replace">Updates the band page in place (✕ doesn't go back to the old one).</param>
+		private async Task ShowGroupsAsync(Guid? selectedGroupId, bool replace = false)
 		{
 			var groups = await service.GetGroupsAsync();
 			var members = await service.GetGroupMembersAsync();
-			var view = new GroupsView(groups, members, currentGroup?.Id);
+			var view = new GroupsView(groups, members, currentGroup?.Id, selectedGroupId);
 			// Choosing a band changes the current one but stays in the band list, now with that band highlighted.
 			view.GroupSelected += group => _ = RunAsync(async () =>
 			{
 				await service.SelectGroupAsync(group.Id);
 				await OpenStartPageAsync(showPage: false);
-				await ShowGroupsAsync();
+				await ShowGroupsAsync(group.Id, replace: true);
 			});
+			view.MemberRoleChangeRequested += (group, member, role) => _ = RunAsync(async () =>
+			{
+				await service.SetMemberRoleAsync(group.Id, member.MemberId, role);
+				await ShowGroupsAsync(group.Id, replace: true);
+			});
+			view.MemberRemoveRequested += (group, member) => _ = RunAsync(async () =>
+			{
+				await service.RemoveMemberAsync(group.Id, member.MemberId);
+				await ShowGroupsAsync(group.Id, replace: true);
+			});
+			view.GroupDeleteRequested += group => _ = RunAsync(async () =>
+			{
+				await service.DeleteGroupAsync(group.Id);
+				if (group.Id == currentGroup?.Id)
+				{
+					// The joined band is gone: the start page picks another (or offers to add one).
+					await OpenStartPageAsync(showPage: false);
+				}
+
+				await ShowGroupsAsync(null, replace: true);
+			});
+			view.InviteRequested = async (group, query) =>
+			{
+				try
+				{
+					if (await service.FindMemberAsync(query) is not { } found)
+					{
+						return $"No member has the username, email or phone \"{query}\".";
+					}
+
+					await service.InviteMemberAsync(group.Id, found.Id);
+					ShowNotice($"Invited {found.Name} to {group.Name}");
+					await ShowGroupsAsync(group.Id, replace: true);
+					return null;
+				}
+				catch (Exception ex)
+				{
+					return ex.Message;
+				}
+			};
 			// A new band becomes the current one straight away.
 			view.GroupCreateRequested += name => _ = RunAsync(async () =>
 			{
@@ -1298,7 +1353,7 @@ namespace Lyrious.UILib.Setlists
 				await service.SelectGroupAsync(group.Id);
 				await OpenStartPageAsync();
 			});
-			page.Content = view;
+			ShowPage(view, replace);
 		}
 
 		private void ShowSetlists(GroupSummary group, IReadOnlyList<SetlistSummary> setlists)
@@ -1379,7 +1434,8 @@ namespace Lyrious.UILib.Setlists
 		/// The band's songbook, to choose a song. A song that is in the current setlist opens from
 		/// there (and becomes the group's current song); any other song just shows its lyrics.
 		/// </summary>
-		private void ShowSongs(GroupSummary group, IReadOnlyList<SongDetails> songs)
+		/// <param name="replace">Takes the current songbook page's place (after a change to it), so ✕ doesn't go back to the old one.</param>
+		private void ShowSongs(GroupSummary group, IReadOnlyList<SongDetails> songs, bool replace = false)
 		{
 			var view = new SongsView(group, songs, currentSongId);
 			view.SongSelected += song => _ = RunAsync(async () =>
@@ -1411,16 +1467,17 @@ namespace Lyrious.UILib.Setlists
 				// The setlist may have lost a song too.
 				playbackEntries = [];
 				RefreshSetlistDrawer(reload: true);
-				ShowSongs(group, await service.GetSongbookSongsAsync(group.Id));
+				ShowSongs(group, await service.GetSongbookSongsAsync(group.Id), replace: true);
 			});
-			page.Content = view;
+			ShowPage(view, replace);
 		}
 
 		/// <summary>Edits a song's name, key, tempo, beat and lyrics; back to the songbook afterwards.</summary>
 		private void ShowSongEditor(GroupSummary group, SongDetails song)
 		{
 			var view = new SongEditView(song, edited => service.UpdateSongAsync(edited));
-			view.Cancelled += () => _ = RunAsync(async () => ShowSongs(group, await service.GetSongbookSongsAsync(group.Id)));
+			// Back to the songbook it was opened from (nothing changed), which ✕ then leaves as usual.
+			view.Cancelled += GoBack;
 			view.Saved += saved => _ = RunAsync(async () =>
 			{
 				if (saved.Id == currentSongId)
@@ -1431,7 +1488,12 @@ namespace Lyrious.UILib.Setlists
 				// Setlists show the song's name, key, tempo and beat too.
 				playbackEntries = [];
 				RefreshSetlistDrawer(reload: true);
-				ShowSongs(group, await service.GetSongbookSongsAsync(group.Id));
+				var songs = await service.GetSongbookSongsAsync(group.Id);
+
+				// The songbook again, updated, in the old one's place: neither the editor nor the old
+				// songbook is left to go back to.
+				ForgetBackTo<SongsView>();
+				ShowSongs(group, songs, replace: true);
 			});
 			page.Content = view;
 		}
@@ -1668,6 +1730,36 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>The settings page; its ✕ goes back to the page before.</summary>
 		private void ShowSettings() => page.Content = new SettingsView();
+
+		/// <summary>Shows a page; with <paramref name="replace"/>, the current one isn't kept to go back to.</summary>
+		private void ShowPage(Control view, bool replace)
+		{
+			if (!replace)
+			{
+				page.Content = view;
+				return;
+			}
+
+			goingBack = true;
+			try
+			{
+				page.Content = view;
+			}
+			finally
+			{
+				goingBack = false;
+			}
+		}
+
+		/// <summary>Forgets the pages to go back to after the last page of this kind, and that page too.</summary>
+		private void ForgetBackTo<T>() where T : Control
+		{
+			var last = history.FindLastIndex(view => view is T);
+			if (last >= 0)
+			{
+				history.RemoveRange(last, history.Count - last);
+			}
+		}
 
 		/// <summary>
 		/// Back to the page shown before the current one. Lyrics of a song that's no longer the current

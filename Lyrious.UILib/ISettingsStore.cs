@@ -32,8 +32,23 @@ namespace Lyrious.UILib
 		/// <summary>The chord colour, "#RRGGBB"; none for the theme's.</summary>
 		public const string ChordColor = "chord-color";
 
+		/// <summary>The colour of level 1 headings in the lyrics, "#RRGGBB"; none for the text colour.</summary>
+		public const string Heading1Color = "heading1-color";
+
+		/// <summary>The colour of level 2 headings in the lyrics, "#RRGGBB"; none for the text colour.</summary>
+		public const string Heading2Color = "heading2-color";
+
+		/// <summary>The colour of the other headings in the lyrics (levels 3 to 6), "#RRGGBB"; none for the text colour.</summary>
+		public const string HeadingColor = "heading-color";
+
 		/// <summary>The size of the whole interface, e.g. "1.25"; none for normal size (see <see cref="UiScale"/>).</summary>
 		public const string UiScale = "ui-scale";
+
+		/// <summary>The lyrics' zoom in the scroll view (pinch), e.g. "1.4"; none for normal size.</summary>
+		public const string LyricsZoom = "lyrics-zoom";
+
+		/// <summary>"true" shows the song's name and details above the lyrics in the scroll view; off unless set.</summary>
+		public const string ShowSongHeader = "show-song-header";
 	}
 
 	/// <summary>Used until a host provides a store: settings last only while the app runs.</summary>

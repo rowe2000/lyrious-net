@@ -39,6 +39,9 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		event Action<Guid, bool>? PlaybackChanged;
 
+		/// <summary>Raised (on any thread) when a bandmate comes online (true) or goes offline.</summary>
+		event Action<Guid, bool>? MemberConnectionChanged;
+
 		/// <summary>Tells the other members of the joined band that this member started or stopped playing.</summary>
 		Task SendPlaybackAsync(bool playing);
 
@@ -66,8 +69,26 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		Task<GroupSummary> CreateGroupAsync(string name, CancellationToken cancellationToken = default);
 
-		/// <summary>Makes the group the member's current one (they join it), also for later logins.</summary>
+		/// <summary>
+		/// Makes the group the member's current one (they join it), also for later logins. Joining a
+		/// band one is invited to accepts the invitation.
+		/// </summary>
 		Task SelectGroupAsync(Guid groupId, CancellationToken cancellationToken = default);
+
+		/// <summary>Finds a member to invite by username, email or phone; null if there's none. Needs the server.</summary>
+		Task<FoundMember?> FindMemberAsync(string query, CancellationToken cancellationToken = default);
+
+		/// <summary>Invites a member to a band (as a plain member). Admins only; the server refuses others.</summary>
+		Task InviteMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default);
+
+		/// <summary>Changes a member's role in a band. Admins only, and the last admin stays one.</summary>
+		Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default);
+
+		/// <summary>Removes a member from a band. Admins only, and not the last admin.</summary>
+		Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default);
+
+		/// <summary>Deletes a band (the API keeps it, marked as removed). Admins only.</summary>
+		Task DeleteGroupAsync(Guid groupId, CancellationToken cancellationToken = default);
 
 		Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default);
 
@@ -136,8 +157,15 @@ namespace Lyrious.UILib.Setlists
 
 	public enum GroupRole { Member, Conductor, Admin }
 
-	/// <summary>A member of a group: their role, and whether they have accepted the invitation yet.</summary>
-	public sealed record GroupMember(Guid MemberId, string Name, GroupRole Role, bool Approved);
+	/// <summary>
+	/// A member of a group: their role, whether they have accepted the invitation yet, when they last
+	/// logged in (null if not known), whether it's the logged-in member, whether they've joined this
+	/// group (it's their current one), and whether their app is connected right now.
+	/// </summary>
+	public sealed record GroupMember(Guid MemberId, string Name, GroupRole Role, bool Approved, DateTime? LastLogin = null, bool IsMe = false, bool Joined = false, bool Connected = false);
+
+	/// <summary>A member found to invite.</summary>
+	public sealed record FoundMember(Guid Id, string Name, string UserName);
 
 	public sealed record SetlistSummary(Guid Id, string Name, Guid GroupId);
 
@@ -167,6 +195,7 @@ namespace Lyrious.UILib.Setlists
 		public event Action<GroupSummary>? GroupChanged { add { } remove { } }
 		public event Action<Guid>? JoinedGroupChanged { add { } remove { } }
 		public event Action<Guid, bool>? PlaybackChanged { add { } remove { } }
+		public event Action<Guid, bool>? MemberConnectionChanged { add { } remove { } }
 		public Task SendPlaybackAsync(bool playing) => Task.CompletedTask;
 		public Task StartLiveUpdatesAsync() => Task.CompletedTask;
 		public Task StopLiveUpdatesAsync() => Task.CompletedTask;
@@ -176,6 +205,11 @@ namespace Lyrious.UILib.Setlists
 		public Task<IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>>> GetGroupMembersAsync(CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<GroupSummary> CreateGroupAsync(string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SelectGroupAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<FoundMember?> FindMemberAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task InviteMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task DeleteGroupAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary?> GetSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary> CreateSetlistAsync(Guid groupId, string name, CancellationToken cancellationToken = default) => throw NotConnected();

@@ -50,7 +50,7 @@ internal sealed record NewSongDto(
 internal sealed record LrclibTrack(long Id, string? TrackName, string? ArtistName, string? AlbumName, double? Duration, bool Instrumental, string? PlainLyrics);
 
 /// <summary>A member's public name only; the API sends more, which is ignored.</summary>
-internal sealed record MemberDto(System.Guid Id, string? Name, string? UserName);
+internal sealed record MemberDto(System.Guid Id, string? Name, string? UserName, System.DateTime? LastLoginAt = null, System.Guid? JoinedGroupId = null);
 
 /// <summary>A band's playlog: the songs played on one occasion (e.g. a gig or a rehearsal).</summary>
 /// Every field the API stores is included, since new ones are posted whole.
@@ -90,6 +90,7 @@ internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int Membershi
 [JsonSerializable(typeof(NewSongDto))]
 [JsonSerializable(typeof(System.Guid))]
 [JsonSerializable(typeof(System.Guid?))]
+[JsonSerializable(typeof(System.Guid[]))]
 [JsonSerializable(typeof(JsonElement[]))]
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(MemberDto[]))]

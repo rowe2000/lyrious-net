@@ -19,6 +19,14 @@ namespace Lyrious.UILib.Setlists
 			};
 			nextOnStop.IsCheckedChanged += (_, _) => PlaybackSettings.NextSongOnStopAtEnd = nextOnStop.IsChecked == true;
 
+			var songHeader = new ToggleSwitch
+			{
+				IsChecked = DisplaySettings.ShowSongHeader,
+				OnContent = "On",
+				OffContent = "Off",
+			};
+			songHeader.IsCheckedChanged += (_, _) => DisplaySettings.ShowSongHeader = songHeader.IsChecked == true;
+
 
 			// The interface size: a list of sizes, applied at once.
 			var scale = new ComboBox { MinWidth = 100 };
@@ -56,6 +64,10 @@ namespace Lyrious.UILib.Setlists
 						"Interface size",
 						"Makes the whole app larger or smaller: text, buttons, icons and spacing.",
 						scale),
+					Setting(
+						"Song title above the lyrics",
+						"Shows the song's name, key, tempo and beat above the lyrics. The song's name is in the drawer either way.",
+						songHeader),
 					Section("Playback"),
 					Setting(
 						"Next song when stopping at the end",
@@ -74,6 +86,24 @@ namespace Lyrious.UILib.Setlists
 						() => ColorSettings.Chord,
 						color => ColorSettings.Chord = color,
 						"Theme blue"),
+					ColorSetting(
+						"Heading 1",
+						"The largest headings in the lyrics (\"# \"), such as the song's title.",
+						() => ColorSettings.Heading1,
+						color => ColorSettings.Heading1 = color,
+						"Text colour"),
+					ColorSetting(
+						"Heading 2",
+						"Headings in the lyrics written \"## \", such as Verse and Chorus.",
+						() => ColorSettings.Heading2,
+						color => ColorSettings.Heading2 = color,
+						"Text colour"),
+					ColorSetting(
+						"Other headings",
+						"Smaller headings in the lyrics (\"### \" and more).",
+						() => ColorSettings.Heading,
+						color => ColorSettings.Heading = color,
+						"Text colour"),
 				},
 			};
 
@@ -106,6 +136,9 @@ namespace Lyrious.UILib.Setlists
 		private static Control ColorSetting(string name, string explanation, Func<Color?> get, Action<Color?> set, string defaultName)
 		{
 			var outlines = new System.Collections.Generic.List<(Color? Color, Border Outline)>();
+			// The chosen one's outline follows the theme's text colour; only it is bound, so the others
+			// stay plain when the colours (resources) change.
+			IDisposable? chosenOutline = null;
 			var custom = new TextBox { Width = 110, PlaceholderText = "#RRGGBB", VerticalAlignment = VerticalAlignment.Center };
 			var problem = new TextBlock { Text = "Not a colour; write it as #RRGGBB.", IsVisible = false, TextWrapping = TextWrapping.Wrap };
 			problem.Bind(TextBlock.ForegroundProperty, problem.GetResourceObservable(LyriousTheme.ErrorBrush));
@@ -113,11 +146,13 @@ namespace Lyrious.UILib.Setlists
 			void ShowChosen()
 			{
 				var chosen = get();
+				chosenOutline?.Dispose();
+				chosenOutline = null;
 				foreach (var (color, outline) in outlines)
 				{
 					if (color == chosen)
 					{
-						outline.Bind(Border.BorderBrushProperty, outline.GetResourceObservable(LyriousTheme.ForegroundBrush));
+						chosenOutline = outline.Bind(Border.BorderBrushProperty, outline.GetResourceObservable(LyriousTheme.ForegroundBrush));
 					}
 					else
 					{
@@ -175,6 +210,14 @@ namespace Lyrious.UILib.Setlists
 			void UseCustom()
 			{
 				var text = custom.Text?.Trim();
+				var current = get();
+				if (string.IsNullOrEmpty(text) ? current == null : ColorSettings.TryParse(text) is { } same && same == current)
+				{
+					// Unchanged (e.g. just leaving the box): nothing to do.
+					problem.IsVisible = false;
+					return;
+				}
+
 				if (string.IsNullOrEmpty(text))
 				{
 					Choose(null);
@@ -237,6 +280,24 @@ namespace Lyrious.UILib.Setlists
 				},
 			};
 		}
+	}
+
+	/// <summary>Display settings, read from and saved to <see cref="App.Settings"/>.</summary>
+	public static class DisplaySettings
+	{
+		/// <summary>Whether the scroll view shows the song's name and details above the lyrics. Off unless turned on.</summary>
+		public static bool ShowSongHeader
+		{
+			get => App.Settings.Get(SettingKeys.ShowSongHeader) == "true";
+			set
+			{
+				App.Settings.Set(SettingKeys.ShowSongHeader, value ? "true" : null);
+				ShowSongHeaderChanged?.Invoke();
+			}
+		}
+
+		/// <summary>Raised when <see cref="ShowSongHeader"/> changes.</summary>
+		public static event Action? ShowSongHeaderChanged;
 	}
 
 	/// <summary>Playback settings, read from and saved to <see cref="App.Settings"/>.</summary>

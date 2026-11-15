@@ -289,7 +289,9 @@ internal sealed class SyncEngine
         return response.StatusCode switch
         {
             HttpStatusCode.Unauthorized => Outcome.Unauthorized,
-            HttpStatusCode.Forbidden => Outcome.Refused($"The server didn't allow a change to a {Describe(change.Type)} made offline (you may have left the band), so it was dropped."),
+            HttpStatusCode.Forbidden => Outcome.Refused(change.Type is "membership" or "group"
+                ? $"The server didn't allow a change to a {Describe(change.Type)} (only a band's admins may manage its members or delete it, and the last admin must stay), so it was dropped."
+                : $"The server didn't allow a change to a {Describe(change.Type)} made offline (you may have left the band), so it was dropped."),
             >= HttpStatusCode.BadRequest and < HttpStatusCode.InternalServerError
                 => Outcome.Refused($"The server refused a change to a {Describe(change.Type)} ({(int)response.StatusCode} {response.ReasonPhrase}), so it was dropped."),
             // 5xx: the server has a problem; keep the change and try again later.

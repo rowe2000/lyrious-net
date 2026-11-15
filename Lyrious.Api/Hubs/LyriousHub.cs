@@ -33,20 +33,29 @@ public class LyriousHub(LyriousRepository repo, HubConnectionRegistry registry) 
 	/// <summary>Sent to a joined group's channel when one of its members starts or stops playing: (groupId, playing).</summary>
 	public const string PlaybackChangedMethod = "PlaybackChanged";
 
+	/// <summary>Sent to a member's groups when they come online or go offline (their app connects or disconnects): (memberId, connected).</summary>
+	public const string MemberConnectionChangedMethod = "MemberConnectionChanged";
+
 	/// <summary>Sent to a group's members when one of them picks its current setlist and song: (groupId, setlistId, setlistItemId).</summary>
 	public const string SongSelectedMethod = "SongSelected";
 
 	public override async Task OnConnectedAsync()
 	{
-		if (Context.UserIdentifier is { } userId)
-		{
-			registry.Add(userId, Context.ConnectionId);
-		}
+		var cameOnline = Context.UserIdentifier is { } userId && registry.Add(userId, Context.ConnectionId);
 
 		repo.SetIdentity(Context.User?.Identity);
-		foreach (var groupId in repo.GetMyGroupIds())
+		// Opening the app (connected) counts as logging in, also with a saved login.
+		repo.RecordLogin();
+		var groupIds = repo.GetMyGroupIds();
+		foreach (var groupId in groupIds)
 		{
 			await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(groupId));
+		}
+
+		// Bandmates see them as connected.
+		if (cameOnline && repo.Me is { } me && groupIds.Length > 0)
+		{
+			await Clients.Groups(groupIds.Select(GroupName).ToArray()).SendAsync(MemberConnectionChangedMethod, me.Id, true);
 		}
 
 		if (repo.Me?.JoinedGroupId is { } joined && repo.IsMember(joined))
@@ -57,14 +66,27 @@ public class LyriousHub(LyriousRepository repo, HubConnectionRegistry registry) 
 		await base.OnConnectedAsync();
 	}
 
-	public override Task OnDisconnectedAsync(Exception? exception)
+	public override async Task OnDisconnectedAsync(Exception? exception)
 	{
-		if (Context.UserIdentifier is { } userId)
+		if (Context.UserIdentifier is { } userId && registry.Remove(userId, Context.ConnectionId) && Guid.TryParse(userId, out var memberId))
 		{
-			registry.Remove(userId, Context.ConnectionId);
+			// Their last connection: bandmates see them as no longer connected.
+			repo.SetIdentity(Context.User?.Identity);
+			var groupIds = repo.GetMyGroupIds();
+			if (groupIds.Length > 0)
+			{
+				await Clients.Groups(groupIds.Select(GroupName).ToArray()).SendAsync(MemberConnectionChangedMethod, memberId, false);
+			}
 		}
 
-		return base.OnDisconnectedAsync(exception);
+		await base.OnDisconnectedAsync(exception);
+	}
+
+	/// <summary>The members of the caller's bands that are connected right now (the app open and online).</summary>
+	public Guid[] GetConnectedMembers()
+	{
+		repo.SetIdentity(Context.User?.Identity);
+		return repo.GetMyBandmateIds().Where(id => registry.IsConnected(id.ToString())).ToArray();
 	}
 
 	/// <summary>

@@ -114,17 +114,7 @@ public sealed class ChangeNotifier(IHubContext<LyriousHub> hub, LyriousRepositor
 			return entity;
 		}
 
-		var profile = new Member
-		{
-			Id = member.Id,
-			UserName = member.UserName,
-			Name = member.Name,
-			JoinedGroupId = member.JoinedGroupId,
-			CreatedAt = member.CreatedAt,
-			ChangedAt = member.ChangedAt,
-			Removed = member.Removed,
-			Checksum = member.Checksum,
-		};
+		var profile = member.ToPublicProfile();
 		return (TEntity)(IEntity)profile;
 	}
 }

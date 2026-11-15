@@ -4,6 +4,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Input.GestureRecognizers;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -63,6 +66,35 @@ namespace Lyrious.UILib.Setlists
 		private List<(double Seconds, int Line)> parts = [];
 		private int currentPart = -1;
 
+		// Timed lyrics with a tempo: each row's bar, in a narrow column just left of the lyrics.
+		private const double BarColumnWidth = 32;
+		private const double LyricLineHeight = 36;
+		private Canvas? barColumn;
+		private bool barsPending;
+		private List<(double Top, int Bar)> shownBars = [];
+
+		// Pinch zoom (or Ctrl/⌘ + mouse wheel): the lyrics are laid out at 1/zoom of the width and
+		// drawn zoomed, so bigger text rewraps to fit. Positions found in the lyrics (time tags, line
+		// tops) are unzoomed; they're multiplied by the zoom where they meet the scroll offset.
+		private const double MinZoom = 0.5;
+		private const double MaxZoom = 3;
+		private double zoom = LyricsZoom;
+		private double timelineZoom;
+		private LayoutTransformControl? zoomHost;
+		private bool pinching;
+		private double pinchStartZoom = 1;
+		private double? pendingZoom;
+		private double pendingZoomAnchor;
+
+		/// <summary>The lyrics' zoom, remembered between songs and app starts; 1 is normal size.</summary>
+		public static double LyricsZoom
+		{
+			get => double.TryParse(App.Settings.Get(SettingKeys.LyricsZoom), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value)
+				? Math.Clamp(value, MinZoom, MaxZoom)
+				: 1;
+			private set => App.Settings.Set(SettingKeys.LyricsZoom, Math.Abs(value - 1) < 0.001 ? null : value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
+		}
+
 		/// <summary>
 		/// Whether the song's time tags set the scrolling (instead of <see cref="ScrollSpeed"/>): each
 		/// tagged place reaches the middle of the view at its time.
@@ -109,11 +141,24 @@ namespace Lyrious.UILib.Setlists
 				ShowLyrics();
 			}
 
-			Content = PageLayout.Page(
-				song.Name,
-				body,
-				subtitle: PageLayout.SongInfo(song),
-				titleAction: titleActions);
+			Content = PageLayout.SongPage(song.Name, body, PageLayout.SongInfo(song), titleActions);
+			ShowTitle();
+		}
+
+		/// <summary>Shows the song's name and details if the setting says so, and always while editing (Save and Cancel are there).</summary>
+		private void ShowTitle()
+		{
+			if (Content is Control page)
+			{
+				PageLayout.SetSongTitleShown(page, DisplaySettings.ShowSongHeader || IsEditing);
+			}
+		}
+
+		protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+		{
+			base.OnAttachedToVisualTree(e);
+			DisplaySettings.ShowSongHeaderChanged += ShowTitle;
+			ShowTitle();
 		}
 
 		/// <summary>
@@ -237,7 +282,7 @@ namespace Lyrious.UILib.Setlists
 				return null;
 			}
 
-			if (timeline != null && timelineFor == scroller.Viewport)
+			if (timeline != null && timelineFor == scroller.Viewport && timelineZoom == zoom)
 			{
 				return timeline;
 			}
@@ -248,7 +293,7 @@ namespace Lyrious.UILib.Setlists
 				if (marker.Anchor.TranslatePoint(new Point(0, marker.Anchor.Bounds.Height / 2), lyricsContent) is { } place
 				    && (points.Count == 0 || (marker.Time.TotalSeconds > points[^1].Seconds && place.Y >= points[^1].Y)))
 				{
-					points.Add((marker.Time.TotalSeconds, place.Y));
+					points.Add((marker.Time.TotalSeconds, place.Y * zoom));
 				}
 			}
 
@@ -258,13 +303,27 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			// At 0:00 the lyrics start at the top: the middle of the view shows the content's y = half its height.
+			var half = scroller.Viewport.Height / 2;
 			if (points[0].Seconds > 0)
 			{
-				points.Insert(0, (0, Math.Min(scroller.Viewport.Height / 2, points[0].Y)));
+				points.Insert(0, (0, Math.Min(half, points[0].Y)));
+			}
+
+			// Tags in the top half of the lyrics can't reach the middle of the view (the lyrics can't
+			// scroll above their top), so they'd hold the lyrics still. Instead the lyrics move on from
+			// the start, to reach the first tag that can be in the middle at its time.
+			if (points[0].Y < half)
+			{
+				points[0] = (points[0].Seconds, half);
+				while (points.Count > 1 && points[1].Y <= half)
+				{
+					points.RemoveAt(1);
+				}
 			}
 
 			timeline = points;
 			timelineFor = scroller.Viewport;
+			timelineZoom = zoom;
 			return points;
 		}
 
@@ -446,7 +505,7 @@ namespace Lyrious.UILib.Setlists
 			// The line just below (or above) the top of the view goes to the top. A line only a few
 			// pixels away (a margin) is already there.
 			const double near = 6;
-			var tops = LineTops();
+			var tops = LineTops().Select(top => top * zoom).ToList();
 			var lineTarget = direction > 0
 				? tops.Where(top => top > y + near).Cast<double?>().FirstOrDefault() ?? MaxOffset(scroller)
 				: tops.Where(top => top < y - near).Cast<double?>().LastOrDefault() ?? 0;
@@ -584,6 +643,134 @@ namespace Lyrious.UILib.Setlists
 			return tops;
 		}
 
+		/// <summary>Shows the rows' bars once layout has settled (rows wrap with the width).</summary>
+		private void ScheduleBars()
+		{
+			if (barColumn == null || barsPending)
+			{
+				return;
+			}
+
+			barsPending = true;
+			Dispatcher.UIThread.Post(() =>
+			{
+				barsPending = false;
+				ShowBars();
+			}, DispatcherPriority.Background);
+		}
+
+		/// <summary>
+		/// The bar of each row with a time tag (bar or time stamp), counted from 1: the tag's time in
+		/// whole bars, plus one, so a row tagged [5] shows 5. A row with several tags shows the first;
+		/// a tag on a line of its own (no words) goes with the row below it.
+		/// </summary>
+		private void ShowBars()
+		{
+			if (barColumn == null || lyricsContent == null || scroller == null || scroller.Extent.Height <= 0)
+			{
+				return;
+			}
+
+			var barSeconds = 60.0 / song.Tempo * ChordPro.BeatsPerBar(song.Beat);
+			var rows = BarRows();
+			var bars = new List<(double Top, int Bar)>();
+			var taken = new HashSet<int>();
+			foreach (var marker in markers.OrderBy(m => m.Time))
+			{
+				if (marker.Anchor.TranslatePoint(new Point(0, marker.Anchor.Bounds.Height / 2), lyricsContent) is not { } place)
+				{
+					continue;
+				}
+
+				// A tag with words: its row. One on a line of its own (an empty mark where the rows
+				// meet): the row below.
+				var row = marker.Anchor.Bounds.Height > 0
+					? rows.FindIndex(r => place.Y >= r.Top - 0.5 && place.Y <= r.Bottom + 0.5)
+					: -1;
+				if (row < 0)
+				{
+					row = rows.FindIndex(r => r.Top >= place.Y - 0.5 && r.Bottom > place.Y + 0.5);
+				}
+
+				if (row >= 0 && taken.Add(row))
+				{
+					bars.Add((Math.Round(rows[row].TextY - LyricLineHeight / 2), (int)Math.Round(marker.Time.TotalSeconds / barSeconds) + 1));
+				}
+			}
+
+			bars.Sort((a, b) => a.Top.CompareTo(b.Top));
+			if (bars.SequenceEqual(shownBars))
+			{
+				return;
+			}
+
+			shownBars = bars;
+			barColumn.Children.Clear();
+			foreach (var (top, bar) in bars)
+			{
+				var label = new TextBlock
+				{
+					Text = bar.ToString(System.Globalization.CultureInfo.InvariantCulture),
+					FontSize = 14,
+					Width = BarColumnWidth,
+					Height = LyricLineHeight,
+					LineHeight = LyricLineHeight,
+					TextAlignment = TextAlignment.Right,
+					Opacity = 0.5,
+					IsHitTestVisible = false,
+				};
+				Canvas.SetTop(label, top);
+				barColumn.Children.Add(label);
+			}
+		}
+
+		/// <summary>
+		/// The rows of the lyrics, headings included (a wrapped line has several), top to bottom: where
+		/// each starts and ends, and the middle of its words (below the chords on a chord line).
+		/// </summary>
+		private List<(double Top, double Bottom, double TextY)> BarRows()
+		{
+			var rows = new List<(double Top, double Bottom, double TextY)>();
+			if (lyricsContent == null)
+			{
+				return rows;
+			}
+
+			foreach (var line in lines)
+			{
+				if (line.Classes.Contains(LyricsClasses.Gap) || line.Bounds.Height <= 0
+				    || line.TranslatePoint(default, lyricsContent) is not { } place)
+				{
+					continue;
+				}
+
+				if (line is TextBlock block)
+				{
+					var y = place.Y + block.Padding.Top;
+					foreach (var row in block.TextLayout.TextLines)
+					{
+						rows.Add((y, y + row.Height, y + row.Height / 2));
+						y += row.Height;
+					}
+				}
+				else if (line is Panel panel)
+				{
+					// A chord line: its pieces in rows (it wraps between words). A row's pieces end at
+					// its bottom; a word without a chord starts lower (its margin is the chord's room).
+					foreach (var row in panel.Children.Where(child => child.IsVisible)
+						         .GroupBy(child => Math.Round(child.Bounds.Bottom))
+						         .OrderBy(group => group.Key))
+					{
+						var top = place.Y + row.Min(child => child.Bounds.Top - child.Margin.Top);
+						var bottom = place.Y + row.Max(child => child.Bounds.Bottom);
+						rows.Add((top, bottom, bottom - LyricLineHeight / 2));
+					}
+				}
+			}
+
+			return rows;
+		}
+
 		/// <summary>Whether the lyrics are scrolled all the way to the bottom (or fit without scrolling).</summary>
 		public bool IsAtEnd => scroller is { } viewer && viewer.Offset.Y >= MaxOffset(viewer) - 1;
 
@@ -592,6 +779,7 @@ namespace Lyrious.UILib.Setlists
 		protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
 		{
 			base.OnDetachedFromVisualTree(e);
+			DisplaySettings.ShowSongHeaderChanged -= ShowTitle;
 			scrollTimer.Stop();
 			StopNudge();
 		}
@@ -625,12 +813,29 @@ namespace Lyrious.UILib.Setlists
 			text.Margin = new Thickness(0, 0, 0, 48);
 			lyricsContent = text;
 			FindParts(text);
+
+			// Timed lyrics with a tempo: each row's bar, just left of it.
+			Control content = text;
+			barColumn = null;
+			shownBars = [];
+			if (markers.Count > 0 && song.Tempo > 0)
+			{
+				barColumn = new Canvas { Width = BarColumnWidth, Margin = new Thickness(0, 0, 12, 0), ClipToBounds = false };
+				Grid.SetColumn(text, 1);
+				content = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Children = { barColumn, text } };
+				text.SizeChanged += (_, _) => ScheduleBars();
+			}
+
+			zoomHost = new LayoutTransformControl { LayoutTransform = new ScaleTransform(zoom, zoom), Child = content };
 			var scroller = new ScrollViewer
 			{
 				// Transparent, so a tap anywhere in the lyrics area counts, not only on the letters.
 				Background = Brushes.Transparent,
-				Content = text,
+				Content = zoomHost,
 			};
+			AddZoomGestures(scroller);
+			// The timeline depends on the view's height too.
+			scroller.SizeChanged += (_, _) => ScheduleBars();
 			// A tap (not a drag to scroll) toggles focus mode.
 			scroller.Tapped += (_, e) =>
 			{
@@ -640,6 +845,88 @@ namespace Lyrious.UILib.Setlists
 			body.Content = scroller;
 			this.scroller = scroller;
 			titleActions.Content = editButton;
+			ShowTitle();
+		}
+
+		/// <summary>Pinch (touch screen or touchpad) and Ctrl/⌘ + mouse wheel zoom the lyrics.</summary>
+		private void AddZoomGestures(ScrollViewer viewer)
+		{
+			viewer.GestureRecognizers.Add(new PinchGestureRecognizer());
+			viewer.AddHandler(InputElement.PinchEvent, (_, e) =>
+			{
+				if (!pinching)
+				{
+					pinching = true;
+					pinchStartZoom = pendingZoom ?? zoom; // The pinch's scale is from where it started.
+				}
+
+				e.Handled = true;
+				RequestZoom(pinchStartZoom * e.Scale, e.ScaleOrigin.Y);
+			});
+			viewer.AddHandler(InputElement.PinchEndedEvent, (_, _) => pinching = false);
+			// macOS touchpads: a magnify gesture, its delta the change (0.1 = 10 % bigger).
+			viewer.AddHandler(InputElement.PointerTouchPadGestureMagnifyEvent, (_, e) =>
+			{
+				e.Handled = true;
+				RequestZoom((pendingZoom ?? zoom) * (1 + e.Delta.X), e.GetPosition(viewer).Y);
+			});
+			// Before the scroll viewer scrolls with it.
+			viewer.AddHandler(PointerWheelChangedEvent, (_, e) =>
+			{
+				if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0 || e.Delta.Y == 0)
+				{
+					return;
+				}
+
+				e.Handled = true;
+				RequestZoom((pendingZoom ?? zoom) * Math.Pow(1.1, Math.Sign(e.Delta.Y)), e.GetPosition(viewer).Y);
+			}, RoutingStrategies.Tunnel);
+		}
+
+		/// <summary>
+		/// Zooms the lyrics, keeping what's at <paramref name="anchorY"/> (in the view) in place. Quick
+		/// changes (a pinch sends many) are applied together, once per layout.
+		/// </summary>
+		private void RequestZoom(double value, double anchorY)
+		{
+			value = Math.Clamp(value, MinZoom, MaxZoom);
+			var first = pendingZoom == null;
+			pendingZoom = value;
+			pendingZoomAnchor = anchorY;
+			if (first)
+			{
+				Dispatcher.UIThread.Post(ApplyZoom, DispatcherPriority.Input);
+			}
+		}
+
+		private void ApplyZoom()
+		{
+			if (pendingZoom is not { } value || scroller == null || zoomHost == null)
+			{
+				pendingZoom = null;
+				return;
+			}
+
+			pendingZoom = null;
+			if (Math.Abs(value - zoom) < 0.001)
+			{
+				return;
+			}
+
+			// Where the anchor is, as a share of the lyrics' height: the lines rewrap, so this keeps the
+			// same words there better than scaling the offset.
+			var anchor = Math.Clamp(pendingZoomAnchor, 0, scroller.Viewport.Height);
+			var share = scroller.Extent.Height > 0 ? (scroller.Offset.Y + anchor) / scroller.Extent.Height : 0;
+			zoom = value;
+			LyricsZoom = value;
+			zoomHost.LayoutTransform = new ScaleTransform(zoom, zoom);
+			scroller.UpdateLayout();
+			if (!scrollTimer.IsEnabled || !IsTimed)
+			{
+				scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(Math.Round(share * scroller.Extent.Height - anchor), 0, MaxOffset(scroller)));
+			}
+
+			ScheduleBars();
 		}
 
 		/// <summary>The lyrics in a text box (with the error above it, if saving fails); Save and Cancel go beside the title.</summary>
@@ -667,6 +954,7 @@ namespace Lyrious.UILib.Setlists
 
 			// Save and Cancel take the pencil's place at the right of the title.
 			titleActions.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { save, cancel } };
+			ShowTitle();
 
 			cancel.Click += (_, _) => ShowLyrics();
 			save.Click += async (_, _) =>

@@ -6,6 +6,9 @@ namespace Lyrious.Api.Controllers;
 
 public class MemberController(LyriousRepository repo) : Controller<Member>(repo)
 {
+	// Other members' Identity fields (password hash, email, ...) are never sent.
+	protected override Member ForCaller(Member entity) => entity.ToPublicProfile();
+
 	// GET api/member/find?query=<username|email|phone>
 	// Finds any member (not just those sharing a group) so they can be invited.
 	// Only the public profile is returned.
@@ -23,13 +26,6 @@ public class MemberController(LyriousRepository repo) : Controller<Member>(repo)
 			return NotFound();
 		}
 
-		return new Member
-		{
-			Id = member.Id,
-			UserName = member.UserName,
-			Name = member.Name,
-			CreatedAt = member.CreatedAt,
-			ChangedAt = member.ChangedAt,
-		};
+		return member.ToPublicProfile();
 	}
 }

@@ -18,12 +18,15 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 {
 	protected LyriousRepository Repo => repo;
 
+	/// <summary>What the caller is sent of an entity; e.g. members only as a public profile.</summary>
+	protected virtual TEntity ForCaller(TEntity entity) => entity;
+
 	// GET: api/<TEntity>s
 	[HttpGet]
 	public virtual IEnumerable<TEntity> Get()
 	{
 		repo.SetIdentity(User.Identity);
-		return repo.Get<TEntity>();
+		return repo.Get<TEntity>().Select(ForCaller);
 	}
 
 	// GET api/<TEntity>s/<id>
@@ -35,7 +38,7 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 
 		// Entities the caller can't see are reported as missing rather than forbidden,
 		// so ids from other groups can't be probed.
-		return entity is null ? NotFound() : entity;
+		return entity is null ? NotFound() : ForCaller(entity);
 	}
 
 	// POST api/<TEntity>s
@@ -108,7 +111,7 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 
 		repo.Update([value]);
 		await NotifyAsync([id]);
-		return repo.Get<TEntity>([id]).FirstOrDefault() is { } updated ? updated : NotFound();
+		return repo.Get<TEntity>([id]).FirstOrDefault() is { } updated ? ForCaller(updated) : NotFound();
 	}
 
 	// DELETE api/<TEntity>/<id>
@@ -116,9 +119,14 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 	public virtual async Task<IActionResult> Delete(Guid id)
 	{
 		repo.SetIdentity(User.Identity);
-		if (!repo.CanRemove<TEntity>(id))
+		if (repo.Get<TEntity>([id]).FirstOrDefault() is null)
 		{
 			return NotFound();
+		}
+
+		if (!repo.CanRemove<TEntity>(id))
+		{
+			return Forbidden();
 		}
 
 		// Removal is a soft delete, so clients are sent the entity with Removed = true.

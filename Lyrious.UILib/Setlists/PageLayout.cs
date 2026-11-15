@@ -82,6 +82,55 @@ namespace Lyrious.UILib.Setlists
 			return column;
 		}
 
+		/// <summary>
+		/// A song's page: the name with its details (key, tempo, beat) after it on the same line, and
+		/// the action at the right. It sits a little higher than other pages, so the action lines up
+		/// with the drawer buttons in the top corners (both 40 high, centred 28 from the top).
+		/// </summary>
+		public static Control SongPage(string title, Control content, string? details, Control titleAction)
+		{
+			var titleText = new TextBlock { Text = title, FontSize = 28, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 12, 0) };
+			var titleRow = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { titleText } };
+			if (!string.IsNullOrEmpty(details))
+			{
+				// On the title's baseline (the smaller text sits a little less deep below it).
+				titleRow.Children.Add(new TextBlock { Text = details, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 5) });
+			}
+
+			titleAction.VerticalAlignment = VerticalAlignment.Top;
+			DockPanel.SetDock(titleAction, Dock.Right);
+			var header = new DockPanel { Margin = new Thickness(0, 0, 0, 16), Children = { titleAction, titleRow }, ZIndex = 1 };
+			Grid.SetRow(content, 1);
+			return new Grid
+			{
+				MaxWidth = 640,
+				Margin = new Thickness(16, 8, 16, 16),
+				HorizontalAlignment = HorizontalAlignment.Stretch,
+				RowDefinitions = new RowDefinitions("Auto,*"),
+				Children = { header, content },
+			};
+		}
+
+		/// <summary>
+		/// Shows or hides the title and details of a <see cref="SongPage"/>. Hidden, the title action
+		/// (e.g. the pencil) stays at the top right, over the content, which takes the whole page.
+		/// </summary>
+		public static void SetSongTitleShown(Control songPage, bool shown)
+		{
+			if (songPage is not Grid { Children: [DockPanel header, var content] })
+			{
+				return;
+			}
+
+			header.Children[1].IsVisible = shown;
+			header.Margin = new Thickness(0, 0, 0, shown ? 16 : 0);
+			// Hidden: the content starts at the top, under the action, so the header takes no room.
+			header.HorizontalAlignment = shown ? HorizontalAlignment.Stretch : HorizontalAlignment.Right;
+			header.VerticalAlignment = VerticalAlignment.Top;
+			Grid.SetRow(content, shown ? 1 : 0);
+			Grid.SetRowSpan(content, shown ? 1 : 2);
+		}
+
 		private const string AddIcon = "M12,5 V19 M5,12 H19";
 
 		/// <summary>
@@ -194,8 +243,8 @@ namespace Lyrious.UILib.Setlists
 			return row;
 		}
 
-		// An arrow into a box's opening: "open this".
-		private const string OpenIcon = "M9,6 L15,12 L9,18";
+		// A check: "make this the current one".
+		private const string OpenIcon = "M5,12 L10,17 L19,7";
 
 		// A trash can: lid, handle, can and two lines on it.
 		private const string TrashIcon = "M5,7 H19 M10,7 V5 H14 V7 M7,7 L8,20 H16 L17,7 M10,11 V16 M14,11 V16";

@@ -11,18 +11,33 @@ public sealed class HubConnectionRegistry
 {
 	private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> connectionsByUser = new();
 
-	public void Add(string userId, string connectionId)
+	/// <summary>Adds a connection; returns whether it's the member's first (they've just come online).</summary>
+	public bool Add(string userId, string connectionId)
 	{
-		connectionsByUser.GetOrAdd(userId, _ => new ConcurrentDictionary<string, byte>()).TryAdd(connectionId, 0);
-	}
-
-	public void Remove(string userId, string connectionId)
-	{
-		if (connectionsByUser.TryGetValue(userId, out var connections))
+		var connections = connectionsByUser.GetOrAdd(userId, _ => new ConcurrentDictionary<string, byte>());
+		lock (connections)
 		{
-			connections.TryRemove(connectionId, out _);
+			connections.TryAdd(connectionId, 0);
+			return connections.Count == 1;
 		}
 	}
+
+	/// <summary>Removes a connection; returns whether it was the member's last (they've gone offline).</summary>
+	public bool Remove(string userId, string connectionId)
+	{
+		if (!connectionsByUser.TryGetValue(userId, out var connections))
+		{
+			return false;
+		}
+
+		lock (connections)
+		{
+			return connections.TryRemove(connectionId, out _) && connections.IsEmpty;
+		}
+	}
+
+	/// <summary>Whether the member has a live connection (the app open and connected).</summary>
+	public bool IsConnected(string userId) => connectionsByUser.TryGetValue(userId, out var connections) && !connections.IsEmpty;
 
 	public IReadOnlyCollection<string> GetConnections(string userId)
 	{

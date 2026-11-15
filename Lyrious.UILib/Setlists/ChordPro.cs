@@ -63,15 +63,18 @@ namespace Lyrious.UILib.Setlists
 			   || BracketTag().Matches(text).Any(tag => IsTimeTag(tag.Groups[1].Value))
 			   || text.Split('\n').Any(line => Emphasis(line).Any(style => style.Marker));
 
-		/// <summary>Whether a tag is a time: digits with a ':' (minutes:seconds), or just an integer (a bar count).</summary>
+		/// <summary>Whether a tag is a time: digits with a ':' (minutes:seconds), or just an integer (a bar count); either may start with '+' (after the previous tag).</summary>
 		public static bool IsTimeTag(string tag) => TimeTag().IsMatch(tag.Trim());
 
 		/// <summary>
 		/// The time a tag stands for: "[1:23]" (or "[1:23.5]", "[1:02:03]") is that time from the start;
-		/// "[12]" is 12 bars from the start, at the song's tempo and beats per bar. Null if the tag isn't
-		/// a time, or it's bars and the tempo is unknown.
+		/// "[12]" is the start of bar 12, counting from 1 (so "[1]", or "[0]", is the start of the song),
+		/// at the song's tempo and beats per bar. With a '+' it's that long after the previous time tag:
+		/// "[+0:08]" 8 seconds, "[+4]" 4 bars (after the start if there's none before it). Null if the
+		/// tag isn't a time, or it's bars and the tempo is unknown.
 		/// </summary>
-		public static TimeSpan? TimeOf(string tag, double tempo, int beatsPerBar)
+		/// <param name="previous">The time of the time tag before this one, for a '+' tag.</param>
+		public static TimeSpan? TimeOf(string tag, double tempo, int beatsPerBar, TimeSpan? previous = null)
 		{
 			var text = tag.Trim();
 			if (!TimeTag().IsMatch(text))
@@ -79,12 +82,27 @@ namespace Lyrious.UILib.Setlists
 				return null;
 			}
 
+			var relative = text.StartsWith('+');
+			if (relative)
+			{
+				text = text[1..];
+			}
+
 			if (!text.Contains(':'))
 			{
-				// A bar count.
-				return tempo > 0 && int.TryParse(text, out var bars)
-					? TimeSpan.FromSeconds(bars * Math.Max(1, beatsPerBar) * 60.0 / tempo)
-					: null;
+				// Bars: a bar's number (from 1), or with '+' a number of bars.
+				if (tempo <= 0 || !int.TryParse(text, out var bars))
+				{
+					return null;
+				}
+
+				var length = TimeSpan.FromSeconds((relative ? bars : Math.Max(0, bars - 1)) * Math.Max(1, beatsPerBar) * 60.0 / tempo);
+				return relative ? (previous ?? TimeSpan.Zero) + length : length;
+			}
+
+			if (relative)
+			{
+				return TimeOf(text, tempo, beatsPerBar) is { } time ? (previous ?? TimeSpan.Zero) + time : null;
 			}
 
 			var parts = text.Split(':');
@@ -118,14 +136,15 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// Whether what's inside a bracket tag is a chord: anything but nothing, or a tag that starts
-		/// with a digit or "midi:" (other programs' own tags, e.g. times or MIDI events).
+		/// Whether what's inside a bracket tag is a chord: anything but nothing, a time tag (e.g. "+4"),
+		/// or a tag that starts with a digit or "midi:" (other programs' own tags, e.g. times or MIDI events).
 		/// </summary>
 		public static bool IsChord(string tag)
 		{
 			var text = tag.Trim();
 			return text.Length > 0
 			       && !char.IsDigit(text[0])
+			       && !IsTimeTag(text)
 			       && !text.StartsWith("midi:", StringComparison.OrdinalIgnoreCase);
 		}
 
@@ -142,9 +161,22 @@ namespace Lyrious.UILib.Setlists
 			var markers = new List<TimeMarker>();
 			var beatsPerBar = BeatsPerBar(beat);
 
-			// The time tags on a line, in order (empty if none).
+			// A tag's time, in the order the tags come: a '+' tag counts from the one before it.
+			TimeSpan? last = null;
+			TimeSpan? Resolve(string tag)
+			{
+				if (TimeOf(tag, tempo, beatsPerBar, last) is not { } time)
+				{
+					return null;
+				}
+
+				last = time;
+				return time;
+			}
+
+			// The time tags on a line, in order (empty if none). Call once per line ('+' tags move on).
 			List<TimeSpan> TimesOn(string line) => BracketTag().Matches(line)
-				.Select(tag => TimeOf(tag.Groups[1].Value, tempo, beatsPerBar))
+				.Select(tag => Resolve(tag.Groups[1].Value))
 				.OfType<TimeSpan>()
 				.ToList();
 
@@ -232,7 +264,7 @@ namespace Lyrious.UILib.Setlists
 				}
 				else if (BracketTag().Matches(line).Any(tag => IsChord(tag.Groups[1].Value)))
 				{
-					current.Children.Add(ChordLine(line, fontSize, lineHeight, tempo, beatsPerBar, markers));
+					current.Children.Add(ChordLine(line, fontSize, lineHeight, Resolve, markers));
 				}
 				else
 				{
@@ -263,8 +295,9 @@ namespace Lyrious.UILib.Setlists
 		/// A line with chords: a row of pieces, each a chord (or nothing) over its text. Text after a
 		/// chord is split into words, the chord over the first, so a long line wraps between words.
 		/// </summary>
+		/// <param name="timeOf">A time tag's time (called once per tag, in order).</param>
 		/// <param name="markers">Time tags on the line are added here, each at its place in the row.</param>
-		private static Control ChordLine(string line, double fontSize, double lineHeight, double tempo, int beatsPerBar, List<TimeMarker> markers)
+		private static Control ChordLine(string line, double fontSize, double lineHeight, Func<string, TimeSpan?> timeOf, List<TimeMarker> markers)
 		{
 			var chordSize = fontSize; // Chords as large as the lyrics.
 			var chordHeight = Math.Round(chordSize * 1.35);
@@ -281,7 +314,7 @@ namespace Lyrious.UILib.Setlists
 				if (timeTag != null)
 				{
 					// An invisible, zero-width mark where the time tag was: it wraps with the words around it.
-					if (TimeOf(timeTag, tempo, beatsPerBar) is { } time)
+					if (timeOf(timeTag) is { } time)
 					{
 						var place = new Border { Width = 0, Height = chordHeight + lineHeight };
 						markers.Add(new TimeMarker(time, place));
@@ -402,6 +435,8 @@ namespace Lyrious.UILib.Setlists
 				Margin = new Thickness(0, fontSize * 0.5, 0, fontSize * 0.2),
 			};
 			SetStyledText(heading, text, Emphasis(text), 0, text.Length);
+			var brush = level switch { <= 1 => LyriousTheme.Heading1Brush, 2 => LyriousTheme.Heading2Brush, _ => LyriousTheme.HeadingBrush };
+			heading.Bind(TextBlock.ForegroundProperty, heading.GetResourceObservable(brush));
 			heading.Classes.Add(LyricsClasses.Heading);
 			return heading;
 		}
@@ -522,18 +557,18 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>A time tag: an integer (bars), or numbers with ':' (minutes:seconds, perhaps hours and tenths).</summary>
-		[GeneratedRegex(@"^\d+$|^\d+(:\d+(\.\d+)?)+$")]
+		[GeneratedRegex(@"^\+?\d+$|^\+?\d+(:\d+(\.\d+)?)+$")]
 		private static partial Regex TimeTag();
 
 		/// <summary>
 		/// A Markdown heading line: one to six '#', a space, then the heading. Hidden tags (time
 		/// tags, "midi:" tags) may come before the '#', e.g. "[0:12]# Verse".
 		/// </summary>
-		[GeneratedRegex(@"^\s*(?:\[\s*(?:\d|[Mm][Ii][Dd][Ii]:)[^\]\n]*\]\s*)*(#{1,6})\s+(.*\S)\s*$", RegexOptions.Multiline)]
+		[GeneratedRegex(@"^\s*(?:\[\s*(?:\+?\d|[Mm][Ii][Dd][Ii]:)[^\]\n]*\]\s*)*(#{1,6})\s+(.*\S)\s*$", RegexOptions.Multiline)]
 		private static partial Regex HeadingLine();
 
 		/// <summary>Hidden tags (time tags, "midi:" tags) at the start of a line, and the spaces after them.</summary>
-		[GeneratedRegex(@"^(?:\[\s*(?:\d|[Mm][Ii][Dd][Ii]:)[^\]\n]*\]\s*)+")]
+		[GeneratedRegex(@"^(?:\[\s*(?:\+?\d|[Mm][Ii][Dd][Ii]:)[^\]\n]*\]\s*)+")]
 		private static partial Regex LeadingTimeTags();
 
 		/// <summary>

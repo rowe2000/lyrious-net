@@ -37,6 +37,7 @@ public class LyriousContext : LocalContext<Member, Role>
 		if (!created && Database.IsSqlite())
 		{
 			AddColumnIfMissing(nameof(Songs), nameof(Song.MediaLink), "TEXT NOT NULL DEFAULT ''");
+			AddColumnIfMissing(nameof(Members), nameof(Member.LastLoginAt), "TEXT NULL");
 		}
 
 		return created;

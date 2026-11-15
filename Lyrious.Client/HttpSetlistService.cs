@@ -41,6 +41,7 @@ public sealed class HttpSetlistService : ISetlistService
         live.EntitiesChanged += OnServerChanged;
         live.PlaybackChanged += (groupId, playing) => PlaybackChanged?.Invoke(groupId, playing);
         live.SongSelected += OnSongSelected;
+        live.MemberConnectionChanged += (memberId, connected) => MemberConnectionChanged?.Invoke(memberId, connected);
         live.Reconnected += () => { if (cache is { } c) _ = engine.SyncAsync(c); };
         live.Lost += () => { if (cache is { } c && liveWanted) engine.ReportOffline(c); };
         engine.StatusChanged += () => StatusChanged?.Invoke();
@@ -56,6 +57,8 @@ public sealed class HttpSetlistService : ISetlistService
     public event Action<Guid>? JoinedGroupChanged;
 
     public event Action<Guid, bool>? PlaybackChanged;
+
+    public event Action<Guid, bool>? MemberConnectionChanged;
 
     public event Action? StatusChanged;
 
@@ -254,9 +257,12 @@ public sealed class HttpSetlistService : ISetlistService
     {
         const int approved = 2;
         var current = await CacheAsync();
-        var names = current.All("member")
+        var profiles = current.All("member")
             .Select(member => As(member, ClientJsonContext.Default.MemberDto))
-            .ToDictionary(member => member.Id, member => !string.IsNullOrWhiteSpace(member.Name) ? member.Name : member.UserName ?? "Unknown");
+            .ToDictionary(member => member.Id);
+        var names = profiles.ToDictionary(entry => entry.Key, entry => !string.IsNullOrWhiteSpace(entry.Value.Name) ? entry.Value.Name : entry.Value.UserName ?? "Unknown");
+        var me = auth.MemberId;
+        var connected = await ConnectedMembersAsync();
 
         // Admins first, then conductors, then members; each by name.
         return Live(current, "membership", ClientJsonContext.Default.MembershipDto)
@@ -264,7 +270,11 @@ public sealed class HttpSetlistService : ISetlistService
                 membership.MemberId,
                 names.GetValueOrDefault(membership.MemberId, "Unknown"),
                 Enum.IsDefined(typeof(GroupRole), membership.RoleEnum) ? (GroupRole)membership.RoleEnum : GroupRole.Member,
-                membership.MembershipStatusEnum == approved)))
+                membership.MembershipStatusEnum == approved,
+                profiles.GetValueOrDefault(membership.MemberId)?.LastLoginAt,
+                membership.MemberId == me,
+                profiles.GetValueOrDefault(membership.MemberId)?.JoinedGroupId == membership.GroupId,
+                connected.Contains(membership.MemberId))))
             .GroupBy(entry => entry.GroupId)
             .ToDictionary(
                 group => group.Key,
@@ -440,7 +450,90 @@ public sealed class HttpSetlistService : ISetlistService
         var memberId = auth.MemberId ?? throw new InvalidOperationException("You're not logged in.");
         var current = await CacheAsync();
         current.Update("member", memberId, new JsonObject { ["joinedGroupId"] = groupId.ToString() });
+
+        // Joining a band one is invited to accepts the invitation.
+        const int approved = 2;
+        if (MembershipOf(current, groupId, memberId) is { } invited && invited.MembershipStatusEnum != approved)
+        {
+            current.Update("membership", invited.Id, new JsonObject { ["membershipStatusEnum"] = approved });
+        }
+
         auth.SetJoinedGroup(groupId);
+        Queued(current);
+    }
+
+    /// <summary>Who's connected right now; none when offline (or if the server can't say).</summary>
+    private async Task<HashSet<Guid>> ConnectedMembersAsync()
+    {
+        try
+        {
+            return [.. await live.GetConnectedMembersAsync().WaitAsync(TimeSpan.FromSeconds(3))];
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Couldn't get who's connected: {ex.Message}");
+            return [];
+        }
+    }
+
+    private static MembershipDto? MembershipOf(EntityCache cache, Guid groupId, Guid memberId)
+        => Live(cache, "membership", ClientJsonContext.Default.MembershipDto).FirstOrDefault(m => m.GroupId == groupId && m.MemberId == memberId);
+
+    public async Task<FoundMember?> FindMemberAsync(string query, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(auth.AccessToken))
+        {
+            throw new InvalidOperationException("Finding a member to invite needs a connection to the server.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/member/find?query={Uri.EscapeDataString(query.Trim())}");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", auth.AccessToken);
+        using var response = await auth.Http.SendAsync(request, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        var member = await response.Content.ReadFromJsonAsync(ClientJsonContext.Default.MemberDto, cancellationToken);
+        return member == null ? null : new FoundMember(member.Id, !string.IsNullOrWhiteSpace(member.Name) ? member.Name : member.UserName ?? "", member.UserName ?? "");
+    }
+
+    public async Task InviteMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default)
+    {
+        const int member = 0, invited = 0;
+        var current = await CacheAsync();
+        if (MembershipOf(current, groupId, memberId) != null)
+        {
+            throw new InvalidOperationException("They're in the band already.");
+        }
+
+        current.Create("membership", Node(new MembershipDto(Guid.NewGuid(), member, invited, groupId, memberId, Removed: false), ClientJsonContext.Default.MembershipDto));
+        Queued(current);
+    }
+
+    public async Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        var membership = MembershipOf(current, groupId, memberId) ?? throw new InvalidOperationException("They're no longer in the band.");
+        current.Update("membership", membership.Id, new JsonObject { ["roleEnum"] = (int)role });
+        Queued(current);
+    }
+
+    public async Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        if (MembershipOf(current, groupId, memberId) is { } membership)
+        {
+            current.Delete("membership", membership.Id);
+            Queued(current);
+        }
+    }
+
+    public async Task DeleteGroupAsync(Guid groupId, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        current.Delete("group", groupId);
         Queued(current);
     }
 
