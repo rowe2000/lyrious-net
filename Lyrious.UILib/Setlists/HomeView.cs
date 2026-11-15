@@ -185,28 +185,7 @@ namespace Lyrious.UILib.Setlists
 			};
 			notice.Bind(Border.BackgroundProperty, notice.GetResourceObservable(LyriousTheme.CardBrush));
 			setlistDrawer.Content = new Grid { Children = { new DockPanel { Children = { playbackBar, page } }, topRow, notice } };
-			playbackBar.PlayPauseRequested += () =>
-			{
-				if (page.Content is LyricScrollView lyrics)
-				{
-					var stopping = lyrics.IsAutoScrolling;
-					var atEnd = lyrics.IsAtEnd;
-					lyrics.SetAutoScroll(!stopping);
-					if (lyrics.IsAutoScrolling)
-					{
-						StartPlay(lyrics);
-					}
-
-					// The other members that have joined the band start or stop too.
-					_ = SendPlaybackAsync(lyrics.IsAutoScrolling);
-
-					// Stopping at the very end of the lyrics goes on to the next song (a setting, on by default).
-					if (stopping && atEnd && PlaybackSettings.NextSongOnStopAtEnd)
-					{
-						NextSong();
-					}
-				}
-			};
+			playbackBar.PlayPauseRequested += PlayPause;
 			playbackBar.RestartRequested += () => (page.Content as LyricScrollView)?.ScrollToStart();
 			playbackBar.NextRequested += NextSong;
 			playbackBar.SetBandSync(bandSync);
@@ -316,6 +295,34 @@ namespace Lyrious.UILib.Setlists
 					e.Handled = true;
 				}
 			};
+			// On the lyrics page (not while editing or typing in a box) the space bar plays and stops, as
+			// the play/stop button does, and the up and down arrows nudge the lyrics. Seen before the focused control, so a focused button isn't
+			// also pressed by it (the play button would undo it).
+			AddHandler(KeyDownEvent, (_, e) =>
+			{
+				if (e.KeyModifiers != Avalonia.Input.KeyModifiers.None || page.Content is not LyricScrollView { IsEditing: false } lyrics
+				    || e.Source is TextBox)
+				{
+					return;
+				}
+
+				switch (e.Key)
+				{
+					case Avalonia.Input.Key.Space:
+						e.Handled = true;
+						PlayPause();
+						break;
+					// Up and down nudge the lyrics: 4 bars for timed songs, else a line.
+					case Avalonia.Input.Key.Up:
+						e.Handled = true;
+						lyrics.Nudge(-1);
+						break;
+					case Avalonia.Input.Key.Down:
+						e.Handled = true;
+						lyrics.Nudge(1);
+						break;
+				}
+			}, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
 			// Follow the joined band's current setlist and song, and its play/stop, when another member changes them.
 			service.GroupChanged += OnGroupChanged;
@@ -460,6 +467,30 @@ namespace Lyrious.UILib.Setlists
 			catch (Exception ex)
 			{
 				System.Diagnostics.Debug.WriteLine($"Couldn't send play/stop to the band: {ex.Message}");
+			}
+		}
+
+		/// <summary>Play/pause on the lyrics page (the toolbar button, or the space bar).</summary>
+		private void PlayPause()
+		{
+			if (page.Content is LyricScrollView lyrics)
+			{
+				var stopping = lyrics.IsAutoScrolling;
+				var atEnd = lyrics.IsAtEnd;
+				lyrics.SetAutoScroll(!stopping);
+				if (lyrics.IsAutoScrolling)
+				{
+					StartPlay(lyrics);
+				}
+
+				// The other members that have joined the band start or stop too.
+				_ = SendPlaybackAsync(lyrics.IsAutoScrolling);
+
+				// Stopping at the very end of the lyrics goes on to the next song (a setting, on by default).
+				if (stopping && atEnd && PlaybackSettings.NextSongOnStopAtEnd)
+				{
+					NextSong();
+				}
 			}
 		}
 

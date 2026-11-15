@@ -41,6 +41,13 @@ namespace Lyrious.UILib.Setlists
 	public sealed record TimeMarker(TimeSpan Time, Control Anchor);
 
 	/// <summary>The rendered lyrics, and where their time tags are.</summary>
+	/// <summary>Style classes on rendered lines: headings, and the gap an empty line leaves.</summary>
+	public static class LyricsClasses
+	{
+		public const string Heading = "lyrics-heading";
+		public const string Gap = "lyrics-gap";
+	}
+
 	public sealed record RenderedLyrics(Control Content, IReadOnlyList<TimeMarker> Markers);
 
 	public static partial class ChordPro
@@ -221,7 +228,7 @@ namespace Lyrious.UILib.Setlists
 				}
 				else if (trimmed.Length == 0)
 				{
-					current.Children.Add(new Border { Height = lineHeight * 0.6 });
+					current.Children.Add(new Border { Height = lineHeight * 0.6, Classes = { LyricsClasses.Gap } });
 				}
 				else if (BracketTag().Matches(line).Any(tag => IsChord(tag.Groups[1].Value)))
 				{
@@ -391,6 +398,7 @@ namespace Lyrious.UILib.Setlists
 				Margin = new Thickness(0, fontSize * 0.5, 0, fontSize * 0.2),
 			};
 			SetStyledText(heading, text, Emphasis(text), 0, text.Length);
+			heading.Classes.Add(LyricsClasses.Heading);
 			return heading;
 		}
 

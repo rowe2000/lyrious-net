@@ -54,6 +54,15 @@ namespace Lyrious.UILib.Setlists
 		private Size timelineFor;
 		private double playbackStart;
 
+		// While timed lyrics play, the lines outside the current part (from the last time tag passed to
+		// the next) are a little dimmer. The lyrics' lines (a chorus's lines one by one), and where each
+		// part starts: (seconds, first line), in time order.
+		private const double DimmedOpacity = 0.7;
+		private List<Control> lines = [];
+		private List<double> lineOpacities = [];
+		private List<(double Seconds, int Line)> parts = [];
+		private int currentPart = -1;
+
 		/// <summary>
 		/// Whether the song's time tags set the scrolling (instead of <see cref="ScrollSpeed"/>): each
 		/// tagged place reaches the middle of the view at its time.
@@ -89,6 +98,7 @@ namespace Lyrious.UILib.Setlists
 			editButton = HomeView.IconButton(EditIcon, "Edit lyrics");
 			editButton.Click += (_, _) => ShowEditor();
 			scrollTimer.Tick += (_, _) => ScrollStep();
+			nudgeTimer.Tick += (_, _) => NudgeStep();
 
 			if (startEditing)
 			{
@@ -121,6 +131,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (scroller != null)
 			{
+				StopNudge();
 				scroller.Offset = new Vector(scroller.Offset.X, 0);
 				scrollRemainder = 0;
 				if (IsTimed && scrollTimer.IsEnabled)
@@ -145,6 +156,8 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
+			StopNudge();
+
 			if (on)
 			{
 				// Starting at the end begins again from the top.
@@ -165,6 +178,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				scrollTimer.Stop();
 				scrollClock.Reset();
+				ShowCurrentPart(null);
 			}
 
 			AutoScrollChanged?.Invoke();
@@ -188,6 +202,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				// Where the song's timeline says the lyrics should be now (not a step from where they are).
 				var now = playbackStart + scrollClock.Elapsed.TotalSeconds;
+				ShowCurrentPart(now);
 				var target = Math.Clamp(CenterAt(points, now) - scroller.Viewport.Height / 2, 0, MaxOffset(scroller));
 				scroller.Offset = new Vector(scroller.Offset.X, Math.Round(target));
 				return;
@@ -299,6 +314,276 @@ namespace Lyrious.UILib.Setlists
 			return yb > ya ? tb + (tb - ta) / (yb - ya) * (y - yb) : tb;
 		}
 
+		/// <summary>
+		/// Dims the lines outside the part being played at the time (from the last time tag passed up to
+		/// the next one); null (stopped) shows every line as usual.
+		/// </summary>
+		private void ShowCurrentPart(double? seconds)
+		{
+			var part = seconds is { } now && parts.Count > 0
+				? Math.Max(0, parts.FindLastIndex(p => p.Seconds <= now))
+				: -1;
+			if (part == currentPart)
+			{
+				return;
+			}
+
+			currentPart = part;
+			var first = part >= 0 ? parts[part].Line : 0;
+			var end = part < 0 ? lines.Count : part + 1 < parts.Count ? Math.Max(parts[part + 1].Line, first + 1) : lines.Count;
+			for (var i = 0; i < lines.Count; i++)
+			{
+				lines[i].Opacity = lineOpacities[i] * (part < 0 || (i >= first && i < end) ? 1 : DimmedOpacity);
+			}
+		}
+
+		/// <summary>
+		/// The rendered lyrics' lines and where the timed parts start. A chorus's lines count one by one;
+		/// a time tag inside a line starts the part at that line, and so do the headings and empty lines
+		/// just above it (a part's heading belongs to it). Tags out of order are left out, as for the scrolling.
+		/// </summary>
+		private void FindParts(Control content)
+		{
+			lines = [];
+			parts = [];
+			currentPart = -1;
+			if (content is not StackPanel root)
+			{
+				return;
+			}
+
+			foreach (var child in root.Children)
+			{
+				if (child is Border { Child: StackPanel chorus })
+				{
+					lines.AddRange(chorus.Children);
+				}
+				else
+				{
+					lines.Add(child);
+				}
+			}
+
+			lineOpacities = lines.Select(line => line.Opacity).ToList();
+			foreach (var marker in markers.OrderBy(m => m.Time))
+			{
+				var line = LineOf(marker.Anchor);
+				while (line > 0 && (lines[line - 1].Classes.Contains(LyricsClasses.Heading) || lines[line - 1].Classes.Contains(LyricsClasses.Gap)))
+				{
+					line--;
+				}
+
+				if (line >= 0 && (parts.Count == 0 || (marker.Time.TotalSeconds > parts[^1].Seconds && line >= parts[^1].Line)))
+				{
+					parts.Add((marker.Time.TotalSeconds, line));
+				}
+			}
+
+			// Before the first tag, the lyrics from the top are what's being played.
+			if (parts.Count > 0 && parts[0].Line > 0)
+			{
+				if (parts[0].Seconds > 0)
+				{
+					parts.Insert(0, (0, 0));
+				}
+				else
+				{
+					parts[0] = (0, 0);
+				}
+			}
+		}
+
+		private int LineOf(Control anchor)
+		{
+			for (StyledElement? element = anchor; element != null; element = element.Parent)
+			{
+				if (element is Control control && lines.IndexOf(control) is var index and >= 0)
+				{
+					return index;
+				}
+			}
+
+			return -1;
+		}
+
+		/// <summary>How many bars a nudge moves timed lyrics.</summary>
+		public const int NudgeBars = 4;
+
+		/// <summary>
+		/// Moves the lyrics on (+1) or back (-1) a little, also while they scroll by themselves. Timed
+		/// lyrics (with a tempo) move <see cref="NudgeBars"/> bars along the song's timeline; others one
+		/// line, where a chord line with its words counts as one line and blank lines are skipped.
+		/// </summary>
+		public void Nudge(int direction)
+		{
+			if (scroller == null || IsEditing || scroller.Extent.Height <= 0 || direction == 0)
+			{
+				return;
+			}
+
+			direction = Math.Sign(direction);
+			// Measured from where a nudge still gliding will end, so quick presses add up.
+			var y = scroller.Offset.Y + NudgeRemaining(time: false);
+			if (IsTimed && song.Tempo > 0 && Timeline() is { } points)
+			{
+				var step = direction * NudgeBars * ChordPro.BeatsPerBar(song.Beat) * 60 / song.Tempo;
+				if (scrollTimer.IsEnabled)
+				{
+					// Playing: the song's clock moves on or back, and the lyrics with it (not before 0:00).
+					var now = playbackStart + scrollClock.Elapsed.TotalSeconds + NudgeRemaining(time: true);
+					StartNudge(Math.Max(step, -now), time: true);
+				}
+				else
+				{
+					var now = TimeAt(points, y + scroller.Viewport.Height / 2);
+					var target = Math.Clamp(CenterAt(points, Math.Max(0, now + step)) - scroller.Viewport.Height / 2, 0, MaxOffset(scroller));
+					StartNudge(target - y, time: false);
+				}
+
+				return;
+			}
+
+			// The line just below (or above) the top of the view goes to the top. A line only a few
+			// pixels away (a margin) is already there.
+			const double near = 6;
+			var tops = LineTops();
+			var lineTarget = direction > 0
+				? tops.Where(top => top > y + near).Cast<double?>().FirstOrDefault() ?? MaxOffset(scroller)
+				: tops.Where(top => top < y - near).Cast<double?>().LastOrDefault() ?? 0;
+			StartNudge(Math.Clamp(lineTarget, 0, MaxOffset(scroller)) - y, time: false);
+		}
+
+		/// <summary>How long a nudge glides.</summary>
+		public static readonly TimeSpan NudgeDuration = TimeSpan.FromMilliseconds(500);
+
+		// A nudge glides (eased in and out) instead of jumping: it moves either the scroll offset by
+		// pixels or, while timed lyrics play, the song's clock by seconds. Part of it is applied each frame.
+		private readonly DispatcherTimer nudgeTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
+		private readonly System.Diagnostics.Stopwatch nudgeClock = new();
+		private bool nudgeIsTime;
+		private double nudgeTotal;
+		private double nudgeApplied;
+
+		/// <summary>What the gliding nudge (of that kind) still has to move.</summary>
+		private double NudgeRemaining(bool time) => nudgeTimer.IsEnabled && nudgeIsTime == time ? nudgeTotal - nudgeApplied : 0;
+
+		private void StartNudge(double amount, bool time)
+		{
+			var rest = NudgeRemaining(time);
+			nudgeIsTime = time;
+			nudgeTotal = rest + amount;
+			nudgeApplied = 0;
+			if (Math.Abs(nudgeTotal) < 0.001)
+			{
+				nudgeTimer.Stop();
+				return;
+			}
+
+			nudgeClock.Restart();
+			nudgeTimer.Start();
+			NudgeStep();
+		}
+
+		private void NudgeStep()
+		{
+			var t = Math.Min(1, nudgeClock.Elapsed / NudgeDuration);
+			// Ease in and out (cubic): starts and ends softly.
+			var eased = t < 0.5 ? 4 * t * t * t : 1 - Math.Pow(-2 * t + 2, 3) / 2;
+			var reached = nudgeIsTime ? nudgeTotal * eased : Math.Round(nudgeTotal * eased); // Whole pixels.
+			var step = reached - nudgeApplied;
+			nudgeApplied = reached;
+			if (t >= 1)
+			{
+				nudgeTimer.Stop();
+			}
+
+			if (nudgeIsTime)
+			{
+				playbackStart += step;
+				if (scrollTimer.IsEnabled)
+				{
+					ScrollStep();
+				}
+			}
+			else if (scroller != null && step != 0)
+			{
+				scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(scroller.Offset.Y + step, 0, MaxOffset(scroller)));
+			}
+		}
+
+		/// <summary>Drops a gliding nudge (when playing starts or stops, or the lyrics change).</summary>
+		private void StopNudge() => nudgeTimer.Stop();
+
+		/// <summary>
+		/// Where each line of the lyrics starts (content y, top to bottom): a chord line with its words
+		/// is one line, a wrapped line counts once per row, and blank lines and invisible places aren't lines.
+		/// </summary>
+		private List<double> LineTops()
+		{
+			var tops = new List<double>();
+			if (lyricsContent == null)
+			{
+				return tops;
+			}
+
+			void AddRows(TextBlock block, double top)
+			{
+				var text = block.Text ?? "";
+				var y = top;
+				foreach (var row in block.TextLayout.TextLines)
+				{
+					var start = Math.Min(row.FirstTextSourceIndex, text.Length);
+					// Plain lyrics are one text: its empty rows are blank lines.
+					if (text.Length == 0 || text.Substring(start, Math.Min(row.Length, text.Length - start)).Trim().Length > 0)
+					{
+						tops.Add(y);
+					}
+
+					y += row.Height;
+				}
+			}
+
+			if (lines.Count == 0)
+			{
+				if (lyricsContent is TextBlock plain)
+				{
+					AddRows(plain, 0);
+				}
+
+				return tops;
+			}
+
+			foreach (var line in lines)
+			{
+				if (line.Classes.Contains(LyricsClasses.Gap) || line.Bounds.Height <= 0
+				    || line.TranslatePoint(default, lyricsContent) is not { } place)
+				{
+					continue;
+				}
+
+				if (line is TextBlock block && block.Inlines is not { Count: > 0 })
+				{
+					AddRows(block, place.Y + block.Padding.Top);
+				}
+				else if (line is TextBlock styled)
+				{
+					// Styled text (runs): its rows, without looking at the characters.
+					var y = place.Y + styled.Padding.Top;
+					foreach (var row in styled.TextLayout.TextLines)
+					{
+						tops.Add(y);
+						y += row.Height;
+					}
+				}
+				else
+				{
+					tops.Add(place.Y);
+				}
+			}
+
+			return tops;
+		}
+
 		/// <summary>Whether the lyrics are scrolled all the way to the bottom (or fit without scrolling).</summary>
 		public bool IsAtEnd => scroller is { } viewer && viewer.Offset.Y >= MaxOffset(viewer) - 1;
 
@@ -308,10 +593,12 @@ namespace Lyrious.UILib.Setlists
 		{
 			base.OnDetachedFromVisualTree(e);
 			scrollTimer.Stop();
+			StopNudge();
 		}
 
 		private void ShowLyrics()
 		{
+			StopNudge();
 			var hasLyrics = !string.IsNullOrWhiteSpace(song.Lyrics);
 			Control text;
 			markers = [];
@@ -337,6 +624,7 @@ namespace Lyrious.UILib.Setlists
 
 			text.Margin = new Thickness(0, 0, 0, 48);
 			lyricsContent = text;
+			FindParts(text);
 			var scroller = new ScrollViewer
 			{
 				// Transparent, so a tap anywhere in the lyrics area counts, not only on the letters.
@@ -358,6 +646,7 @@ namespace Lyrious.UILib.Setlists
 		private void ShowEditor()
 		{
 			SetAutoScroll(false);
+			StopNudge();
 			scroller = null;
 			var editor = new TextBox
 			{
