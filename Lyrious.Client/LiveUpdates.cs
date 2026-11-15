@@ -42,6 +42,12 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
     /// <summary>Raised on a background thread when another member of the joined band starts (true) or stops playing.</summary>
     public event Action<Guid, bool>? PlaybackChanged;
 
+    /// <summary>
+    /// Raised on a background thread when another member picks a band's current setlist and song
+    /// (groupId, setlistId, setlistItemId), before the change is stored.
+    /// </summary>
+    public event Action<Guid, Guid?, Guid?>? SongSelected;
+
     /// <summary>Raised after reconnecting by itself: changes may have been missed meanwhile.</summary>
     public event Action? Reconnected;
 
@@ -73,6 +79,7 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
             }
 
             connection.On<Guid, bool>("PlaybackChanged", (groupId, playing) => PlaybackChanged?.Invoke(groupId, playing));
+            connection.On<Guid, Guid?, Guid?>("SongSelected", (groupId, setlistId, itemId) => SongSelected?.Invoke(groupId, setlistId, itemId));
             connection.Reconnected += _ =>
             {
                 Reconnected?.Invoke();
@@ -94,6 +101,18 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
         if (connection is { State: HubConnectionState.Connected })
         {
             await connection.InvokeAsync<bool>("SetPlayback", playing);
+        }
+    }
+
+    /// <summary>
+    /// Tells the band's other members at once which setlist and song was picked (if connected), ahead
+    /// of the stored change. Doesn't wait for the server's answer.
+    /// </summary>
+    public async Task SelectSongAsync(Guid groupId, Guid? setlistId, Guid? setlistItemId)
+    {
+        if (connection is { State: HubConnectionState.Connected })
+        {
+            await connection.SendAsync("SelectSong", groupId, setlistId, setlistItemId);
         }
     }
 

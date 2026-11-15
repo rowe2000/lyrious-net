@@ -9,14 +9,19 @@ public class Key
     public bool Minor { get; set; }
     public int Octave { get; set; }
 
-    public Key(string keyString)
+    public Key(string? keyString)
     {
         Parse(keyString);
     }
 
-    public void Parse(string value)
+    public void Parse(string? value)
     {
-        value = value.Trim();
+        // No key (e.g. a song without one): the defaults.
+        value = value?.Trim() ?? "";
+        if (value.Length == 0)
+        {
+            return;
+        }
 
         NoteLetter = value[0] switch
         {

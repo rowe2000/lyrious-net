@@ -6,6 +6,12 @@
     <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
   </PropertyGroup>
 
+  <!-- Published (Release) builds are compiled to WebAssembly ahead of time: much faster than the
+       interpreter a Debug build runs on, e.g. laying out a song's lyrics when changing songs. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RunAOTCompilation>true</RunAOTCompilation>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia.Browser" Version="12.1.6" />
     <!-- The browser has no system fonts; the app ships Inter (see WithInterFont in Program.cs). -->

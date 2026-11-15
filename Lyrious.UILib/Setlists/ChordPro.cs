@@ -302,25 +302,29 @@ namespace Lyrious.UILib.Setlists
 						continue;
 					}
 
-					var piece = new StackPanel { Orientation = Orientation.Vertical };
+					var wordBlock = new TextBlock { FontSize = fontSize, LineHeight = lineHeight };
+					SetStyledText(wordBlock, words, styles, offset, pieces[i].Length);
+					offset += pieces[i].Length;
+					if (chordText == null)
+					{
+						// Most words have no chord: just the word, where it would be under one (a long
+						// song has hundreds of these, so each is one control, not three).
+						wordBlock.Margin = new Thickness(0, chordHeight, 0, 0);
+						row.Children.Add(wordBlock);
+						continue;
+					}
 
 					var chordBlock = new TextBlock
 					{
-						Text = chordText ?? "",
+						Text = chordText,
 						FontSize = chordSize,
 						FontWeight = FontWeight.Bold,
 						Height = chordHeight,
 						// Room after a chord, so chords over short words don't run into each other.
-						Margin = chordText != null ? new Thickness(0, 0, chordSize * 0.4, 0) : default,
+						Margin = new Thickness(0, 0, chordSize * 0.4, 0),
 					};
 					chordBlock.Bind(TextBlock.ForegroundProperty, chordBlock.GetResourceObservable(LyriousTheme.ChordBrush));
-					piece.Children.Add(chordBlock);
-
-					var wordBlock = new TextBlock { FontSize = fontSize, LineHeight = lineHeight };
-					SetStyledText(wordBlock, words, styles, offset, pieces[i].Length);
-					offset += pieces[i].Length;
-					piece.Children.Add(wordBlock);
-					row.Children.Add(piece);
+					row.Children.Add(new StackPanel { Orientation = Orientation.Vertical, Children = { chordBlock, wordBlock } });
 				}
 			}
 

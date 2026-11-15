@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Lyrious.UILib;
 
 namespace Lyrious.Client.Offline;
@@ -20,6 +21,11 @@ internal sealed record PendingChange(string Type, Guid Id, string Kind, JsonObje
 /// Members are kept as public profiles only (no password hashes). Thread-safe: the view is replaced
 /// as a whole, never changed in place, so reads need no lock.
 /// </para>
+/// <para>
+/// A change to a few entities rebuilds just those in the view, and the cache is saved to the store
+/// in the background right after, so a change made here goes to the server (and one from the server
+/// shows) without waiting for the whole cache to be copied and written.
+/// </para>
 /// </summary>
 internal sealed class EntityCache
 {
@@ -29,6 +35,8 @@ internal sealed class EntityCache
     private static readonly string[] MemberProfileFields = ["id", "userName", "name", "joinedGroupId", "createdAt", "changedAt", "removed"];
 
     private readonly object gate = new();
+    private readonly object saving = new();
+    private bool savePending;
     private readonly ISettingsStore store;
     private readonly string key;
     private readonly Dictionary<string, Dictionary<Guid, JsonObject>> snapshot = NewSet();
@@ -120,8 +128,8 @@ internal sealed class EntityCache
                 existing["removed"] = true;
             }
 
-            Rebuild();
-            Save();
+            Rebuild(change.Type, [change.Id]);
+            ScheduleSave();
         }
     }
 
@@ -131,8 +139,8 @@ internal sealed class EntityCache
         lock (gate)
         {
             outbox.Remove(change);
-            Rebuild();
-            Save();
+            Rebuild(change.Type, [change.Id]);
+            ScheduleSave();
         }
     }
 
@@ -152,7 +160,7 @@ internal sealed class EntityCache
 
             LastSynced = DateTime.Now;
             Rebuild();
-            Save();
+            ScheduleSave();
         }
     }
 
@@ -168,9 +176,34 @@ internal sealed class EntityCache
                 ids.Add(IdOf(entity));
             }
 
-            Rebuild();
-            Save();
+            Rebuild(type, ids);
+            ScheduleSave();
             return ids.Select(id => view[type].GetValueOrDefault(id)).OfType<JsonObject>().ToArray();
+        }
+    }
+
+    /// <summary>
+    /// A change to some fields of an entity that the server announced before storing it (it sends
+    /// the stored entity soon after): goes into the snapshot like a live update. Returns the entity
+    /// as now shown; null when it isn't in the cache.
+    /// </summary>
+    public JsonObject? MergeFields(string type, Guid id, JsonObject fields)
+    {
+        lock (gate)
+        {
+            if (!snapshot[type].TryGetValue(id, out var stored))
+            {
+                return null;
+            }
+
+            foreach (var (field, value) in fields)
+            {
+                stored[field] = value?.DeepClone();
+            }
+
+            Rebuild(type, [id]);
+            ScheduleSave();
+            return view[type].GetValueOrDefault(id);
         }
     }
 
@@ -179,8 +212,8 @@ internal sealed class EntityCache
         lock (gate)
         {
             outbox.Add(change);
-            Rebuild();
-            Save();
+            Rebuild(change.Type, [change.Id]);
+            ScheduleSave();
         }
     }
 
@@ -241,30 +274,146 @@ internal sealed class EntityCache
         view = next;
     }
 
-    private void Save()
+    /// <summary>Rebuilds just these entities of the view (from the snapshot and the outbox).</summary>
+    private void Rebuild(string type, IReadOnlyCollection<Guid> ids)
     {
-        var snapshotJson = new JsonObject();
-        foreach (var (type, entities) in snapshot)
+        // A new view sharing the untouched entities: readers of the old one see no change.
+        var next = new Dictionary<string, Dictionary<Guid, JsonObject>>(view);
+        var entities = next[type] = new Dictionary<Guid, JsonObject>(view[type]);
+        foreach (var id in ids)
         {
-            snapshotJson[type] = new JsonArray(entities.Values.Select(entity => (JsonNode)entity.DeepClone()).ToArray());
+            var entity = snapshot[type].TryGetValue(id, out var stored) ? (JsonObject)stored.DeepClone() : null;
+            foreach (var change in outbox)
+            {
+                if (change.Type != type || change.Id != id)
+                {
+                    continue;
+                }
+
+                switch (change.Kind)
+                {
+                    case "create" when change.Fields != null:
+                        entity = (JsonObject)change.Fields.DeepClone();
+                        break;
+                    case "update" when change.Fields != null && entity != null:
+                        foreach (var (field, value) in change.Fields)
+                        {
+                            entity[field] = value?.DeepClone();
+                        }
+
+                        break;
+                    case "delete" when entity != null:
+                        entity["removed"] = true;
+                        break;
+                }
+            }
+
+            if (entity == null)
+            {
+                entities.Remove(id);
+            }
+            else
+            {
+                entities[id] = entity;
+            }
         }
 
-        var outboxJson = new JsonArray(outbox.Select(change => (JsonNode)new JsonObject
-        {
-            ["type"] = change.Type,
-            ["id"] = change.Id.ToString(),
-            ["kind"] = change.Kind,
-            ["fields"] = change.Fields?.DeepClone(),
-            ["queuedAt"] = change.QueuedAt.ToString("O"),
-        }).ToArray());
+        view = next;
+    }
 
-        var document = new JsonObject
+    /// <summary>
+    /// Saves the cache soon, in the background (changes close together are saved once). Called
+    /// under the gate.
+    /// </summary>
+    private void ScheduleSave()
+    {
+        if (savePending)
         {
-            ["lastSynced"] = LastSynced?.ToString("O"),
-            ["snapshot"] = snapshotJson,
-            ["outbox"] = outboxJson,
-        };
-        store.Set(key, document.ToJsonString());
+            return;
+        }
+
+        savePending = true;
+        _ = Task.Run(SaveNow);
+    }
+
+    private void SaveNow()
+    {
+        // One save at a time, in order; the cache is copied under the gate, written outside it.
+        lock (saving)
+        {
+            string json;
+            lock (gate)
+            {
+                savePending = false;
+                json = Document();
+            }
+
+            try
+            {
+                store.Set(key, json);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Couldn't save the offline cache: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>The cache as saved: written straight out, without copying the entities first.</summary>
+    private string Document()
+    {
+        var buffer = new System.IO.MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            if (LastSynced is { } lastSynced)
+            {
+                writer.WriteString("lastSynced", lastSynced.ToString("O"));
+            }
+            else
+            {
+                writer.WriteNull("lastSynced");
+            }
+
+            writer.WriteStartObject("snapshot");
+            foreach (var (type, entities) in snapshot)
+            {
+                writer.WriteStartArray(type);
+                foreach (var entity in entities.Values)
+                {
+                    entity.WriteTo(writer);
+                }
+
+                writer.WriteEndArray();
+            }
+
+            writer.WriteEndObject();
+            writer.WriteStartArray("outbox");
+            foreach (var change in outbox)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("type", change.Type);
+                writer.WriteString("id", change.Id.ToString());
+                writer.WriteString("kind", change.Kind);
+                writer.WritePropertyName("fields");
+                if (change.Fields is { } fields)
+                {
+                    fields.WriteTo(writer);
+                }
+                else
+                {
+                    writer.WriteNullValue();
+                }
+
+                writer.WriteString("queuedAt", change.QueuedAt.ToString("O"));
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        return System.Text.Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
     }
 
     private void Read(JsonObject document)

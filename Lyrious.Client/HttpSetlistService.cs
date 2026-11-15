@@ -40,6 +40,7 @@ public sealed class HttpSetlistService : ISetlistService
 
         live.EntitiesChanged += OnServerChanged;
         live.PlaybackChanged += (groupId, playing) => PlaybackChanged?.Invoke(groupId, playing);
+        live.SongSelected += OnSongSelected;
         live.Reconnected += () => { if (cache is { } c) _ = engine.SyncAsync(c); };
         live.Lost += () => { if (cache is { } c && liveWanted) engine.ReportOffline(c); };
         engine.StatusChanged += () => StatusChanged?.Invoke();
@@ -552,10 +553,50 @@ public sealed class HttpSetlistService : ISetlistService
     }
 
     public Task SelectSetlistAsync(Guid groupId, Guid setlistId, CancellationToken cancellationToken = default)
-        => UpdateGroupAsync(groupId, new JsonObject { ["currentSetlistId"] = setlistId.ToString(), ["currentSetlistItemId"] = null });
+        => SelectAsync(groupId, setlistId, null);
 
     public Task SelectSongAsync(Guid groupId, SetlistEntry entry, CancellationToken cancellationToken = default)
-        => UpdateGroupAsync(groupId, new JsonObject { ["currentSetlistId"] = entry.SetlistId.ToString(), ["currentSetlistItemId"] = entry.Id.ToString() });
+        => SelectAsync(groupId, entry.SetlistId, entry.Id);
+
+    /// <summary>
+    /// The band's current setlist and song: the other members are told at once over the live
+    /// connection, then it's stored (through the outbox, like any change).
+    /// </summary>
+    private Task SelectAsync(Guid groupId, Guid setlistId, Guid? setlistItemId)
+    {
+        _ = AnnounceAsync(groupId, setlistId, setlistItemId);
+        return UpdateGroupAsync(groupId, SelectionFields(setlistId, setlistItemId));
+    }
+
+    private async Task AnnounceAsync(Guid groupId, Guid? setlistId, Guid? setlistItemId)
+    {
+        try
+        {
+            await live.SelectSongAsync(groupId, setlistId, setlistItemId);
+        }
+        catch (Exception ex)
+        {
+            // The stored change still gets there, just a little later.
+            System.Diagnostics.Debug.WriteLine($"Couldn't announce the current song: {ex.Message}");
+        }
+    }
+
+    private static JsonObject SelectionFields(Guid? setlistId, Guid? setlistItemId) => new()
+    {
+        ["currentSetlistId"] = setlistId?.ToString(),
+        ["currentSetlistItemId"] = setlistItemId?.ToString(),
+    };
+
+    /// <summary>Another member picked a band's current song: shown at once, before the stored group arrives.</summary>
+    private void OnSongSelected(Guid groupId, Guid? setlistId, Guid? setlistItemId)
+    {
+        if (cache is not { } current || current.MergeFields("group", groupId, SelectionFields(setlistId, setlistItemId)) is not { } group)
+        {
+            return;
+        }
+
+        GroupChanged?.Invoke(ToSummary(As(group, ClientJsonContext.Default.GroupDto)));
+    }
 
     private async Task UpdateGroupAsync(Guid groupId, JsonObject fields)
     {

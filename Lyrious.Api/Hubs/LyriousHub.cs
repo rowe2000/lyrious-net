@@ -33,6 +33,9 @@ public class LyriousHub(LyriousRepository repo, HubConnectionRegistry registry) 
 	/// <summary>Sent to a joined group's channel when one of its members starts or stops playing: (groupId, playing).</summary>
 	public const string PlaybackChangedMethod = "PlaybackChanged";
 
+	/// <summary>Sent to a group's members when one of them picks its current setlist and song: (groupId, setlistId, setlistItemId).</summary>
+	public const string SongSelectedMethod = "SongSelected";
+
 	public override async Task OnConnectedAsync()
 	{
 		if (Context.UserIdentifier is { } userId)
@@ -77,6 +80,24 @@ public class LyriousHub(LyriousRepository repo, HubConnectionRegistry registry) 
 		}
 
 		await Clients.GroupExcept(JoinedGroupName(joined), [Context.ConnectionId]).SendAsync(PlaybackChangedMethod, joined, playing);
+		return true;
+	}
+
+	/// <summary>
+	/// Tells the group's other members at once that the caller picked its current setlist and song
+	/// (null: no song), without waiting for the change to be stored. The client stores it through
+	/// the API too, which sends the stored group ("UpdateGroup") as usual. Returns false when the
+	/// caller isn't a member of the group.
+	/// </summary>
+	public async Task<bool> SelectSong(Guid groupId, Guid? setlistId, Guid? setlistItemId)
+	{
+		repo.SetIdentity(Context.User?.Identity);
+		if (!repo.IsMember(groupId))
+		{
+			return false;
+		}
+
+		await Clients.GroupExcept(GroupName(groupId), [Context.ConnectionId]).SendAsync(SongSelectedMethod, groupId, setlistId, setlistItemId);
 		return true;
 	}
 
