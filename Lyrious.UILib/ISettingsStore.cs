@@ -31,6 +31,9 @@ namespace Lyrious.UILib
 
 		/// <summary>The chord colour, "#RRGGBB"; none for the theme's.</summary>
 		public const string ChordColor = "chord-color";
+
+		/// <summary>The size of the whole interface, e.g. "1.25"; none for normal size (see <see cref="UiScale"/>).</summary>
+		public const string UiScale = "ui-scale";
 	}
 
 	/// <summary>Used until a host provides a store: settings last only while the app runs.</summary>

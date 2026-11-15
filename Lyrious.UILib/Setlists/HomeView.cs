@@ -849,7 +849,8 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(header, Dock.Top);
 
 			// The account actions sit at the bottom of the drawer.
-			var account = new StackPanel { Spacing = 4, Children = { settings, sync, changePassword } };
+			// Its top margin is the gap between items, kept when the two groups meet (a short drawer).
+			var account = new StackPanel { Spacing = 4, Margin = new Thickness(0, 4, 0, 0), Children = { settings, sync, changePassword } };
 			DockPanel.SetDock(account, Dock.Bottom);
 
 			if (offerForgetSavedPassword)
@@ -866,12 +867,18 @@ namespace Lyrious.UILib.Setlists
 
 			account.Children.Add(logOut);
 
-			return new DockPanel
+			var panel = new DockPanel
 			{
 				Margin = new Thickness(16, 8, 8, 16),
 				LastChildFill = false,
 				Children = { header, account },
 			};
+
+			// Scrolls when the items don't fit. At least as tall as the drawer, so the account actions
+			// still sit at its bottom when everything fits.
+			var scroller = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
+			scroller.SizeChanged += (_, e) => panel.MinHeight = Math.Max(0, e.NewSize.Height - panel.Margin.Top - panel.Margin.Bottom);
+			return scroller;
 		}
 
 		/// <summary>An item of the right drawer's "+" menu, run for the current band and setlist.</summary>

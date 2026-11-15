@@ -7,7 +7,7 @@ namespace Lyrious.UILib
 		public MainWindow()
 		{
 			Title = "Lyrious";
-			Content = new MainView();
+			Content = UiScale.Wrap(new MainView());
 		}
 	}
 }

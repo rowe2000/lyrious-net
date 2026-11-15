@@ -20,11 +20,42 @@ namespace Lyrious.UILib.Setlists
 			nextOnStop.IsCheckedChanged += (_, _) => PlaybackSettings.NextSongOnStopAtEnd = nextOnStop.IsChecked == true;
 
 
+			// The interface size: a list of sizes, applied at once.
+			var scale = new ComboBox { MinWidth = 100 };
+			foreach (var choice in UiScale.Choices)
+			{
+				scale.Items.Add(new ComboBoxItem { Content = UiScale.Describe(choice), Tag = choice });
+			}
+
+			var current = UiScale.Value;
+			var closest = 0;
+			for (var i = 0; i < UiScale.Choices.Count; i++)
+			{
+				if (Math.Abs(UiScale.Choices[i] - current) < Math.Abs(UiScale.Choices[closest] - current))
+				{
+					closest = i;
+				}
+			}
+
+			scale.SelectedIndex = closest;
+			scale.SelectionChanged += (_, _) =>
+			{
+				if (scale.SelectedItem is ComboBoxItem { Tag: double chosen })
+				{
+					UiScale.Value = chosen;
+				}
+			};
+
 			var form = new StackPanel
 			{
 				Spacing = 16,
 				Children =
 				{
+					Section("Display"),
+					Setting(
+						"Interface size",
+						"Makes the whole app larger or smaller: text, buttons, icons and spacing.",
+						scale),
 					Section("Playback"),
 					Setting(
 						"Next song when stopping at the end",
