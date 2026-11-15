@@ -47,6 +47,7 @@ namespace Lyrious.UILib.Setlists
 		private readonly Button chooseSetlistButton;
 		private readonly Button chooseSongButton;
 		private readonly Button findSongButton;
+		private readonly Button playlogButton;
 		private readonly Button chooseGroupButton;
 		private readonly TextBlock syncStatus = new() { FontSize = 13, Opacity = 0.7 };
 		private readonly Button addSongsButton = IconButton(AddIcon, "Add a song to the setlist");
@@ -68,6 +69,19 @@ namespace Lyrious.UILib.Setlists
 
 		// A band change of song that arrived while playing, to follow once playing stops.
 		private GroupSummary? pendingFollow;
+
+		// The waiting change is a catch-up (band sync turned on): the band's values win over this member's.
+		private bool pendingCatchUp;
+
+		// The play being timed (added to the playlog on pressing play): its length is stored when
+		// that lyrics page stops scrolling.
+		private (LyricScrollView View, Task<Guid?> Play, DateTime Started)? timedPlay;
+
+		/// <summary>
+		/// Band sync (the globe in the play toolbar): follow the joined band's current song, setlist and
+		/// play/stop, and send this member's. Off, the member picks songs and plays on their own.
+		/// </summary>
+		private bool bandSync = PlaybackSettings.BandSync;
 
 		// The current setlist's songs, for the next song in the playback toolbar.
 		private IReadOnlyList<SetlistEntry> playbackEntries = [];
@@ -129,6 +143,16 @@ namespace Lyrious.UILib.Setlists
 			findSongButton = DrawerItem("Find song online");
 			findSongButton.IsEnabled = false;
 			findSongButton.Click += (_, _) => OpenInternetSearch();
+			playlogButton = DrawerItem("Playlog");
+			playlogButton.IsEnabled = false;
+			playlogButton.Click += (_, _) =>
+			{
+				if (currentGroup is { } group)
+				{
+					CloseUnlessPinned(menuDrawer);
+					_ = RunAsync(async () => page.Content = new PlaylogView(group, await service.GetPlaylogsAsync(group.Id)));
+				}
+			};
 			chooseGroupButton = DrawerPicker("Band", groupName, "Choose a band", () => _ = RunAsync(ShowGroupsAsync));
 			chooseGroupButton.Margin = new Thickness(0, 12, 0, 0);
 
@@ -168,6 +192,11 @@ namespace Lyrious.UILib.Setlists
 					var stopping = lyrics.IsAutoScrolling;
 					var atEnd = lyrics.IsAtEnd;
 					lyrics.SetAutoScroll(!stopping);
+					if (lyrics.IsAutoScrolling)
+					{
+						StartPlay(lyrics);
+					}
+
 					// The other members that have joined the band start or stop too.
 					_ = SendPlaybackAsync(lyrics.IsAutoScrolling);
 
@@ -180,6 +209,32 @@ namespace Lyrious.UILib.Setlists
 			};
 			playbackBar.RestartRequested += () => (page.Content as LyricScrollView)?.ScrollToStart();
 			playbackBar.NextRequested += NextSong;
+			playbackBar.SetBandSync(bandSync);
+			// Longclick on the globe: band sync on, with this member's setlist and song sent to the band.
+			playbackBar.BandSyncSendRequested += () =>
+			{
+				bandSync = true;
+				PlaybackSettings.BandSync = true;
+				playbackBar.SetBandSync(true);
+				pendingFollow = null; // This member's values win: nothing of the band's waits to apply.
+				pendingCatchUp = false;
+				_ = SendToBandAsync();
+			};
+			playbackBar.BandSyncToggled += on =>
+			{
+				bandSync = on;
+				PlaybackSettings.BandSync = on;
+				if (on)
+				{
+					_ = CatchUpWithBandAsync();
+				}
+				else
+				{
+					// A band change that waited for the stop no longer applies.
+					pendingFollow = null;
+					pendingCatchUp = false;
+				}
+			};
 			setlistDrawer.Pane = SetlistDrawerContent(setlistButton);
 
 			menuDrawer = Drawer(SplitViewPanePlacement.Left, 280);
@@ -233,7 +288,9 @@ namespace Lyrious.UILib.Setlists
 				if (pendingFollow is { } follow && e.NewValue is not LyricScrollView { IsAutoScrolling: true } && e.NewValue is not ProgressBar)
 				{
 					pendingFollow = null;
-					Dispatcher.UIThread.Post(() => _ = FollowGroupAsync(follow));
+					var catchUp = pendingCatchUp;
+					pendingCatchUp = false;
+					Dispatcher.UIThread.Post(() => _ = FollowGroupAsync(follow, catchUp));
 				}
 
 				var isLyrics = e.NewValue is LyricScrollView;
@@ -327,8 +384,75 @@ namespace Lyrious.UILib.Setlists
 
 		private void OnStatusChanged() => Dispatcher.UIThread.Post(() => syncStatus.Text = SyncStatusText.Short(service.Status));
 
+		/// <summary>
+		/// Band sync turned on: catch up with the band's current setlist and song, which win over the
+		/// ones picked here while it was off. First what this device knows (at once), then again after
+		/// fetching the server's latest, in case the band moved on meanwhile.
+		/// </summary>
+		private async Task CatchUpWithBandAsync()
+		{
+			try
+			{
+				if (await service.GetCurrentGroupAsync() is { } known)
+				{
+					await FollowGroupAsync(known, catchUp: true);
+				}
+
+				await service.SyncNowAsync();
+				if (bandSync && await service.GetCurrentGroupAsync() is { } latest)
+				{
+					await FollowGroupAsync(latest, catchUp: true);
+				}
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't catch up with the band: {ex.Message}");
+			}
+		}
+
+		/// <summary>
+		/// Band sync turned on with a longclick: this member's current setlist and song become the
+		/// band's (the other members that follow switch to them), and so does play/stop on the lyrics page.
+		/// </summary>
+		private async Task SendToBandAsync()
+		{
+			if (currentGroup is not { } group || currentSetlist is not { } setlist)
+			{
+				ShowNotice("Band sync on; no setlist picked here to send");
+				return;
+			}
+
+			try
+			{
+				if (currentEntryId is { } entryId && await service.GetEntryAsync(entryId) is { } entry)
+				{
+					await service.SelectSongAsync(group.Id, entry);
+					ShowNotice($"Sent to the band: {entry.Song.Name}");
+				}
+				else
+				{
+					await service.SelectSetlistAsync(group.Id, setlist.Id);
+					ShowNotice($"Sent to the band: {setlist.Name}");
+				}
+
+				if (page.Content is LyricScrollView lyrics)
+				{
+					await SendPlaybackAsync(lyrics.IsAutoScrolling);
+				}
+			}
+			catch (Exception ex)
+			{
+				ShowNotice($"Couldn't send to the band: {ex.Message}");
+			}
+		}
+
 		private async Task SendPlaybackAsync(bool playing)
 		{
+			if (!bandSync)
+			{
+				return;
+			}
+
 			try
 			{
 				await service.SendPlaybackAsync(playing);
@@ -339,17 +463,65 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		/// <summary>
+		/// Pressing play: the song goes into the band's playlog (not when following another member's
+		/// play, so it's logged once), and is timed until scrolling stops.
+		/// </summary>
+		private void StartPlay(LyricScrollView lyrics)
+		{
+			if (currentGroup is not { } group || currentSongId is not { } songId)
+			{
+				return;
+			}
+
+			timedPlay = (lyrics, AddPlayAsync(group.Id, songId), DateTime.Now);
+		}
+
+		private async Task<Guid?> AddPlayAsync(Guid groupId, Guid songId)
+		{
+			try
+			{
+				return await service.AddPlayAsync(groupId, songId);
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't add the song to the playlog: {ex.Message}");
+				return null;
+			}
+		}
+
+		private async Task AddPlayTimeAsync(Task<Guid?> play, TimeSpan time)
+		{
+			try
+			{
+				if (await play is { } playId)
+				{
+					await service.AddPlayTimeAsync(playId, time);
+				}
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't store how long the song was played: {ex.Message}");
+			}
+		}
+
 		private void OnPlaybackChanged(Guid groupId, bool playing) => Dispatcher.UIThread.Post(() =>
 		{
-			// Only for the joined band, on its lyrics page (not while editing). Focus mode follows,
-			// as when pressing play/pause here. Not sent on, so it doesn't bounce back and forth.
-			if (currentGroup?.Id == groupId && page.Content is LyricScrollView { IsEditing: false } lyrics)
+			// Only with band sync on, for the joined band, on its lyrics page (not while editing). Focus
+			// mode follows, as when pressing play/pause here. Not sent on, so it doesn't bounce back and forth.
+			if (bandSync && currentGroup?.Id == groupId && page.Content is LyricScrollView { IsEditing: false } lyrics)
 			{
 				lyrics.SetAutoScroll(playing);
 			}
 		});
 
-		private void OnGroupChanged(GroupSummary group) => Dispatcher.UIThread.Post(() => _ = FollowGroupAsync(group));
+		private void OnGroupChanged(GroupSummary group) => Dispatcher.UIThread.Post(() =>
+		{
+			if (bandSync)
+			{
+				_ = FollowGroupAsync(group);
+			}
+		});
 
 		/// <summary>
 		/// When another member changes the current setlist or song of the band this member has
@@ -358,24 +530,43 @@ namespace Lyrious.UILib.Setlists
 		/// adding songs, searching, other lists) aren't replaced: the drawers and buttons switch, and
 		/// the page stays until they move on.
 		/// </summary>
-		private async Task FollowGroupAsync(GroupSummary group)
+		/// <param name="catchUp">
+		/// Band sync was just turned on: the band's values replace this member's wherever they differ,
+		/// also when the band has no current song (the setlist is shown) or no current setlist (the
+		/// band's start page).
+		/// </param>
+		private async Task FollowGroupAsync(GroupSummary group, bool catchUp = false)
 		{
 			if (currentGroup?.Id != group.Id)
 			{
 				return;
 			}
 
-			var setlistChanged = group.CurrentSetlistId is { } newSetlistId && newSetlistId != currentSetlist?.Id;
-			var songChanged = group.CurrentSetlistItemId is { } newItemId && newItemId != currentEntryId;
+			var setlistChanged = catchUp
+				? group.CurrentSetlistId != currentSetlist?.Id
+				: group.CurrentSetlistId is { } newSetlistId && newSetlistId != currentSetlist?.Id;
+			var songChanged = catchUp
+				? group.CurrentSetlistItemId != currentEntryId
+				: group.CurrentSetlistItemId is { } newItemId && newItemId != currentEntryId;
 			if (!setlistChanged && !songChanged)
 			{
 				return;
 			}
 
-			// The song can't change while playing: follow once playing stops (the latest change wins).
+			// The song can't change while playing: follow once playing stops (the latest change wins;
+			// a catch-up still waiting stays one).
 			if (IsPlaying)
 			{
 				pendingFollow = group;
+				pendingCatchUp |= catchUp;
+				return;
+			}
+
+			if (catchUp && group.CurrentSetlistId == null)
+			{
+				// The band has no current setlist: its start page (or, while busy here, just the drawers).
+				var replace = page.Content is SetlistView or SetlistsView or LyricScrollView { IsEditing: false };
+				await RunAsync(() => OpenStartPageAsync(showPage: replace));
 				return;
 			}
 
@@ -393,7 +584,7 @@ namespace Lyrious.UILib.Setlists
 					entry = null;
 				}
 
-				if (!setlistChanged && entry == null)
+				if (!setlistChanged && entry == null && !catchUp)
 				{
 					return; // The new current song is gone already, or not in this setlist.
 				}
@@ -453,7 +644,7 @@ namespace Lyrious.UILib.Setlists
 		private static StackPanel DrawerButtons(SplitView drawer, Button openButton, string name)
 		{
 			var pinButton = IconButton(PinIcon, $"Pin {name}");
-			var closeButton = IconButton(CloseIcon, $"Close {name}");
+			var closeButton = EscapeKey.MarkAsClose(IconButton(CloseIcon, $"Close {name}"));
 			closeButton.Click += (_, _) => drawer.IsPaneOpen = false;
 
 			void Update()
@@ -590,6 +781,7 @@ namespace Lyrious.UILib.Setlists
 					chooseSetlistButton,
 					chooseSongButton,
 					findSongButton,
+					playlogButton,
 				},
 			};
 			DockPanel.SetDock(header, Dock.Top);
@@ -969,6 +1161,7 @@ namespace Lyrious.UILib.Setlists
 			chooseSetlistButton.IsEnabled = start.Group != null;
 			chooseSongButton.IsEnabled = start.Group != null;
 			findSongButton.IsEnabled = start.Group != null;
+			playlogButton.IsEnabled = start.Group != null;
 
 			if (!showPage)
 			{
@@ -1032,7 +1225,11 @@ namespace Lyrious.UILib.Setlists
 			var view = new SetlistsView(group, setlists, currentSetlist?.Id);
 			view.SetlistSelected += setlist => _ = RunAsync(async () =>
 			{
-				await service.SelectSetlistAsync(group.Id, setlist.Id);
+				if (bandSync)
+				{
+					await service.SelectSetlistAsync(group.Id, setlist.Id);
+				}
+
 				SetCurrentSong(null, null);
 				await ShowSetlistAsync(group, setlist);
 			});
@@ -1210,6 +1407,13 @@ namespace Lyrious.UILib.Setlists
 			// A page that's been replaced (e.g. by the next song) no longer counts.
 			view.AutoScrollChanged += () =>
 			{
+				// Stopped (also by leaving the page): the time played goes into the playlog.
+				if (!view.IsAutoScrolling && timedPlay is { } timed && timed.View == view)
+				{
+					timedPlay = null;
+					_ = AddPlayTimeAsync(timed.Play, DateTime.Now - timed.Started);
+				}
+
 				if (page.Content == view)
 				{
 					playbackBar.SetPlaying(view.IsAutoScrolling);
@@ -1220,7 +1424,9 @@ namespace Lyrious.UILib.Setlists
 					if (!view.IsAutoScrolling && pendingFollow is { } follow)
 					{
 						pendingFollow = null;
-						_ = FollowGroupAsync(follow);
+						var catchUp = pendingCatchUp;
+						pendingCatchUp = false;
+						_ = FollowGroupAsync(follow, catchUp);
 					}
 				}
 			};
@@ -1483,6 +1689,11 @@ namespace Lyrious.UILib.Setlists
 
 		private async Task SaveSongSelectionAsync(GroupSummary group, SetlistEntry entry)
 		{
+			if (!bandSync)
+			{
+				return; // Band sync off: the band's current song stays as it is.
+			}
+
 			try
 			{
 				await service.SelectSongAsync(group.Id, entry);

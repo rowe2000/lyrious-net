@@ -24,7 +24,7 @@ internal sealed record PendingChange(string Type, Guid Id, string Kind, JsonObje
 internal sealed class EntityCache
 {
     /// <summary>The API's entity types (each at api/{type}), in the order they're fetched.</summary>
-    public static readonly string[] Types = ["group", "member", "membership", "songbook", "song", "setlist", "setlistitem"];
+    public static readonly string[] Types = ["group", "member", "membership", "songbook", "song", "setlist", "setlistitem", "playlog", "play"];
 
     private static readonly string[] MemberProfileFields = ["id", "userName", "name", "joinedGroupId", "createdAt", "changedAt", "removed"];
 

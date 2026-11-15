@@ -88,6 +88,19 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The songs in the group's songbooks, by name.</summary>
 		Task<IReadOnlyList<SongDetails>> GetSongbookSongsAsync(Guid groupId, CancellationToken cancellationToken = default);
 
+		/// <summary>The band's playlogs, newest first, each with its songs in the order they were played.</summary>
+		Task<IReadOnlyList<PlaylogSummary>> GetPlaylogsAsync(Guid groupId, CancellationToken cancellationToken = default);
+
+		/// <summary>
+		/// Adds the song to the band's playlog for today (started if there's none yet), with its key
+		/// and tempo and this member as conductor, and returns the play; null if the song is gone. If
+		/// the song is already the last one in it, that play is returned instead (playing on after a stop).
+		/// </summary>
+		Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, CancellationToken cancellationToken = default);
+
+		/// <summary>Adds to how long the song was played.</summary>
+		Task AddPlayTimeAsync(Guid playId, TimeSpan time, CancellationToken cancellationToken = default);
+
 		/// <summary>Searches an online lyrics database by title and/or artist.</summary>
 		Task<IReadOnlyList<InternetSong>> SearchInternetAsync(string query, CancellationToken cancellationToken = default);
 
@@ -128,10 +141,17 @@ namespace Lyrious.UILib.Setlists
 
 	public sealed record SetlistSummary(Guid Id, string Name, Guid GroupId);
 
-	public sealed record SongDetails(Guid Id, string Name, string Key, float Tempo, string Beat, string Lyrics);
+	/// <param name="MediaLink">A link to listen to or watch the song (Spotify, YouTube, …); empty if none.</param>
+	public sealed record SongDetails(Guid Id, string Name, string Key, float Tempo, string Beat, string Lyrics, string MediaLink = "");
 
 	/// <summary>A song found online: title, artist, album, length and plain lyrics (empty if the database has none).</summary>
 	public sealed record InternetSong(string Title, string Artist, string Album, TimeSpan Duration, string Lyrics, bool Instrumental);
+
+	/// <summary>A band's playlog: the songs played on one occasion (e.g. a gig or a rehearsal), in order.</summary>
+	public sealed record PlaylogSummary(Guid Id, DateTime CreatedAt, IReadOnlyList<PlayEntry> Plays);
+
+	/// <summary>A song played: when, in which key and tempo, for how long (zero if unknown) and who conducted it (empty if unknown).</summary>
+	public sealed record PlayEntry(Guid Id, DateTime PlayedAt, Guid SongId, string SongName, string Key, float Tempo, TimeSpan Duration, string Conductor);
 
 	/// <summary>A song at a position in a setlist.</summary>
 	public sealed record SetlistEntry(Guid Id, Guid SetlistId, int Position, SongDetails Song);
@@ -163,6 +183,9 @@ namespace Lyrious.UILib.Setlists
 		public Task<IReadOnlyList<SetlistEntry>> GetEntriesAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistEntry?> GetEntryAsync(Guid setlistItemId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SongDetails>> GetSongbookSongsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<IReadOnlyList<PlaylogSummary>> GetPlaylogsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task AddPlayTimeAsync(Guid playId, TimeSpan time, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<InternetSong>> SearchInternetAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SongDetails> CreateSongAsync(Guid groupId, string name, string lyrics, TimeSpan duration, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteSongAsync(Guid songId, CancellationToken cancellationToken = default) => throw NotConnected();

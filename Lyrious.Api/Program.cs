@@ -122,7 +122,7 @@ internal class Program
 		using (var scope = app.Services.CreateScope())
 		{
 			var context = scope.ServiceProvider.GetRequiredService<LyriousContext>();
-			Console.WriteLine(context.Database.EnsureCreated()
+			Console.WriteLine(context.EnsureCreatedAndUpToDate()
 				? "Database has been created."
 				: "Database already exists.");
 		}

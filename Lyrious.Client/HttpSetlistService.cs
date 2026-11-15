@@ -327,7 +327,87 @@ public sealed class HttpSetlistService : ISetlistService
             .ToArray();
     }
 
+    public async Task<IReadOnlyList<PlaylogSummary>> GetPlaylogsAsync(Guid groupId, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        var songs = current.All("song").Select(song => As(song, ClientJsonContext.Default.SongDto)).ToDictionary(song => song.Id);
+        var members = current.All("member")
+            .Select(member => As(member, ClientJsonContext.Default.MemberDto))
+            .ToDictionary(member => member.Id, member => !string.IsNullOrWhiteSpace(member.Name) ? member.Name : member.UserName ?? "");
+        var plays = Live(current, "play", ClientJsonContext.Default.PlayDto)
+            .ToLookup(play => play.PlaylogId);
+
+        // Newest first; each playlog's songs in the order they were played.
+        return Live(current, "playlog", ClientJsonContext.Default.PlaylogDto)
+            .Where(playlog => playlog.GroupId == groupId)
+            .OrderByDescending(playlog => playlog.CreatedAt)
+            .Select(playlog => new PlaylogSummary(
+                playlog.Id,
+                playlog.CreatedAt,
+                plays[playlog.Id]
+                    .OrderBy(play => play.CreatedAt)
+                    .Select(play => new PlayEntry(
+                        play.Id,
+                        play.CreatedAt,
+                        play.SongId,
+                        // A song deleted since keeps its name in the cache (removed), so it can still be named.
+                        songs.TryGetValue(play.SongId, out var song) ? song.Name : "Unknown song",
+                        play.KeyString ?? "",
+                        play.Tempo,
+                        TimeSpan.FromMilliseconds(play.DurationMilliSeconds),
+                        members.GetValueOrDefault(play.ConductorId, "")))
+                    .ToArray()))
+            .ToArray();
+    }
+
     // ---- Changing (into the cache, then sent) ----
+
+    public async Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, CancellationToken cancellationToken = default)
+    {
+        var memberId = auth.MemberId ?? throw new InvalidOperationException("You're not logged in.");
+        var current = await CacheAsync();
+        if (Find(current, "song", songId, ClientJsonContext.Default.SongDto) is not { } song)
+        {
+            return null;
+        }
+
+        // Today's playlog for the band (a new one each day, as the API's own PlayAsync does).
+        var now = DateTime.Now;
+        var playlog = Live(current, "playlog", ClientJsonContext.Default.PlaylogDto)
+            .Where(log => log.GroupId == groupId && log.CreatedAt.Date == now.Date)
+            .MaxBy(log => log.CreatedAt);
+        if (playlog == null)
+        {
+            playlog = new PlaylogDto(Guid.NewGuid(), groupId, now, now, Removed: false);
+            current.Create("playlog", Node(playlog, ClientJsonContext.Default.PlaylogDto));
+        }
+        else if (Live(current, "play", ClientJsonContext.Default.PlayDto)
+                     .Where(play => play.PlaylogId == playlog.Id)
+                     .MaxBy(play => play.CreatedAt) is { } last
+                 && last.SongId == songId)
+        {
+            // Playing on after a stop: still the same play of the song.
+            return last.Id;
+        }
+
+        var newPlay = new PlayDto(Guid.NewGuid(), playlog.Id, songId, memberId, song.Key ?? "", song.Tempo, 0, now, now, Removed: false);
+        current.Create("play", Node(newPlay, ClientJsonContext.Default.PlayDto));
+        Queued(current);
+        return newPlay.Id;
+    }
+
+    public async Task AddPlayTimeAsync(Guid playId, TimeSpan time, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        if (Find(current, "play", playId, ClientJsonContext.Default.PlayDto) is not { } play || time <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        var total = (long)play.DurationMilliSeconds + (long)time.TotalMilliseconds;
+        current.Update("play", playId, new JsonObject { ["durationMilliSeconds"] = (int)Math.Min(total, int.MaxValue) });
+        Queued(current);
+    }
 
     private static JsonObject Node<T>(T value, JsonTypeInfo<T> type) => (JsonObject)JsonSerializer.SerializeToNode(value, type)!;
 
@@ -403,7 +483,7 @@ public sealed class HttpSetlistService : ISetlistService
             songbook.Id, now, now, Removed: false);
         current.Create("song", Node(song, ClientJsonContext.Default.NewSongDto));
         Queued(current);
-        return new SongDetails(song.Id, song.Name, song.Key, song.Tempo, song.Beat, song.Lyrics);
+        return new SongDetails(song.Id, song.Name, song.Key, song.Tempo, song.Beat, song.Lyrics, song.MediaLink);
     }
 
     /// <summary>
@@ -419,7 +499,7 @@ public sealed class HttpSetlistService : ISetlistService
 
     public async Task<SongDetails> UpdateSongAsync(SongDetails song, CancellationToken cancellationToken = default)
     {
-        // The server's limits: name 100 characters, key and beat 10, lyrics 5000.
+        // The server's limits: name 100 characters, key and beat 10, lyrics 5000, media link 500.
         return await UpdateSongFieldsAsync(song.Id, new JsonObject
         {
             ["name"] = Limit(song.Name, 100),
@@ -427,6 +507,7 @@ public sealed class HttpSetlistService : ISetlistService
             ["tempo"] = song.Tempo,
             ["beat"] = Limit(song.Beat, 10),
             ["lyrics"] = Limit(song.Lyrics, 5000),
+            ["mediaLink"] = Limit(song.MediaLink, 500),
         });
     }
 
@@ -537,5 +618,5 @@ public sealed class HttpSetlistService : ISetlistService
 
     private static SetlistEntry ToEntry(SetlistItemDto item, SongDto song) => new(item.Id, item.SetlistId, item.Position, ToDetails(song));
 
-    private static SongDetails ToDetails(SongDto song) => new(song.Id, song.Name, song.Key ?? "", song.Tempo, song.Beat ?? "", song.Lyrics ?? "");
+    private static SongDetails ToDetails(SongDto song) => new(song.Id, song.Name, song.Key ?? "", song.Tempo, song.Beat ?? "", song.Lyrics ?? "", song.MediaLink ?? "");
 }

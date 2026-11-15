@@ -36,7 +36,7 @@ namespace Lyrious.UILib.Setlists
 				return titleAction;
 			}
 
-			var close = HomeView.IconButton(CloseIcon, "Close");
+			var close = EscapeKey.MarkAsClose(HomeView.IconButton(CloseIcon, "Close"));
 			close.Click += (_, _) => close.RaiseEvent(new RoutedEventArgs(CloseRequestedEvent));
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
 			if (titleAction != null)

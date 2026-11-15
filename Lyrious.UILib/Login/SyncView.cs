@@ -46,7 +46,7 @@ namespace Lyrious.UILib.Login
 			string? warnedAbout = null;
 
 			var saveButton = HomeView.IconButton(SaveIcon, "Save host");
-			var cancelButton = HomeView.IconButton(CancelIcon, "Cancel");
+			var cancelButton = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, "Cancel"));
 			cancelButton.Click += (_, _) => Cancelled?.Invoke();
 			host.TextChanged += (_, _) =>
 			{

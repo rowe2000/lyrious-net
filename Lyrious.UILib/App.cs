@@ -43,6 +43,14 @@ namespace Lyrious.UILib
 
 		public override void OnFrameworkInitializationCompleted()
 		{
+			// The user's own colours (Settings → Colors), over the theme's.
+			ColorSettings.Apply();
+			EscapeKey.Register();
+			StartMainView();
+		}
+
+		private void StartMainView()
+		{
 			if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
 			{
 				desktop.MainWindow = new MainWindow();

@@ -22,6 +22,15 @@ namespace Lyrious.UILib
 
 		/// <summary>"false" turns off going on to the next song when stopping at the end of the lyrics (on by default).</summary>
 		public const string NextSongOnStopAtEnd = "next-song-on-stop-at-end";
+
+		/// <summary>"false" stops following and sending the band's song, setlist and play/stop (on by default).</summary>
+		public const string BandSync = "band-sync";
+
+		/// <summary>The highlight colour, "#RRGGBB"; none for the system's accent colour.</summary>
+		public const string HighlightColor = "highlight-color";
+
+		/// <summary>The chord colour, "#RRGGBB"; none for the theme's.</summary>
+		public const string ChordColor = "chord-color";
 	}
 
 	/// <summary>Used until a host provides a store: settings last only while the app runs.</summary>

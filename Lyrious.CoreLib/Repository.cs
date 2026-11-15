@@ -101,7 +101,14 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 	public Repository(TContext dbContext)
 	{
 		this.dbContext = dbContext;
-		this.dbContext.Database.EnsureCreated();
+		if (dbContext is LyriousContext lyrious)
+		{
+			lyrious.EnsureCreatedAndUpToDate();
+		}
+		else
+		{
+			this.dbContext.Database.EnsureCreated();
+		}
 
 		var dbSetProperties = dbContext.GetType()
 			.GetProperties(BindingFlags.Public | BindingFlags.Instance)

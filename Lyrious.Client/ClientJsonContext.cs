@@ -36,7 +36,7 @@ internal sealed record SetlistDto(System.Guid Id, string Name, System.Guid Group
 
 internal sealed record SetlistItemDto(System.Guid Id, int Position, System.Guid SongId, System.Guid SetlistId, bool Removed);
 
-internal sealed record SongDto(System.Guid Id, string Name, string? Key, float Tempo, string? Beat, string? Lyrics, System.Guid SongbookId, bool Removed);
+internal sealed record SongDto(System.Guid Id, string Name, string? Key, float Tempo, string? Beat, string? Lyrics, System.Guid SongbookId, bool Removed, string? MediaLink = null);
 
 internal sealed record SongbookDto(System.Guid Id, string Name, System.Guid? GroupId, bool Removed);
 
@@ -44,13 +44,22 @@ internal sealed record SongbookDto(System.Guid Id, string Name, System.Guid? Gro
 /// <summary>A new song, with every field the API stores (it replaces all fields with what it receives).</summary>
 internal sealed record NewSongDto(
     System.Guid Id, string Name, string Key, float Tempo, string Beat, int LengthMilliSeconds, string Lyrics,
-    System.Guid SongbookId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed);
+    System.Guid SongbookId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, string MediaLink = "");
 
 /// <summary>A search result from LRCLIB (https://lrclib.net/docs).</summary>
 internal sealed record LrclibTrack(long Id, string? TrackName, string? ArtistName, string? AlbumName, double? Duration, bool Instrumental, string? PlainLyrics);
 
 /// <summary>A member's public name only; the API sends more, which is ignored.</summary>
 internal sealed record MemberDto(System.Guid Id, string? Name, string? UserName);
+
+/// <summary>A band's playlog: the songs played on one occasion (e.g. a gig or a rehearsal).</summary>
+/// Every field the API stores is included, since new ones are posted whole.
+internal sealed record PlaylogDto(System.Guid Id, System.Guid GroupId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum = 0);
+
+/// <summary>A song played, in the key and tempo it was played in, and who conducted it.</summary>
+internal sealed record PlayDto(
+    System.Guid Id, System.Guid PlaylogId, System.Guid SongId, System.Guid ConductorId,
+    string? KeyString, float Tempo, int DurationMilliSeconds, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum = 0);
 
 internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int MembershipStatusEnum, System.Guid GroupId, System.Guid MemberId, bool Removed);
 
@@ -85,4 +94,6 @@ internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int Membershi
 [JsonSerializable(typeof(MemberDto[]))]
 [JsonSerializable(typeof(NewSongDto[]))]
 [JsonSerializable(typeof(LrclibTrack[]))]
+[JsonSerializable(typeof(PlaylogDto))]
+[JsonSerializable(typeof(PlayDto))]
 internal sealed partial class ClientJsonContext : JsonSerializerContext;

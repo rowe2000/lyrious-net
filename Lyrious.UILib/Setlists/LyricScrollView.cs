@@ -370,7 +370,8 @@ namespace Lyrious.UILib.Setlists
 				PlaceholderText = "Type or paste the lyrics",
 			};
 			var save = HomeView.IconButton(SaveIcon, "Save lyrics");
-			var cancel = HomeView.IconButton(CancelIcon, "Cancel editing");
+			// Escape cancels too (before the page's ✕).
+			var cancel = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, "Cancel editing"), first: true);
 			var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Margin = new Thickness(0, 0, 0, 12) };
 			error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable(LyriousTheme.ErrorBrush));
 			DockPanel.SetDock(error, Dock.Top);

@@ -16,6 +16,9 @@ public sealed class Song : Entity, IName
     [DataMember] public int LengthMilliSeconds { get; set; } = TimeSpan.FromMinutes(3).Milliseconds;
     [MaxLength(5000)]
     [DataMember] public string Lyrics { get; set; } = "";
+    /// <summary>A link to listen to or watch the song, e.g. on Spotify or YouTube; empty if none.</summary>
+    [MaxLength(500)]
+    [DataMember] public string MediaLink { get; set; } = "";
 
     [DataMember] public Guid SongbookId { get; set; }
     [JsonIgnore] public Songbook? Songbook { get; set; }

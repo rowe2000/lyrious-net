@@ -25,6 +25,64 @@ public class LyriousContext : LocalContext<Member, Role>
 	public DbSet<Song> Songs { get; set; }
 	public DbSet<Songbook> Songbooks { get; set; }
 
+	/// <summary>
+	/// Creates the database if there is none, and brings an existing one up to date: EnsureCreated
+	/// doesn't add columns that were added to the model after the database was made, so they're
+	/// added here (with their defaults), keeping the data.
+	/// </summary>
+	/// <returns>True if the database was created.</returns>
+	public bool EnsureCreatedAndUpToDate()
+	{
+		var created = Database.EnsureCreated();
+		if (!created && Database.IsSqlite())
+		{
+			AddColumnIfMissing(nameof(Songs), nameof(Song.MediaLink), "TEXT NOT NULL DEFAULT ''");
+		}
+
+		return created;
+	}
+
+	private void AddColumnIfMissing(string table, string column, string definition)
+	{
+		var connection = Database.GetDbConnection();
+		var wasClosed = connection.State != System.Data.ConnectionState.Open;
+		if (wasClosed)
+		{
+			connection.Open();
+		}
+
+		try
+		{
+			using (var command = connection.CreateCommand())
+			{
+				command.CommandText = $"PRAGMA table_info(\"{table}\")";
+				using var reader = command.ExecuteReader();
+				while (reader.Read())
+				{
+					if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+					{
+						return;
+					}
+				}
+			}
+
+			using (var alter = connection.CreateCommand())
+			{
+				alter.CommandText = $"ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {definition}";
+				alter.ExecuteNonQuery();
+			}
+
+			Console.WriteLine($"Database: added the column {table}.{column}.");
+		}
+		finally
+		{
+			if (wasClosed)
+			{
+				connection.Close();
+			}
+		}
+	}
+
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
 		// Identity's own model (users, roles, claims, logins, tokens and, since .NET 10, passkeys).
