@@ -77,7 +77,10 @@ namespace Lyrious.UILib.Setlists
 				},
 			};
 
-			Content = PageLayout.Page("Settings", form, subtitle: "Kept on this device", closable: true);
+			// Scrolls when the settings don't fit (a short window or a large interface size).
+			form.Margin = new Thickness(0, 0, 0, 16);
+			var scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
+			Content = PageLayout.Page("Settings", scroller, subtitle: "Kept on this device", closable: true);
 		}
 
 		/// <summary>The colours offered: bright enough for a dark background, deep enough for a light one.</summary>

@@ -62,7 +62,8 @@ namespace Lyrious.UILib.Setlists
 			error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable(LyriousTheme.ErrorBrush));
 
 			var saveButton = HomeView.IconButton(SaveIcon, "Save song");
-			var cancelButton = HomeView.IconButton(CancelIcon, "Cancel editing");
+			// Escape cancels too.
+			var cancelButton = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, "Cancel editing"), first: true);
 			cancelButton.Click += (_, _) => Cancelled?.Invoke();
 			saveButton.IsEnabled = !string.IsNullOrWhiteSpace(song.Name);
 			name.TextChanged += (_, _) => saveButton.IsEnabled = !string.IsNullOrWhiteSpace(name.Text);

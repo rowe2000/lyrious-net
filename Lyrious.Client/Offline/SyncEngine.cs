@@ -119,7 +119,9 @@ internal sealed class SyncEngine
         await running.WaitAsync();
         try
         {
-            if (!await auth.IsServerUpAsync())
+            // With the live connection up it's the Lyrious server answering (its hub took our login),
+            // so the extra round trip to check is skipped: changes go out at once.
+            if (connectionId() == null && !await auth.IsServerUpAsync())
             {
                 SetOffline(cache);
             }
@@ -185,8 +187,8 @@ internal sealed class SyncEngine
 
             switch (outcome)
             {
-                case Outcome.Ok:
-                    cache.Complete(change, await TryGetAsync(change.Type, change.Id));
+                case Outcome.Ok ok:
+                    cache.Complete(change, ok.Stored ?? await TryGetAsync(change.Type, change.Id));
                     break;
                 case Outcome.Rejected rejected:
                     cache.Drop(change);
@@ -205,7 +207,8 @@ internal sealed class SyncEngine
 
     private abstract record Outcome
     {
-        public sealed record Ok : Outcome;
+        /// <param name="Stored">The server's copy after the write, when it sent it back.</param>
+        public sealed record Ok(JsonObject? Stored = null) : Outcome;
 
         public sealed record Rejected(string Message) : Outcome;
 
@@ -235,6 +238,22 @@ internal sealed class SyncEngine
         }
         else
         {
+            // Just the fields changed here, applied by the server to its copy: one round trip, and
+            // the reply is the stored copy.
+            using var patch = await SendAsync(HttpMethod.Patch, $"{path}/{change.Id}", change.Fields!.DeepClone());
+            if (patch.StatusCode == HttpStatusCode.NotFound)
+            {
+                return Outcome.Refused($"A {Describe(change.Type)} you changed offline was deleted meanwhile, so the change was dropped.");
+            }
+
+            if (patch.StatusCode != HttpStatusCode.MethodNotAllowed)
+            {
+                return Judge(patch, change) is Outcome.Ok
+                    ? new Outcome.Ok(await TryReadAsync(patch))
+                    : Judge(patch, change);
+            }
+
+            // An older server without PATCH: get its copy, change the fields, post it back.
             // Apply just the fields changed here to the server's latest copy: the API replaces every
             // field with what it receives, so the rest must be the server's.
             using var get = await SendAsync(HttpMethod.Get, $"{path}/{change.Id}");
@@ -276,6 +295,18 @@ internal sealed class SyncEngine
             // 5xx: the server has a problem; keep the change and try again later.
             _ => throw new HttpRequestException($"The server answered {(int)response.StatusCode} {response.ReasonPhrase}.", null, response.StatusCode),
         };
+    }
+
+    private static async Task<JsonObject?> TryReadAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            return JsonNode.Parse(await response.Content.ReadAsStringAsync()) as JsonObject;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The server's stored copy after a write, for the cache; null if it can't be had right now.</summary>

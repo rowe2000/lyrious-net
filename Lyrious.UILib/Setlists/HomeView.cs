@@ -50,6 +50,8 @@ namespace Lyrious.UILib.Setlists
 		private readonly Button playlogButton;
 		private readonly Button chooseGroupButton;
 		private readonly TextBlock syncStatus = new() { FontSize = 13, Opacity = 0.7 };
+		// The left drawer's Sync button: highlighted while changes made here haven't reached the server.
+		private Button? syncButton;
 		private readonly Button addSongsButton = IconButton(AddIcon, "Add a song to the setlist");
 		private readonly ContentControl page = new();
 		private readonly SplitView menuDrawer;
@@ -132,7 +134,7 @@ namespace Lyrious.UILib.Setlists
 				}
 			});
 			chooseSetlistButton.IsEnabled = false;
-			chooseSongButton = DrawerPicker("Song", currentSongName, "Choose a song", () =>
+			chooseSongButton = DrawerPicker("Songbook", currentSongName, "Choose a song from the songbook", () =>
 			{
 				if (currentGroup is { } group)
 				{
@@ -361,7 +363,15 @@ namespace Lyrious.UILib.Setlists
 		private static bool IsBusy(object? content)
 			=> content is SongEditView or AddSongsView or InternetSongView or LyricScrollView { IsEditing: true };
 
-		private void OnStatusChanged() => Dispatcher.UIThread.Post(() => syncStatus.Text = SyncStatusText.Short(service.Status));
+		private void OnStatusChanged() => Dispatcher.UIThread.Post(() =>
+		{
+			var status = service.Status;
+			syncStatus.Text = SyncStatusText.Short(status);
+			if (syncButton != null)
+			{
+				syncButton.Classes.Set("accent", status.PendingChanges > 0);
+			}
+		});
 
 		/// <summary>
 		/// Band sync turned on: catch up with the band's current setlist and song, which win over the
@@ -509,13 +519,14 @@ namespace Lyrious.UILib.Setlists
 				var stopping = lyrics.IsAutoScrolling;
 				var atEnd = lyrics.IsAtEnd;
 				lyrics.SetAutoScroll(!stopping);
+
+				// The other members that have joined the band start or stop too (sent first, before
+				// the playlog is written).
+				_ = SendPlaybackAsync(lyrics.IsAutoScrolling);
 				if (lyrics.IsAutoScrolling)
 				{
 					StartPlay(lyrics);
 				}
-
-				// The other members that have joined the band start or stop too.
-				_ = SendPlaybackAsync(lyrics.IsAutoScrolling);
 
 				// Stopping at the very end of the lyrics goes on to the next song (a setting, on by default).
 				if (stopping && atEnd && PlaybackSettings.NextSongOnStopAtEnd)
@@ -806,6 +817,7 @@ namespace Lyrious.UILib.Setlists
 			};
 
 			var sync = DrawerItem("Sync");
+			syncButton = sync;
 			// Under "Sync": whether the server can be reached and how many changes are waiting.
 			sync.Content = new StackPanel
 			{
@@ -1755,8 +1767,9 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			ShowLyrics(group, setlist, entry);
+			// Tell the band first, so it goes out before the lyrics are laid out here.
 			_ = SaveSongSelectionAsync(group, entry);
+			ShowLyrics(group, setlist, entry);
 		}
 
 		private async Task SaveSongSelectionAsync(GroupSummary group, SetlistEntry entry)

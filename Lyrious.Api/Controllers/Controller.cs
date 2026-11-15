@@ -2,7 +2,10 @@
 using Lyrious.CoreLib;
 using Lyrious.CoreLib.Models;
 using Microsoft.AspNetCore.Authorization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 namespace Lyrious.Api.Controllers;
@@ -69,6 +72,43 @@ public abstract class Controller<TEntity>(LyriousRepository repo) : ControllerBa
 		repo.Update([value]);
 		await NotifyAsync([id]);
 		return Ok();
+	}
+
+	// PATCH api/<TEntity>s/<id>
+	/// <summary>
+	/// Changes just the given fields of the stored entity (a JSON object of camelCase fields), in one
+	/// round trip: the same as getting it, changing the fields and posting it back, without the wait.
+	/// Returns the stored entity after the change.
+	/// </summary>
+	[HttpPatch("{id:guid}")]
+	public virtual async Task<ActionResult<TEntity>> Patch(Guid id, [FromBody] JsonObject fields)
+	{
+		repo.SetIdentity(User.Identity);
+		if (repo.Get<TEntity>([id]).FirstOrDefault() is not { } stored)
+		{
+			return NotFound();
+		}
+
+		var options = HttpContext.RequestServices.GetRequiredService<IOptions<JsonOptions>>().Value.JsonSerializerOptions;
+		var body = JsonSerializer.SerializeToNode(stored, options) as JsonObject ?? [];
+		foreach (var (field, fieldValue) in fields)
+		{
+			body[field] = fieldValue?.DeepClone();
+		}
+
+		if (body.Deserialize<TEntity>(options) is not { } value || value.Id != id)
+		{
+			return BadRequest("The id can't be changed.");
+		}
+
+		if (!repo.CanWrite(value))
+		{
+			return Forbidden();
+		}
+
+		repo.Update([value]);
+		await NotifyAsync([id]);
+		return repo.Get<TEntity>([id]).FirstOrDefault() is { } updated ? updated : NotFound();
 	}
 
 	// DELETE api/<TEntity>/<id>

@@ -92,7 +92,8 @@ namespace Lyrious.UILib.Setlists
 			foreach (var (rowItem, outline, tools) in rows)
 			{
 				var selected = item is not null && EqualityComparer<T>.Default.Equals(rowItem, item);
-				tools.IsVisible = selected;
+				// A row without tools (e.g. the joined band) shows no toolbar, so it doesn't narrow.
+				tools.IsVisible = selected && tools is Panel { Children.Count: > 0 };
 				if (selected)
 				{
 					outline.Bind(Border.BorderBrushProperty, outline.GetResourceObservable(LyriousTheme.SelectionBrush));

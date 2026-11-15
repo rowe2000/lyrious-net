@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 
 namespace Lyrious.UILib
@@ -10,7 +12,9 @@ namespace Lyrious.UILib
 	/// The size of the whole app's interface (Settings → Display), e.g. 1.25 for 125 %. Kept on this
 	/// device (<see cref="App.Settings"/>); a change shows at once. The app's content is scaled as a
 	/// whole (<see cref="Wrap"/>), so text, icons and spacing all grow or shrink together and the
-	/// layout reflows to the window. Popups (menus, tooltips) keep their own size.
+	/// layout reflows to the window. Popups (confirmations, menus, dropdown lists, tooltips) are shown
+	/// outside the app's content, so each popup's content is put in a scaled box of its own
+	/// (<see cref="RegisterPopups"/>).
 	/// </summary>
 	public static class UiScale
 	{
@@ -34,13 +38,42 @@ namespace Lyrious.UILib
 			}
 		}
 
+		/// <summary>Called once at startup: every popup's content is scaled too, from then on.</summary>
+		public static void RegisterPopups()
+		{
+			Popup.ChildProperty.Changed.AddClassHandler<Popup>((popup, e) =>
+			{
+				// A popup that takes on its target's scaling already (e.g. a dropdown list) would be
+				// scaled twice.
+				if (e.NewValue is not Control child || child is ScaledPopupContent || popup.InheritsTransform)
+				{
+					return;
+				}
+
+				// At once, before the popup opens (popups get their content first). The empty box takes
+				// the content's place in the popup, then the content goes into the box.
+				var box = Track(new ScaledPopupContent());
+				popup.Child = box;
+				box.Child = child;
+			});
+		}
+
+		/// <summary>The scaled box a popup's content is put in.</summary>
+		private sealed class ScaledPopupContent : LayoutTransformControl;
+
 		/// <summary>"125%".</summary>
 		public static string Describe(double scale) => $"{Math.Round(scale * 100)}%";
 
 		/// <summary>Puts the app's content in a scaled box that follows <see cref="Value"/>.</summary>
 		public static Control Wrap(Control content)
 		{
-			var root = new LayoutTransformControl { Child = content };
+			return Track(new LayoutTransformControl { Child = content });
+		}
+
+		/// <summary>Scales the box now and whenever <see cref="Value"/> changes (while it's alive).</summary>
+		private static T Track<T>(T root) where T : LayoutTransformControl
+		{
+			roots.RemoveAll(reference => !reference.TryGetTarget(out _));
 			roots.Add(new WeakReference<LayoutTransformControl>(root));
 			ApplyTo(root, Value);
 			return root;

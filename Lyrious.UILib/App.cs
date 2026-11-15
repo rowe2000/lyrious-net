@@ -46,6 +46,7 @@ namespace Lyrious.UILib
 			// The user's own colours (Settings → Colors), over the theme's.
 			ColorSettings.Apply();
 			EscapeKey.Register();
+			UiScale.RegisterPopups();
 			StartMainView();
 		}
 
