@@ -176,7 +176,7 @@ namespace Lyrious.UILib.Setlists
 				Child = noticeText,
 				Padding = new Thickness(16, 10),
 				CornerRadius = new CornerRadius(8),
-				Margin = new Thickness(16, 0, 16, 120),
+				Margin = new Thickness(16, 0, 16, 64), // Above the playback toolbar.
 				MaxWidth = 480,
 				HorizontalAlignment = HorizontalAlignment.Center,
 				VerticalAlignment = VerticalAlignment.Bottom,
@@ -295,34 +295,6 @@ namespace Lyrious.UILib.Setlists
 					e.Handled = true;
 				}
 			};
-			// On the lyrics page (not while editing or typing in a box) the space bar plays and stops, as
-			// the play/stop button does, and the up and down arrows nudge the lyrics. Seen before the focused control, so a focused button isn't
-			// also pressed by it (the play button would undo it).
-			AddHandler(KeyDownEvent, (_, e) =>
-			{
-				if (e.KeyModifiers != Avalonia.Input.KeyModifiers.None || page.Content is not LyricScrollView { IsEditing: false } lyrics
-				    || e.Source is TextBox)
-				{
-					return;
-				}
-
-				switch (e.Key)
-				{
-					case Avalonia.Input.Key.Space:
-						e.Handled = true;
-						PlayPause();
-						break;
-					// Up and down nudge the lyrics: 4 bars for timed songs, else a line.
-					case Avalonia.Input.Key.Up:
-						e.Handled = true;
-						lyrics.Nudge(-1);
-						break;
-					case Avalonia.Input.Key.Down:
-						e.Handled = true;
-						lyrics.Nudge(1);
-						break;
-				}
-			}, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
 			// Follow the joined band's current setlist and song, and its play/stop, when another member changes them.
 			service.GroupChanged += OnGroupChanged;
@@ -467,6 +439,65 @@ namespace Lyrious.UILib.Setlists
 			catch (Exception ex)
 			{
 				System.Diagnostics.Debug.WriteLine($"Couldn't send play/stop to the band: {ex.Message}");
+			}
+		}
+
+		// The window this view is in, for its keys (see OnLyricsKey).
+		private TopLevel? keyWindow;
+
+		protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+		{
+			base.OnAttachedToVisualTree(e);
+			// Listened to on the whole window, so the keys also work when nothing has keyboard focus
+			// (then they don't pass through this view). Tunnelling: seen before the focused control.
+			keyWindow = TopLevel.GetTopLevel(this);
+			keyWindow?.AddHandler(KeyDownEvent, OnLyricsKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+		}
+
+		protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+		{
+			base.OnDetachedFromVisualTree(e);
+			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsKey);
+			keyWindow = null;
+		}
+
+		/// <summary>
+		/// Keys on the lyrics page (not while editing or typing in a box): the space bar plays and stops,
+		/// as the play/stop button does; up and down nudge the lyrics (4 bars for timed songs, else a
+		/// line); and, when not playing, left and right go to the previous and next song in the setlist.
+		/// Handled before the focused control sees them, so a focused button isn't also pressed by the
+		/// space bar (the play button would undo it).
+		/// </summary>
+		private void OnLyricsKey(object? sender, Avalonia.Input.KeyEventArgs e)
+		{
+			if (e.KeyModifiers != Avalonia.Input.KeyModifiers.None || page.Content is not LyricScrollView { IsEditing: false } lyrics
+			    || e.Source is TextBox)
+			{
+				return;
+			}
+
+			switch (e.Key)
+			{
+				case Avalonia.Input.Key.Space:
+					e.Handled = true;
+					PlayPause();
+					break;
+				case Avalonia.Input.Key.Up:
+					e.Handled = true;
+					lyrics.Nudge(-1);
+					break;
+				case Avalonia.Input.Key.Down:
+					e.Handled = true;
+					lyrics.Nudge(1);
+					break;
+				case Avalonia.Input.Key.Left when !lyrics.IsAutoScrolling:
+					e.Handled = true;
+					StepSong(-1);
+					break;
+				case Avalonia.Input.Key.Right when !lyrics.IsAutoScrolling:
+					e.Handled = true;
+					StepSong(1);
+					break;
 			}
 		}
 
@@ -1520,7 +1551,10 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>Shows the next song in the current setlist.</summary>
-		private void NextSong()
+		private void NextSong() => StepSong(1);
+
+		/// <summary>Goes to the song before (-1) or after (+1) the current one in the setlist, if any (not while playing).</summary>
+		private void StepSong(int step)
 		{
 			if (currentGroup is not { } group || currentSetlist is not { } setlist || currentEntryId is not { } entryId)
 			{
@@ -1528,8 +1562,8 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var current = IndexOfEntry(playbackEntries, entryId);
-			var target = current + 1;
-			if (current >= 0 && target < playbackEntries.Count && !RefuseWhilePlaying())
+			var target = current + step;
+			if (current >= 0 && target >= 0 && target < playbackEntries.Count && !RefuseWhilePlaying())
 			{
 				SelectSong(group, setlist, playbackEntries[target]);
 			}

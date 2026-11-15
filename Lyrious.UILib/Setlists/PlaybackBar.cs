@@ -21,14 +21,16 @@ namespace Lyrious.UILib.Setlists
 		private const string PlayIcon = "M8,5 L19,12 L8,19 Z";
 		private const string PauseIcon = "M8,5 V19 M16,5 V19";
 		// A globe: the outline, the equator and a meridian.
+		// The caption above the next song's name: half of 14 would be too small to read.
+		private const double CaptionSize = 10;
 		private const string GlobeIcon = "M12,3 A9,9 0 1,1 11.99,3 Z M3,12 H21 M12,3 C6.5,7 6.5,17 12,21 M12,3 C17.5,7 17.5,17 12,21";
 
 		private readonly Button restart = HomeView.IconButton(RestartIcon, "Back to the start of the song");
 		private readonly Button playPause = HomeView.IconButton(PlayIcon, "Scroll the lyrics");
 		// Where the next song would be, after the last song of a setlist.
-		private readonly TextBlock noMoreSongs = new() { Text = "No more songs", FontSize = 28, Opacity = 0.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0), IsVisible = false };
-		private readonly TextBlock nextInfo = new() { FontSize = 14, Opacity = 0.7, Margin = new Thickness(16, 0, 0, 0) };
-		private readonly TextBlock nextName = new() { FontSize = 28, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+		private readonly TextBlock noMoreSongs = new() { Text = "No more songs", FontSize = 14, Opacity = 0.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0), IsVisible = false };
+		private readonly TextBlock nextInfo = new() { FontSize = CaptionSize, Opacity = 0.7, Margin = new Thickness(8, 0, 0, 0) };
+		private readonly TextBlock nextName = new() { FontSize = 14, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
 		private readonly Button next;
 		private readonly LongClickToggleButton bandSync = new()
 		{
@@ -66,11 +68,11 @@ namespace Lyrious.UILib.Setlists
 
 		public PlaybackBar()
 		{
-			// Twice the size of the app's other icon buttons, to hit easily while playing.
-			Enlarge(restart);
-			Enlarge(playPause);
+			// The size of the app's other icon buttons.
+			ToolbarSize(restart);
+			ToolbarSize(playPause);
 
-			// As tall as the icon buttons (48-pixel icon plus 16 padding above and below).
+			// As tall as the icon buttons (24-pixel icon plus 8 padding above and below).
 			next = new Button
 			{
 				// A small line above the song's name: "Next" at the left, key · tempo · beat at the right.
@@ -79,8 +81,8 @@ namespace Lyrious.UILib.Setlists
 					VerticalAlignment = VerticalAlignment.Center,
 					Children = { CaptionLine(), nextName },
 				},
-				MinHeight = 80,
-				Padding = new Thickness(16, 0),
+				MinHeight = 40,
+				Padding = new Thickness(8, 0),
 				HorizontalAlignment = HorizontalAlignment.Left,
 				HorizontalContentAlignment = HorizontalAlignment.Left,
 				VerticalContentAlignment = VerticalAlignment.Center,
@@ -94,7 +96,7 @@ namespace Lyrious.UILib.Setlists
 			SetNextSong(null);
 
 			// Band sync: checked, it's filled with the highlight colour (the toggle's own checked look).
-			Enlarge(bandSync);
+			ToolbarSize(bandSync);
 			ShowBandSync();
 			bandSync.LongClick += () => BandSyncSendRequested?.Invoke();
 			bandSync.IsCheckedChanged += (_, _) =>
@@ -110,10 +112,10 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(playPause, Dock.Right);
 			DockPanel.SetDock(restart, Dock.Right);
 			DockPanel.SetDock(bandSync, Dock.Right);
-			restart.Margin = new Thickness(8, 0);
+			restart.Margin = new Thickness(4, 0);
 			var row = new DockPanel { Children = { playPause, restart, bandSync, new Panel { Children = { next, noMoreSongs } } } };
 
-			var bar = new Border { Padding = new Thickness(16, 8), Child = row };
+			var bar = new Border { Padding = new Thickness(8, 4), Child = row };
 			bar.Bind(Border.BackgroundProperty, bar.GetResourceObservable(LyriousTheme.CardBrush));
 			Content = bar;
 		}
@@ -121,21 +123,21 @@ namespace Lyrious.UILib.Setlists
 		private Control CaptionLine()
 		{
 			DockPanel.SetDock(nextInfo, Dock.Right);
-			return new DockPanel { Children = { nextInfo, new TextBlock { Text = "Next", FontSize = 14, Opacity = 0.7 } } };
+			return new DockPanel { Children = { nextInfo, new TextBlock { Text = "Next", FontSize = CaptionSize, Opacity = 0.7 } } };
 		}
 
 		/// <summary>
-		/// Doubles an icon button: the whole 24-pixel icon box is scaled to 48 (so every icon keeps its
-		/// proportions and line width relative to its size), with twice the padding.
+		/// Sizes a toolbar icon button: the icon in a 24-pixel box (so every icon keeps its proportions
+		/// and line width), with 8 padding, like the app's other icon buttons.
 		/// </summary>
-		private static void Enlarge(Button button)
+		private static void ToolbarSize(Button button)
 		{
-			button.Padding = new Thickness(16);
+			button.Padding = new Thickness(8);
 			if (button.Content is Path icon)
 			{
 				// Detach the icon from the button first: a control can only have one parent.
 				button.Content = null;
-				button.Content = new Viewbox { Width = 48, Height = 48, Child = icon };
+				button.Content = new Viewbox { Width = 24, Height = 24, Child = icon };
 			}
 		}
 
