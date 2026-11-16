@@ -95,6 +95,7 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(header, Dock.Top);
 			column.Children.Add(header);
 			column.Children.Add(content);
+			KeepScrollBarsBeside(column);
 			return column;
 		}
 
@@ -117,7 +118,7 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(titleAction, Dock.Right);
 			var header = new DockPanel { Margin = new Thickness(0, 0, 0, 16), Children = { titleAction, titleRow }, ZIndex = 1 };
 			Grid.SetRow(content, 1);
-			return new Grid
+			var page = new Grid
 			{
 				MaxWidth = 640,
 				Margin = new Thickness(16, 8, 16, 16),
@@ -125,6 +126,8 @@ namespace Lyrious.UILib.Setlists
 				RowDefinitions = new RowDefinitions("Auto,*"),
 				Children = { header, content },
 			};
+			KeepScrollBarsBeside(page);
+			return page;
 		}
 
 		/// <summary>
@@ -145,6 +148,26 @@ namespace Lyrious.UILib.Setlists
 			header.VerticalAlignment = VerticalAlignment.Top;
 			Grid.SetRow(content, shown ? 1 : 0);
 			Grid.SetRowSpan(content, shown ? 1 : 2);
+		}
+
+		/// <summary>The room at a page's right for its scroll bars (the page's own margin there).</summary>
+		public const double ScrollBarRoom = 16;
+
+		/// <summary>
+		/// A scroll bar is drawn over the right edge of what it scrolls. The page's scrolling areas
+		/// reach out into the page's right margin, with what they scroll kept where it was: the scroll
+		/// bar is beside the content (still lined up with the title's buttons), not over it.
+		/// </summary>
+		private static void KeepScrollBarsBeside(Control page)
+		{
+			page.Styles.Add(new Avalonia.Styling.Style(x => Avalonia.Styling.Selectors.OfType<ScrollViewer>(x))
+			{
+				Setters =
+				{
+					new Avalonia.Styling.Setter(Layoutable.MarginProperty, new Thickness(0, 0, -ScrollBarRoom, 0)),
+					new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(0, 0, ScrollBarRoom, 0)),
+				},
+			});
 		}
 
 		private const string AddIcon = "M12,5 V19 M5,12 H19";

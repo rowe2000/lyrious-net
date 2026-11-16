@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Lyrious.UILib.Login;
 using Path = Avalonia.Controls.Shapes.Path;
 using Shape = Avalonia.Controls.Shapes.Shape;
@@ -34,6 +35,8 @@ namespace Lyrious.UILib.Setlists
 		private const string NoSong = "Choose a song";
 		private const string AddIcon = "M12,5 V19 M5,12 H19";
 		private const string CloseIcon = "M6,6 L18,18 M18,6 L6,18";
+		// A magnifying glass: the lens and its handle.
+		private const string SearchIcon = "M4,10.5 A6.5,6.5 0 1 0 17,10.5 A6.5,6.5 0 1 0 4,10.5 M15.2,15.2 L20,20";
 		// A pushpin: head, body widening to a base, and the needle.
 		private const string PinIcon = "M9,3 H15 M10,3 V9 L7,13 H17 L14,9 V3 M12,13 V21";
 
@@ -53,6 +56,9 @@ namespace Lyrious.UILib.Setlists
 		// The left drawer's Sync button: highlighted while changes made here haven't reached the server.
 		private Button? syncButton;
 		private readonly Button addSongsButton = IconButton(AddIcon, "Add a song to the setlist");
+		// The right drawer's search: the box takes the place of the setlist's name and the tools, and
+		// only the songs with the text in their name are listed.
+		private readonly TextBox setlistSearchBox = new() { PlaceholderText = "Search the setlist", VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
 		private readonly ContentControl page = new();
 		private readonly SplitView menuDrawer;
 		private readonly SplitView setlistDrawer;
@@ -996,15 +1002,88 @@ namespace Lyrious.UILib.Setlists
 			};
 			buttons.Children.Insert(0, addSongsButton);
 
+			// The magnifying glass, in front of the other tools: the search box takes the place of the
+			// setlist's name and the tools, with only a ✕ beside it to end the search.
+			var searchButton = IconButton(SearchIcon, "Search the setlist");
+			buttons.Children.Insert(0, searchButton);
+			// While the search shows, Escape only ends it: nothing else closes (see the box's KeyDown too).
+			var endSearchButton = EscapeKey.MarkAsClose(IconButton(CloseIcon, "End the search"), before: true);
+			endSearchButton.IsVisible = false;
+
+			void ShowSearch(bool searching)
+			{
+				if (setlistSearchBox.IsVisible == searching)
+				{
+					return;
+				}
+
+				setlistSearchBox.IsVisible = searching;
+				endSearchButton.IsVisible = searching;
+				setlistTitle.IsVisible = !searching;
+				buttons.IsVisible = !searching;
+				if (searching)
+				{
+					// Once it's on screen.
+					Dispatcher.UIThread.Post(() => setlistSearchBox.Focus(), DispatcherPriority.Background);
+				}
+				else
+				{
+					setlistSearchBox.Text = string.Empty; // Every song is listed again.
+					CenterDrawerSong();
+				}
+			}
+
+			searchButton.Click += (_, _) => ShowSearch(true);
+			endSearchButton.Click += (_, _) => ShowSearch(false);
+			setlistSearchBox.TextChanged += (_, _) => FilterDrawerSongs();
+			// Enter opens the first song found. Escape ends the search, here already: on its way up it
+			// would close a drawer that slides over the page (the drawer's own Escape).
+			setlistSearchBox.KeyDown += (_, e) =>
+			{
+				if (e.Key == Avalonia.Input.Key.Escape && e.KeyModifiers == Avalonia.Input.KeyModifiers.None)
+				{
+					e.Handled = true;
+					ShowSearch(false);
+					return;
+				}
+
+				if (e.Key == Avalonia.Input.Key.Enter && FirstDrawerSongShown() is { } row)
+				{
+					e.Handled = true;
+					row.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+				}
+			};
+			drawerStayTimer.Tick += (_, _) => SlideSetlistDrawerAway();
+			setlistDrawer.PaneOpening += (_, _) => EndSlowDrawerSlide();
+			// Closed some other way while it waited to slide away: nothing left to do.
+			setlistDrawer.PaneClosed += (_, _) => drawerStayTimer.Stop();
+			// A drawer that slid away opens without a search the next time.
+			setlistDrawer.PaneClosed += (_, _) => ShowSearch(false);
+
+			Grid.SetColumn(buttons, 1);
+			Grid.SetColumn(endSearchButton, 1);
+			var titleRow = new Grid
+			{
+				ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+				Children = { setlistTitle, setlistSearchBox, buttons, endSearchButton },
+			};
 			var header = new StackPanel
 			{
 				Spacing = 2,
 				Margin = new Thickness(0, 0, 0, 12),
-				Children = { new DockPanel { Children = { buttons, setlistTitle } }, setlistSubtitle },
+				Children = { titleRow, setlistSubtitle },
 			};
 			DockPanel.SetDock(header, Dock.Top);
 
-			return new DockPanel { Margin = new Thickness(16, 8, 8, 0), Children = { header, setlistDrawerBody } };
+			// As wide as the open drawer whatever room it has, so it slides in and out as it is instead
+			// of being squeezed while the drawer opens or closes.
+			return new DockPanel
+			{
+				Margin = new Thickness(16, 8, 8, 0),
+				Width = setlistDrawer.OpenPaneLength - 24,
+				HorizontalAlignment = HorizontalAlignment.Left,
+				Children = { header, setlistDrawerBody },
+			};
 		}
 
 		/// <summary>
@@ -1053,9 +1132,12 @@ namespace Lyrious.UILib.Setlists
 				foreach (var entry in entries)
 				{
 					var row = SongRow(group, setlist, entry);
+					row.Tag = entry.Song.Name; // For the search.
 					drawerRows[entry.Id] = row;
 					list.Children.Add(row);
 				}
+
+				FilterDrawerSongs();
 
 				if (sameSetlist && setlistDrawerBody.Content is ScrollViewer scroller)
 				{
@@ -1116,6 +1198,20 @@ namespace Lyrious.UILib.Setlists
 				}
 			}
 		}
+
+		/// <summary>Lists only the songs with the search text in their name (every song when there's none).</summary>
+		private void FilterDrawerSongs()
+		{
+			var text = setlistSearchBox.Text?.Trim() ?? string.Empty;
+			foreach (var row in drawerRows.Values)
+			{
+				row.IsVisible = text.Length == 0 || (row.Tag is string name && name.Contains(text, StringComparison.CurrentCultureIgnoreCase));
+			}
+		}
+
+		/// <summary>The first song listed in the right drawer (the first found, while searching).</summary>
+		private Button? FirstDrawerSongShown()
+			=> setlistDrawerBody.Content is ScrollViewer { Content: Panel list } ? list.Children.OfType<Button>().FirstOrDefault(row => row.IsVisible) : null;
 
 		private void SetSetlistHeader(string title, string? subtitle)
 		{
@@ -1186,12 +1282,61 @@ namespace Lyrious.UILib.Setlists
 					return;
 				}
 
-				CloseUnlessPinned(setlistDrawer);
+				// The song is chosen at once; the drawer stays a moment, showing it, and then slides away.
+				CloseSetlistDrawerSlowly();
 				currentEntryId = entry.Id;
 				HighlightDrawerSong();
 				SelectSong(group, setlist, entry);
 			};
 			return row;
+		}
+
+		/// <summary>How long the right drawer stays after a song is chosen in it, and how long it then takes to slide away.</summary>
+		private static readonly TimeSpan DrawerStay = TimeSpan.FromSeconds(1);
+		private static readonly TimeSpan DrawerSlide = TimeSpan.FromSeconds(1);
+		private readonly DispatcherTimer drawerStayTimer = new() { Interval = DrawerStay };
+		private Panel? slowPaneRoot;
+
+		/// <summary>
+		/// Closes the right drawer (unless pinned) after a moment, sliding slowly. Another song chosen
+		/// meanwhile starts the wait again; a drawer closed some other way meanwhile is simply closed.
+		/// </summary>
+		private void CloseSetlistDrawerSlowly()
+		{
+			drawerStayTimer.Stop();
+			if (!IsPinned(setlistDrawer))
+			{
+				drawerStayTimer.Start();
+			}
+		}
+
+		private void SlideSetlistDrawerAway()
+		{
+			drawerStayTimer.Stop();
+			if (IsPinned(setlistDrawer) || !setlistDrawer.IsPaneOpen)
+			{
+				return;
+			}
+
+			// The drawer's own closing is quick (the theme's); this one time it takes longer.
+			slowPaneRoot = setlistDrawer.GetVisualDescendants().OfType<Panel>().FirstOrDefault(panel => panel.Name == "PART_PaneRoot");
+			if (slowPaneRoot != null)
+			{
+				slowPaneRoot.Transitions =
+				[
+					new Avalonia.Animation.DoubleTransition { Property = WidthProperty, Duration = DrawerSlide, Easing = new Avalonia.Animation.Easings.CubicEaseInOut() },
+				];
+				// Back to the theme's speed once it's away (or when it's opened again before that).
+				DispatcherTimer.RunOnce(EndSlowDrawerSlide, DrawerSlide + TimeSpan.FromMilliseconds(100));
+			}
+
+			setlistDrawer.IsPaneOpen = false;
+		}
+
+		private void EndSlowDrawerSlide()
+		{
+			slowPaneRoot?.ClearValue(TransitionsProperty);
+			slowPaneRoot = null;
 		}
 
 		private static TextBlock DrawerMessage(string text) => new() { Text = text, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };

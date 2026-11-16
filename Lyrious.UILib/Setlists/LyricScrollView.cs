@@ -56,6 +56,10 @@ namespace Lyrious.UILib.Setlists
 		private List<(double Seconds, double Y)>? timeline;
 		private Size timelineFor;
 		private double playbackStart;
+		// Where the last step of timed playing put the lyrics, and on which timeline: an offset that's
+		// somewhere else at the next step was scrolled by hand.
+		private List<(double Seconds, double Y)>? timedPoints;
+		private double timedOffset;
 
 		// While timed lyrics play, the lines outside the current part (from the last time tag passed to
 		// the next) are a little dimmer. The lyrics' lines (a chorus's lines one by one), and where each
@@ -212,6 +216,7 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				scrollRemainder = 0;
+				timedPoints = null;
 				// Timed: pick up the song's timeline where the lyrics are now (0:00 at the top).
 				playbackStart = IsTimed && scroller.Offset.Y > 0 && Timeline() is { } points
 					? TimeAt(points, scroller.Offset.Y + scroller.Viewport.Height / 2)
@@ -247,9 +252,21 @@ namespace Lyrious.UILib.Setlists
 			{
 				// Where the song's timeline says the lyrics should be now (not a step from where they are).
 				var now = playbackStart + scrollClock.Elapsed.TotalSeconds;
+				// Scrolled by hand since the last step (wheel, drag, scroll bar): the song's clock goes
+				// along, so playing carries on from there instead of pulling the lyrics back. Not when the
+				// layout changed (zoom, resize): then the same time is simply somewhere else.
+				if (ReferenceEquals(points, timedPoints) && Math.Abs(scroller.Offset.Y - timedOffset) >= 1)
+				{
+					now = TimeAt(points, scroller.Offset.Y + scroller.Viewport.Height / 2);
+					playbackStart = now - scrollClock.Elapsed.TotalSeconds;
+					StopNudge(); // A gliding nudge was measured from where the lyrics were.
+				}
+
 				ShowCurrentPart(now);
-				var target = Math.Clamp(CenterAt(points, now) - scroller.Viewport.Height / 2, 0, MaxOffset(scroller));
-				scroller.Offset = new Vector(scroller.Offset.X, Math.Round(target));
+				var target = Math.Round(Math.Clamp(CenterAt(points, now) - scroller.Viewport.Height / 2, 0, MaxOffset(scroller)));
+				scroller.Offset = new Vector(scroller.Offset.X, target);
+				timedPoints = points;
+				timedOffset = target;
 				return;
 			}
 

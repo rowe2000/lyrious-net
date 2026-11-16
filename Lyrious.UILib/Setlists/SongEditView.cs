@@ -108,7 +108,7 @@ namespace Lyrious.UILib.Setlists
 
 			Content = PageLayout.Page(
 				title,
-				new ScrollViewer { Content = form, Padding = new Thickness(0, 0, 0, 24) },
+				new ScrollViewer { Content = form, Padding = new Thickness(0, 0, PageLayout.ScrollBarRoom, 24) }, // Room at the right for the scroll bar, as on every page.
 				subtitle: string.IsNullOrWhiteSpace(song.Name) ? null : song.Name,
 				titleAction: new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { saveButton, cancelButton } });
 		}

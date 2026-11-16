@@ -20,12 +20,19 @@ namespace Lyrious.UILib
 	{
 		private const string CloseClass = "escape-closes";
 		private const string FirstClass = "escape-closes-first";
+		private const string BeforeClass = "escape-closes-before-all";
 
 		/// <summary>Makes Escape press the button (when it's the close button that counts, see above).</summary>
 		/// <param name="first">Goes before other close buttons in the same place, e.g. Cancel while editing before the page's ✕.</param>
-		public static T MarkAsClose<T>(T button, bool first = false) where T : Button
+		/// <param name="before">Goes before every other close button, wherever it is, e.g. ending a search in a pinned drawer before the page's ✕.</param>
+		public static T MarkAsClose<T>(T button, bool first = false, bool before = false) where T : Button
 		{
 			button.Classes.Add(CloseClass);
+			if (before)
+			{
+				button.Classes.Add(BeforeClass);
+			}
+
 			if (first)
 			{
 				button.Classes.Add(FirstClass);
@@ -59,7 +66,8 @@ namespace Lyrious.UILib
 					continue;
 				}
 
-				var rank = place * 2 + (button.Classes.Contains(FirstClass) ? 0 : 1);
+				// One that goes before all others (e.g. ending a search) wins wherever it is.
+			var rank = button.Classes.Contains(BeforeClass) ? -1 : place * 2 + (button.Classes.Contains(FirstClass) ? 0 : 1);
 
 				// Equal rank: the later one in the tree, the one drawn on top.
 				if (rank <= bestRank)
