@@ -27,10 +27,14 @@ internal class Program
 				options.JsonSerializerOptions.WriteIndented = true;
 			});
 
+		// One address for everything: the API, the hub and the web app (see the end of Main).
 		builder.WebHost.ConfigureKestrel(options =>
 		{
 			options.ListenLocalhost(5180);
 		});
+		// The web app's files come from the Lyrious.Web project while running from a build
+		// (Development does this by itself; a publish copies them into wwwroot instead).
+		builder.WebHost.UseStaticWebAssets();
 
 		// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 		builder.Services.AddEndpointsApiExplorer();
@@ -105,7 +109,8 @@ internal class Program
 
 		builder.Services.AddAuthorization();
 
-		// Browser clients (Lyrious.Web) are served from another origin, so the browser needs CORS
+		// The web app served here (see below) is on the API's own origin and needs no CORS. Browser
+		// clients served from elsewhere (e.g. Lyrious.Web's own dev server) do: the browser needs CORS
 		// permission to call the API. Only the configured origins are allowed. Credentials are
 		// allowed because SignalR's browser client sends them when connecting to the hub.
 		var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
@@ -143,6 +148,15 @@ internal class Program
 
 		app.MapControllers();
 		app.MapHub<LyriousHub>(LyriousHub.Path);
+
+		// The web app (Lyrious.Web, WebAssembly) on the same address as the API: its files, and its
+		// page at the root. Only the root: an unknown api/ path stays a 404 instead of becoming the page.
+		app.MapStaticAssets();
+		app.MapFallbackToFile("/", "index.html", new StaticFileOptions
+		{
+			// Always checked with the server (ETag), so a new version of the app shows up at once.
+			OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache",
+		});
 
 		app.Run();
 	}

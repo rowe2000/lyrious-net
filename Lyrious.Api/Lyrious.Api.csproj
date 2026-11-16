@@ -16,6 +16,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Lyrious.CoreLib\Lyrious.CoreLib.csproj" />
+    <!-- The web client (WebAssembly): not code this project uses, but its files (index.html, the
+         compiled app) are served by the API, so the web app and the API share one address. -->
+    <ProjectReference Include="..\Lyrious.Web\Lyrious.Web.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
 </Project>

@@ -15,11 +15,13 @@ namespace Lyrious.Web;
 /// </summary>
 internal sealed partial class Program
 {
+    // Only when the page has no web address of its own to take the API's from.
     private const string DefaultApiBaseUrl = "http://localhost:5180/";
 
     /// <param name="args">
     /// [0] is the page URL (see wwwroot/main.js); <c>?api=...</c> sets the API address. Else the
-    /// host chosen on the Sync page last time (in the browser's local storage), else the default.
+    /// host chosen on the Sync page last time (in the browser's local storage), else where the page
+    /// itself comes from: the API serves the web app, on the same address.
     /// </param>
     private static Task Main(string[] args)
     {
@@ -52,8 +54,11 @@ internal sealed partial class Program
             .FirstOrDefault();
 
         // Relative API paths ("api/auth/login") resolve under the base address, so it must end with '/'.
-        return Uri.TryCreate(api, UriKind.Absolute, out var uri) || Uri.TryCreate(savedHost, UriKind.Absolute, out uri)
-            ? new Uri(uri.AbsoluteUri.TrimEnd('/') + "/")
-            : new Uri(DefaultApiBaseUrl);
+        if (Uri.TryCreate(api, UriKind.Absolute, out var uri) || Uri.TryCreate(savedHost, UriKind.Absolute, out uri))
+        {
+            return new Uri(uri.AbsoluteUri.TrimEnd('/') + "/");
+        }
+
+        return page is { Scheme: "http" or "https" } ? new Uri(page.GetLeftPart(UriPartial.Authority) + "/") : new Uri(DefaultApiBaseUrl);
     }
 }

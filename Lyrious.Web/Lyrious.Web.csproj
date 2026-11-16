@@ -3,7 +3,6 @@
     <TargetFramework>net10.0-browser</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>enable</Nullable>
-    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
   </PropertyGroup>
 
   <!-- Published (Release) builds are compiled to WebAssembly ahead of time: much faster than the
@@ -13,17 +12,23 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia.Browser" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Browser" Version="12.1.6" GeneratePathProperty="true" />
     <!-- The browser has no system fonts; the app ships Inter (see WithInterFont in Program.cs). -->
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.6" />
+  </ItemGroup>
+
+  <!-- Avalonia's own scripts (avalonia.js and friends), as files of this project instead of the
+       package's: a package's web files don't reach a project that references this one, and
+       Lyrious.Api does, to serve the web app. -->
+  <PropertyGroup>
+    <ShouldIncludeAvaloniaStaticAssets>false</ShouldIncludeAvaloniaStaticAssets>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="$(PkgAvalonia_Browser)/staticwebassets/*.*" Link="wwwroot/_framework/%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Lyrious.UILib\Lyrious.UILib.csproj" />
     <ProjectReference Include="..\Lyrious.Client\Lyrious.Client.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <StaticWebAssetFingerprintPattern Include="JS" Pattern="*.js" Expression="#[.{fingerprint}]!" />
   </ItemGroup>
 </Project>
