@@ -13,6 +13,9 @@ namespace Lyrious.UILib.Setlists
 	{
 		private const string CloseIcon = "M6,6 L18,18 M18,6 L6,18";
 
+		// An icon button's height (a 24 icon with 8 around it): the drawer buttons in the top corners.
+		private const double DrawerButtonSize = 40;
+
 		/// <summary>
 		/// Raised (bubbling) by a page's ✕: the page wants to go back to the one before. The host of the
 		/// pages handles it (see HomeView); a page doesn't need to know what came before it.
@@ -41,7 +44,7 @@ namespace Lyrious.UILib.Setlists
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
 			if (titleAction != null)
 			{
-				titleAction.VerticalAlignment = VerticalAlignment.Center;
+				titleAction.VerticalAlignment = VerticalAlignment.Top;
 				actions.Children.Add(titleAction);
 			}
 
@@ -49,26 +52,39 @@ namespace Lyrious.UILib.Setlists
 			return actions;
 		}
 
+		/// <summary>
+		/// The page's first row holds its actions (✕ and the like) at the right, top aligned and 8 from
+		/// the top: they line up with the drawer buttons in the top corners (all 40 high, centred 28
+		/// from the top). The title shares that row; with a back link, the link does and the title
+		/// comes under it.
+		/// </summary>
 		private static Control Page(string title, Control content, Control? backLink, string? subtitle = null, Control? titleAction = null)
 		{
-			var column = new DockPanel { MaxWidth = 640, Margin = new Thickness(16), HorizontalAlignment = HorizontalAlignment.Stretch };
+			var column = new DockPanel { MaxWidth = 640, Margin = new Thickness(16, 8, 16, 16), HorizontalAlignment = HorizontalAlignment.Stretch };
 
 			var header = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 16) };
-			if (backLink != null)
-			{
-				header.Children.Add(backLink);
-			}
-
 			var titleText = new TextBlock { Text = title, FontSize = 28, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+
+			// As tall as the drawer buttons even without actions, so titles sit at the same height on every page.
+			var firstRow = new DockPanel { MinHeight = DrawerButtonSize };
 			if (titleAction != null)
 			{
-				titleAction.VerticalAlignment = VerticalAlignment.Center;
+				titleAction.VerticalAlignment = VerticalAlignment.Top;
 				DockPanel.SetDock(titleAction, Dock.Right);
-				header.Children.Add(new DockPanel { Children = { titleAction, titleText } });
+				firstRow.Children.Add(titleAction);
+			}
+
+			header.Children.Add(firstRow);
+			if (backLink != null)
+			{
+				backLink.VerticalAlignment = VerticalAlignment.Center;
+				backLink.HorizontalAlignment = HorizontalAlignment.Left;
+				firstRow.Children.Add(backLink);
+				header.Children.Add(titleText);
 			}
 			else
 			{
-				header.Children.Add(titleText);
+				firstRow.Children.Add(titleText);
 			}
 
 			if (!string.IsNullOrEmpty(subtitle))
