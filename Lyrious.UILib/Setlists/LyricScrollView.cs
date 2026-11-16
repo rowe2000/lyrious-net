@@ -149,12 +149,15 @@ namespace Lyrious.UILib.Setlists
 			ShowTitle();
 		}
 
-		/// <summary>Shows the song's name and details if the setting says so, and always while editing (Save and Cancel are there).</summary>
+		/// <summary>
+		/// Shows the song's name and details if the setting says so; always while editing (Save and
+		/// Cancel are there) and for a song without lyrics (nothing else would say which song it is).
+		/// </summary>
 		private void ShowTitle()
 		{
 			if (Content is Control page)
 			{
-				PageLayout.SetSongTitleShown(page, DisplaySettings.ShowSongHeader || IsEditing);
+				PageLayout.SetSongTitleShown(page, DisplaySettings.ShowSongHeader || IsEditing || string.IsNullOrWhiteSpace(song.Lyrics));
 			}
 		}
 

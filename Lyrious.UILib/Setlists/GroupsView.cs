@@ -44,6 +44,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when an admin changes a member's role.</summary>
 		public event Action<GroupSummary, GroupMember, GroupRole>? MemberRoleChangeRequested;
 
+		/// <summary>Raised with the new name when an admin changes another member's name.</summary>
+		public event Action<GroupSummary, GroupMember, string>? MemberRenameRequested;
+
 		/// <summary>Raised when an admin removes a member (after confirming).</summary>
 		public event Action<GroupSummary, GroupMember>? MemberRemoveRequested;
 
@@ -201,6 +204,9 @@ namespace Lyrious.UILib.Setlists
 			var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
 			if (isAdmin)
 			{
+				// The pencil: another member's name (their own isn't an admin's matter).
+				tools.Children.Add(member.IsMe ? new Border { Width = 40 } : EditButton(group, member));
+
 				var role = new ComboBox { Width = 130, VerticalAlignment = VerticalAlignment.Center, IsEnabled = !lastAdmin };
 				foreach (var choice in Enum.GetValues<GroupRole>())
 				{
@@ -239,6 +245,66 @@ namespace Lyrious.UILib.Setlists
 
 			DockPanel.SetDock(tools, Dock.Right);
 			return new DockPanel { Children = { tools, info } };
+		}
+
+		/// <summary>A pencil that opens a small popup to change the member's name: a box with Save (or Enter) and Cancel.</summary>
+		private Button EditButton(GroupSummary group, GroupMember member)
+		{
+			var button = PageLayout.EditButton($"Edit {member.Name}", () => { });
+			var nameBox = new TextBox { Text = member.Name, PlaceholderText = "Name", MaxLength = 100, MinWidth = 220 };
+			var save = new Button { Content = "Save" };
+			save.Classes.Add("accent");
+			var cancel = new Button { Content = "Cancel" };
+			var flyout = new Flyout
+			{
+				Content = new StackPanel
+				{
+					Spacing = 12,
+					MaxWidth = 280,
+					Children =
+					{
+						new TextBlock { Text = "Name", FontSize = 13, Opacity = 0.75 },
+						nameBox,
+						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { save, cancel } },
+					},
+				},
+			};
+
+			void Save()
+			{
+				var name = nameBox.Text?.Trim() ?? string.Empty;
+				if (name.Length == 0)
+				{
+					return;
+				}
+
+				flyout.Hide();
+				if (name != member.Name)
+				{
+					MemberRenameRequested?.Invoke(group, member, name);
+				}
+			}
+
+			nameBox.TextChanged += (_, _) => save.IsEnabled = !string.IsNullOrWhiteSpace(nameBox.Text);
+			nameBox.KeyDown += (_, e) =>
+			{
+				if (e.Key == Avalonia.Input.Key.Enter)
+				{
+					e.Handled = true;
+					Save();
+				}
+			};
+			save.Click += (_, _) => Save();
+			cancel.Click += (_, _) => flyout.Hide();
+			// Opened again after a cancel: the name as it is.
+			flyout.Opened += (_, _) =>
+			{
+				nameBox.Text = member.Name;
+				nameBox.Focus();
+				nameBox.SelectAll();
+			};
+			button.Flyout = flyout;
+			return button;
 		}
 
 		/// <summary>✕ that asks first, then removes the member from the band.</summary>

@@ -270,12 +270,28 @@ public class LyriousRepository(LyriousContext context)
 		{
 			Membership stored when entity is Membership changed => CanChangeMembership(stored, changed),
 			// Their own: the joined group they move to must be one of theirs (the one they leave may
-			// not be any more, e.g. after being removed from it).
-			Member stored when entity is Member changed => stored.Id == Me.Id && CanModify(changed),
+			// not be any more, e.g. after being removed from it). Someone else's: their name, by an
+			// admin of a band they're in.
+			Member stored when entity is Member changed => stored.Id == Me.Id ? CanModify(changed) : CanRenameBandMember(stored, changed),
 			// Any member may change the band (its name, current setlist and song); only an admin may delete it.
 			Group stored when entity is Group changed && changed.Removed && !stored.Removed => IsAdminOf(stored.Id),
 			_ => CanModify(existing) && CanModify(entity),
 		};
+	}
+
+	/// <summary>
+	/// An admin may change the name of the members of the bands they manage, and nothing else of
+	/// them: which band they've joined stays theirs to choose. (The login, email and password aren't
+	/// part of what's stored this way at all.)
+	/// </summary>
+	private bool CanRenameBandMember(Member stored, Member changed)
+	{
+		if (string.IsNullOrWhiteSpace(changed.Name) || changed.JoinedGroupId != stored.JoinedGroupId || changed.Removed != stored.Removed)
+			return false;
+
+		var meId = Me!.Id;
+		var managed = context.Memberships.Where(m => m.MemberId == meId && !m.Removed && m.RoleEnum == RoleEnum.Admin).Select(m => m.GroupId);
+		return context.Memberships.Any(m => m.MemberId == stored.Id && !m.Removed && managed.Contains(m.GroupId));
 	}
 
 	/// <summary>

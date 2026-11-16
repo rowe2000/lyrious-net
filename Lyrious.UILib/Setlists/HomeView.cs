@@ -308,6 +308,7 @@ namespace Lyrious.UILib.Setlists
 			service.GroupChanged += OnGroupChanged;
 			service.PlaybackChanged += OnPlaybackChanged;
 			service.MemberConnectionChanged += OnMemberConnectionChanged;
+			service.MembersChanged += OnMembersChanged;
 			service.StatusChanged += OnStatusChanged;
 			service.JoinedGroupChanged += OnJoinedGroupChanged;
 			OnStatusChanged();
@@ -322,6 +323,8 @@ namespace Lyrious.UILib.Setlists
 			try
 			{
 				await service.StartLiveUpdatesAsync();
+				// Connected now: this member is there too.
+				_ = ShowPresentMembersAsync();
 			}
 			catch (Exception ex)
 			{
@@ -338,6 +341,7 @@ namespace Lyrious.UILib.Setlists
 			service.GroupChanged -= OnGroupChanged;
 			service.PlaybackChanged -= OnPlaybackChanged;
 			service.MemberConnectionChanged -= OnMemberConnectionChanged;
+			service.MembersChanged -= OnMembersChanged;
 			service.StatusChanged -= OnStatusChanged;
 			service.JoinedGroupChanged -= OnJoinedGroupChanged;
 			_ = service.StopLiveUpdatesAsync();
@@ -371,10 +375,19 @@ namespace Lyrious.UILib.Setlists
 		private static bool IsBusy(object? content)
 			=> content is SongEditView or AddSongsView or InternetSongView or LyricScrollView { IsEditing: true };
 
+		private bool? wasOnline;
+
 		private void OnStatusChanged() => Dispatcher.UIThread.Post(() =>
 		{
 			var status = service.Status;
 			syncStatus.Text = SyncStatusText.Short(status);
+			// Gone offline or back online: who's there is different.
+			if (status.Online != wasOnline)
+			{
+				wasOnline = status.Online;
+				_ = ShowPresentMembersAsync();
+			}
+
 			if (syncButton != null)
 			{
 				syncButton.Classes.Set("accent", status.PendingChanges > 0);
@@ -603,7 +616,41 @@ namespace Lyrious.UILib.Setlists
 			{
 				_ = RunAsync(() => ShowGroupsAsync(bands.SelectedGroupId, replace: true));
 			}
+
+			_ = ShowPresentMembersAsync();
 		});
+
+		/// <summary>A member or membership changed (a name, the band someone has joined): who's there may have too.</summary>
+		private void OnMembersChanged() => Dispatcher.UIThread.Post(() => _ = ShowPresentMembersAsync());
+
+		private int presentMembersLoad;
+
+		/// <summary>
+		/// Shows, in the playback toolbar, the initials of who's there: the current band's members that
+		/// have joined it and are connected right now (this member too). Nobody while offline.
+		/// </summary>
+		private async Task ShowPresentMembersAsync()
+		{
+			var load = ++presentMembersLoad;
+			IReadOnlyList<string> names = [];
+			try
+			{
+				if (currentGroup is { } group && (await service.GetGroupMembersAsync()).TryGetValue(group.Id, out var members))
+				{
+					names = members.Where(member => member.Approved && member.Joined && member.Connected).Select(member => member.Name).ToArray();
+				}
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't get who's there: {ex.Message}");
+			}
+
+			// A newer one is on its way.
+			if (load == presentMembersLoad)
+			{
+				playbackBar.SetMembers(names);
+			}
+		}
 
 		private void OnGroupChanged(GroupSummary group) => Dispatcher.UIThread.Post(() =>
 		{
@@ -1391,6 +1438,7 @@ namespace Lyrious.UILib.Setlists
 			var start = await StartPage.DetermineAsync(service);
 			groupName.Text = start.Group?.Name ?? "Choose a band";
 			currentGroup = start.Group;
+			_ = ShowPresentMembersAsync();
 			currentSetlist = null;
 			SetCurrentSong(null, null);
 			currentSetlistName.Text = "Choose a setlist";
@@ -1455,6 +1503,12 @@ namespace Lyrious.UILib.Setlists
 			{
 				await service.SetMemberRoleAsync(group.Id, member.MemberId, role);
 				await ShowGroupsAsync(group.Id, replace: true);
+			});
+			view.MemberRenameRequested += (group, member, name) => _ = RunAsync(async () =>
+			{
+				await service.RenameMemberAsync(member.MemberId, name);
+				await ShowGroupsAsync(group.Id, replace: true);
+				_ = ShowPresentMembersAsync();
 			});
 			view.MemberRemoveRequested += (group, member) => _ = RunAsync(async () =>
 			{

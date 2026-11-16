@@ -59,6 +59,7 @@ public sealed class HttpSetlistService : ISetlistService
     public event Action<Guid, bool>? PlaybackChanged;
 
     public event Action<Guid, bool>? MemberConnectionChanged;
+    public event Action? MembersChanged;
 
     public event Action? StatusChanged;
 
@@ -173,6 +174,11 @@ public sealed class HttpSetlistService : ISetlistService
         else if (type == "member")
         {
             FollowJoinedGroup(current);
+        }
+
+        if (type is "member" or "membership")
+        {
+            MembersChanged?.Invoke();
         }
     }
 
@@ -517,6 +523,19 @@ public sealed class HttpSetlistService : ISetlistService
         var current = await CacheAsync();
         var membership = MembershipOf(current, groupId, memberId) ?? throw new InvalidOperationException("They're no longer in the band.");
         current.Update("membership", membership.Id, new JsonObject { ["roleEnum"] = (int)role });
+        Queued(current);
+    }
+
+    public async Task RenameMemberAsync(Guid memberId, string name, CancellationToken cancellationToken = default)
+    {
+        name = name.Trim();
+        if (name.Length == 0)
+        {
+            throw new InvalidOperationException("A name is needed.");
+        }
+
+        var current = await CacheAsync();
+        current.Update("member", memberId, new JsonObject { ["name"] = name });
         Queued(current);
     }
 

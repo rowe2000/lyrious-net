@@ -65,8 +65,9 @@ public sealed class ChangeNotifier(IHubContext<LyriousHub> hub, LyriousRepositor
 	}
 
 	/// <summary>
-	/// Puts the member's live connections in the "joined" channel of their joined group only. Only
-	/// members change their own Member entity, so the repository's identity is that member.
+	/// Puts the member's live connections in the "joined" channel of their joined group only. The
+	/// repository's identity is that member when they change their joined group; an admin renaming
+	/// them doesn't change it, and what's done here then leaves their channel as it was.
 	/// </summary>
 	private async Task UpdateJoinedSubscriptionsAsync(Member member)
 	{

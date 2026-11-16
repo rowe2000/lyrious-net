@@ -42,6 +42,12 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised (on any thread) when a bandmate comes online (true) or goes offline.</summary>
 		event Action<Guid, bool>? MemberConnectionChanged;
 
+		/// <summary>
+		/// Raised (on a background thread) when the server sends a change to a member or a membership
+		/// of the member's bands: a name, the band someone has joined, a role, someone invited or removed.
+		/// </summary>
+		event Action? MembersChanged;
+
 		/// <summary>Tells the other members of the joined band that this member started or stopped playing.</summary>
 		Task SendPlaybackAsync(bool playing);
 
@@ -83,6 +89,9 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Changes a member's role in a band. Admins only, and the last admin stays one.</summary>
 		Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default);
+
+		/// <summary>Changes a bandmate's name (everywhere, not just in one band). Admins of a band they're in only; the server refuses others.</summary>
+		Task RenameMemberAsync(Guid memberId, string name, CancellationToken cancellationToken = default);
 
 		/// <summary>Removes a member from a band. Admins only, and not the last admin.</summary>
 		Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default);
@@ -196,6 +205,7 @@ namespace Lyrious.UILib.Setlists
 		public event Action<Guid>? JoinedGroupChanged { add { } remove { } }
 		public event Action<Guid, bool>? PlaybackChanged { add { } remove { } }
 		public event Action<Guid, bool>? MemberConnectionChanged { add { } remove { } }
+		public event Action? MembersChanged { add { } remove { } }
 		public Task SendPlaybackAsync(bool playing) => Task.CompletedTask;
 		public Task StartLiveUpdatesAsync() => Task.CompletedTask;
 		public Task StopLiveUpdatesAsync() => Task.CompletedTask;
@@ -208,6 +218,7 @@ namespace Lyrious.UILib.Setlists
 		public Task<FoundMember?> FindMemberAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task InviteMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task RenameMemberAsync(Guid memberId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteGroupAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
