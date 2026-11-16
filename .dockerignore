@@ -1,0 +1,10 @@
+.git
+.vs
+.idea
+.claude-run
+**/bin
+**/obj
+**/*.user
+**/*.db
+**/*.db-shm
+**/*.db-wal

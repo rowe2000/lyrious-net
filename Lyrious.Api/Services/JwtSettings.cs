@@ -17,7 +17,14 @@ public sealed class JwtSettings
 	public required string Audience { get; init; }
 	public required TimeSpan Lifetime { get; init; }
 
-	public static JwtSettings FromConfiguration(IConfiguration configuration)
+	/// <summary>The key in appsettings.json: public (it's in the repository), so for local use only.</summary>
+	private const string DevelopmentKey = "YourSuperSecureKeyThatIsAtLeast32CharactersLong";
+
+	/// <param name="requireOwnKey">
+	/// Refuse the key of appsettings.json: for a server open to others, where anyone knowing the
+	/// key could sign themselves in as any member.
+	/// </param>
+	public static JwtSettings FromConfiguration(IConfiguration configuration, bool requireOwnKey = false)
 	{
 		var section = configuration.GetSection("Jwt");
 
@@ -25,6 +32,11 @@ public sealed class JwtSettings
 		if (string.IsNullOrEmpty(key) || Encoding.UTF8.GetByteCount(key) < 32)
 		{
 			throw new InvalidOperationException("Jwt:Key must be configured and at least 32 bytes long.");
+		}
+
+		if (requireOwnKey && key == DevelopmentKey)
+		{
+			throw new InvalidOperationException("Jwt:Key is still the key from appsettings.json. Set a secret key of your own (the Jwt__Key environment variable).");
 		}
 
 		return new JwtSettings

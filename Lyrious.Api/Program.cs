@@ -28,9 +28,20 @@ internal class Program
 			});
 
 		// One address for everything: the API, the hub and the web app (see the end of Main).
+		// In a container (see the Dockerfile) a hosting platform such as Railway says which port to
+		// serve in PORT, and reaches the app from outside the container. Elsewhere it's the local
+		// address, whatever PORT other tools may have left in the environment.
+		var hostPort = GetHostPort();
 		builder.WebHost.ConfigureKestrel(options =>
 		{
-			options.ListenLocalhost(5180);
+			if (hostPort is { } publicPort)
+			{
+				options.ListenAnyIP(publicPort);
+			}
+			else
+			{
+				options.ListenLocalhost(5180);
+			}
 		});
 		// The web app's files come from the Lyrious.Web project while running from a build
 		// (Development does this by itself; a publish copies them into wwwroot instead).
@@ -83,7 +94,8 @@ internal class Program
 			.AddSignInManager()
 			.AddDefaultTokenProviders();
 
-		var jwtSettings = JwtSettings.FromConfiguration(builder.Configuration);
+		// Open to the internet, the key in appsettings.json (public, in the repository) won't do.
+		var jwtSettings = JwtSettings.FromConfiguration(builder.Configuration, requireOwnKey: hostPort is not null);
 		builder.Services.AddSingleton(jwtSettings);
 
 		builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -159,5 +171,23 @@ internal class Program
 		});
 
 		app.Run();
+	}
+
+	/// <summary>The port to serve to the outside when hosted in a container, else null.</summary>
+	private static int? GetHostPort()
+	{
+		// Set by the .NET container images.
+		var inContainer = string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase);
+		var value = Environment.GetEnvironmentVariable("PORT");
+		if (!inContainer || value is null)
+		{
+			return null;
+		}
+
+		// A PORT that can't be served is an error: falling back to the local address would start
+		// an app that nothing outside the container can reach.
+		return int.TryParse(value, out var port) && port is >= 1 and <= 65535
+			? port
+			: throw new InvalidOperationException($"PORT must be a port number (1-65535), but is \"{value}\".");
 	}
 }
