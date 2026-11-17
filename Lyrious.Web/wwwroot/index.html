@@ -9,6 +9,13 @@
          is published through Lyrious.Api, which serves it. The server's ETags keep caches fresh. -->
     <script type='module' src="./main.js"></script>
     <link rel="stylesheet" href="./app.css" />
+    <!-- Installable as an app (PWA): the manifest, and main.js registers service-worker.js. -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./favicon.ico" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#1b2a4e" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Lyrious" />
 </head>
 
 <body style="margin: 0; overflow: hidden">

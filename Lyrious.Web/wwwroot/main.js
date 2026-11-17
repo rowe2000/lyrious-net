@@ -46,10 +46,29 @@ globalThis.lyriousSettings = {
     },
 };
 
+// The installed web app (PWA, see manifest.webmanifest): the service worker keeps a copy of the
+// app's files, so it starts without a connection. Service workers need a secure context (https,
+// or http://localhost); elsewhere the app simply isn't installable.
+const serviceWorker = "serviceWorker" in navigator
+    ? navigator.serviceWorker.register("./service-worker.js").catch(() => null)
+    : null;
+// Room for all the app's files in the list of what the page loaded (250 by default).
+performance.setResourceTimingBufferSize?.(3000);
+
 const dotnetRuntime = await dotnet
     .withDiagnosticTracing(false)
     .withApplicationArgumentsFromQuery()
     .create();
+
+// Everything is loaded now: the worker is told which files, to keep those it didn't see being
+// fetched (the first visit, before it took over) and to drop those of earlier versions.
+serviceWorker?.then(registered => registered && navigator.serviceWorker.ready).then(registration => {
+    if (!registration) return;
+    const urls = performance.getEntriesByType("resource").map(entry => entry.name);
+    urls.push("./", "./manifest.webmanifest", "./favicon.ico",
+        "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png", "./icons/apple-touch-icon.png");
+    registration.active?.postMessage({ type: "app-files", urls });
+}).catch(() => { /* no worker: the app still runs */ });
 
 const config = dotnetRuntime.getConfig();
 
