@@ -577,6 +577,58 @@ namespace Lyrious.UILib.Setlists
 			StartNudge(Math.Clamp(lineTarget, 0, MaxOffset(scroller)) - y, time: false);
 		}
 
+		/// <summary>To the start of the lyrics (the Home key), also while they scroll by themselves.</summary>
+		public void ScrollHome()
+		{
+			if (IsTimed && scrollTimer.IsEnabled)
+			{
+				ScrollToStart(); // The song's clock starts again too.
+			}
+			else
+			{
+				GlideTo(0);
+			}
+		}
+
+		/// <summary>To the end of the lyrics (the End key), also while they scroll by themselves.</summary>
+		public void ScrollEnd() => GlideTo(double.MaxValue);
+
+		/// <summary>
+		/// A page on (+1) or back (-1): nearly the height of the view, so the last lines stay in sight
+		/// (the Page Down and Page Up keys). Also while the lyrics scroll by themselves.
+		/// </summary>
+		public void ScrollPage(int direction)
+		{
+			if (scroller != null)
+			{
+				GlideTo(scroller.Offset.Y + NudgeRemaining(time: false) + Math.Sign(direction) * scroller.Viewport.Height * 0.9);
+			}
+		}
+
+		/// <summary>
+		/// Glides the lyrics to the offset (kept within the lyrics). While timed lyrics play they jump
+		/// there instead, and the song's clock goes along as for scrolling by hand (see ScrollStep): a
+		/// glide would be taken for that at its first step, and dropped.
+		/// </summary>
+		private void GlideTo(double target)
+		{
+			if (scroller == null || IsEditing || scroller.Extent.Height <= 0)
+			{
+				return;
+			}
+
+			target = Math.Round(Math.Clamp(target, 0, MaxOffset(scroller)));
+			if (IsTimed && scrollTimer.IsEnabled)
+			{
+				StopNudge();
+				scroller.Offset = new Vector(scroller.Offset.X, target);
+				return;
+			}
+
+			// From where a glide still going will end, so quick presses add up.
+			StartNudge(target - (scroller.Offset.Y + NudgeRemaining(time: false)), time: false);
+		}
+
 		/// <summary>How long a nudge glides.</summary>
 		public static readonly TimeSpan NudgeDuration = TimeSpan.FromMilliseconds(500);
 

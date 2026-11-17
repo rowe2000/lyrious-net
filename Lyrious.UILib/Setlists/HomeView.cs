@@ -228,7 +228,19 @@ namespace Lyrious.UILib.Setlists
 			menuDrawer.Content = setlistDrawer;
 			menuDrawer.Pane = MenuDrawerContent(user, menuButton, offerForgetSavedPassword);
 
-			menuButton.Click += (_, _) => menuDrawer.IsPaneOpen = true;
+			menuButton.Click += (_, _) =>
+			{
+				// In focus mode a pinned menu is still open but invisible: show it again.
+				if (focusMode && menuHiding == DrawerHiding.Invisible)
+				{
+					ShowDrawer(menuDrawer, menuHiding);
+					menuHiding = DrawerHiding.None;
+					menuButton.IsVisible = false;
+					return;
+				}
+
+				menuDrawer.IsPaneOpen = true;
+			};
 			setlistButton.Click += (_, _) =>
 			{
 				setlistDrawer.IsPaneOpen = true;
@@ -485,26 +497,58 @@ namespace Lyrious.UILib.Setlists
 			// (then they don't pass through this view). Tunnelling: seen before the focused control.
 			keyWindow = TopLevel.GetTopLevel(this);
 			keyWindow?.AddHandler(KeyDownEvent, OnLyricsKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+			// Bubbling: after everything else had its go at the key (see OnLyricsEscape).
+			keyWindow?.AddHandler(KeyDownEvent, OnLyricsEscape, Avalonia.Interactivity.RoutingStrategies.Bubble);
+		}
+
+		/// <summary>
+		/// Escape on the lyrics page, when nothing else used it (a close button on screen, see
+		/// <see cref="EscapeKey"/>, a text box, ending focus mode): opens the left drawer. There,
+		/// Escape closes it again.
+		/// </summary>
+		private void OnLyricsEscape(object? sender, Avalonia.Input.KeyEventArgs e)
+		{
+			if (e.Key == Avalonia.Input.Key.Escape && e.KeyModifiers == Avalonia.Input.KeyModifiers.None && !e.Handled
+			    && !focusMode && !menuDrawer.IsPaneOpen && page.Content is LyricScrollView { IsEditing: false })
+			{
+				e.Handled = true;
+				menuDrawer.IsPaneOpen = true;
+			}
 		}
 
 		protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
 		{
 			base.OnDetachedFromVisualTree(e);
 			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsKey);
+			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsEscape);
 			keyWindow = null;
 		}
 
 		/// <summary>
 		/// Keys on the lyrics page (not while editing or typing in a box): the space bar plays and stops,
 		/// as the play/stop button does; up and down nudge the lyrics (4 bars for timed songs, else a
-		/// line); and, when not playing, left and right go to the previous and next song in the setlist.
+		/// line); Home, End, Page Up and Page Down go to the start, the end, and a page back and on;
+		/// and, when not playing, left and right go to the previous and next song in the setlist.
 		/// Handled before the focused control sees them, so a focused button isn't also pressed by the
 		/// space bar (the play button would undo it).
 		/// </summary>
 		private void OnLyricsKey(object? sender, Avalonia.Input.KeyEventArgs e)
 		{
+			var upOrDown = e.Key is Avalonia.Input.Key.Up or Avalonia.Input.Key.Down;
+
+			// The open menu drawer (left) takes up and down first, on any page. The setlist drawer
+			// (right) doesn't: there the keys stay with the lyrics.
+			if (e.KeyModifiers == Avalonia.Input.KeyModifiers.None && upOrDown
+			    && MoveInMenuDrawer(e.Key == Avalonia.Input.Key.Down ? 1 : -1))
+			{
+				e.Handled = true;
+				return;
+			}
+
+			// Typing in a box keeps its keys, but for up and down in the setlist drawer's search box
+			// (a single line, they do nothing there): those nudge the lyrics as well.
 			if (e.KeyModifiers != Avalonia.Input.KeyModifiers.None || page.Content is not LyricScrollView { IsEditing: false } lyrics
-			    || e.Source is TextBox)
+			    || (e.Source is TextBox box && !(upOrDown && box == setlistSearchBox)))
 			{
 				return;
 			}
@@ -523,6 +567,22 @@ namespace Lyrious.UILib.Setlists
 					e.Handled = true;
 					lyrics.Nudge(1);
 					break;
+				case Avalonia.Input.Key.Home:
+					e.Handled = true;
+					lyrics.ScrollHome();
+					break;
+				case Avalonia.Input.Key.End:
+					e.Handled = true;
+					lyrics.ScrollEnd();
+					break;
+				case Avalonia.Input.Key.PageUp:
+					e.Handled = true;
+					lyrics.ScrollPage(-1);
+					break;
+				case Avalonia.Input.Key.PageDown:
+					e.Handled = true;
+					lyrics.ScrollPage(1);
+					break;
 				case Avalonia.Input.Key.Left when !lyrics.IsAutoScrolling:
 					e.Handled = true;
 					StepSong(-1);
@@ -532,6 +592,48 @@ namespace Lyrious.UILib.Setlists
 					StepSong(1);
 					break;
 			}
+		}
+
+		/// <summary>
+		/// Up and down in the open menu drawer (left): the keyboard focus moves to the item above or
+		/// below (the drawer's buttons with text, not the icon buttons in its header), which Enter
+		/// then presses, as for any focused button. The first press goes to the current item, else
+		/// the first or last one. When it slides over the page the drawer takes the keys whenever
+		/// it's open; when pinned only once the focus is in it, so the keys keep working on the page
+		/// beside it. False when the drawer didn't take the key.
+		/// </summary>
+		private bool MoveInMenuDrawer(int direction)
+		{
+			var focused = keyWindow?.FocusManager?.GetFocusedElement() as Visual;
+			if (!menuDrawer.IsPaneOpen || menuDrawer.Pane is not Visual activePane
+			    || (IsPinned(menuDrawer) && (focused == null || !activePane.IsVisualAncestorOf(focused))))
+			{
+				return false;
+			}
+
+			var items = activePane.GetVisualDescendants().OfType<Button>()
+				.Where(button => button.Content is not Path && button.Focusable && button.IsEffectivelyVisible && button.IsEffectivelyEnabled)
+				.ToList();
+			if (items.Count == 0)
+			{
+				return false;
+			}
+
+			var at = focused is Button current ? items.IndexOf(current) : -1;
+			Button next;
+			if (at >= 0)
+			{
+				next = items[Math.Clamp(at + direction, 0, items.Count - 1)];
+			}
+			else
+			{
+				// Not on an item yet: the current one (highlighted), else the first or the last.
+				next = items.FirstOrDefault(button => button.Classes.Contains("accent")) ?? (direction > 0 ? items[0] : items[^1]);
+			}
+
+			next.Focus(Avalonia.Input.NavigationMethod.Directional);
+			next.BringIntoView();
+			return true;
 		}
 
 		/// <summary>Play/pause on the lyrics page (the toolbar button, or the space bar).</summary>
@@ -844,6 +946,7 @@ namespace Lyrious.UILib.Setlists
 				HorizontalContentAlignment = HorizontalAlignment.Left,
 				Padding = new Thickness(12, 8),
 			};
+			RoundedHighlight(button);
 			ToolTip.SetTip(button, description);
 			button.Click += (_, _) =>
 			{
@@ -1180,7 +1283,7 @@ namespace Lyrious.UILib.Setlists
 				var list = new StackPanel { Spacing = 6 };
 				foreach (var entry in entries)
 				{
-					var row = SongRow(group, setlist, entry);
+					var row = RoundedHighlight(SongRow(group, setlist, entry));
 					row.Tag = entry.Song.Name; // For the search.
 					drawerRows[entry.Id] = row;
 					list.Children.Add(row);
@@ -1392,14 +1495,32 @@ namespace Lyrious.UILib.Setlists
 
 		private static Button DrawerItem(string text)
 		{
-			return new Button
+			return RoundedHighlight(new Button
 			{
 				Content = text,
 				FontSize = 17,
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				HorizontalContentAlignment = HorizontalAlignment.Left,
 				Padding = new Thickness(12, 10),
-			};
+			});
+		}
+
+		/// <summary>
+		/// Rounds a drawer button's highlights (the left drawer's items, the right one's songs): its background (seen when pointing at or pressing
+		/// it) and the outline it gets with the keyboard focus (e.g. moving with the arrow keys),
+		/// which is square otherwise.
+		/// </summary>
+		private static Button RoundedHighlight(Button button)
+		{
+			var radius = new CornerRadius(8);
+			button.CornerRadius = radius;
+			button.FocusAdorner = new Avalonia.Controls.Templates.FuncTemplate<Control>(() =>
+			{
+				var outline = new Border { BorderThickness = new Thickness(2), CornerRadius = radius };
+				outline.Bind(Border.BorderBrushProperty, outline.GetResourceObservable(LyriousTheme.SelectionBrush));
+				return outline;
+			});
+			return button;
 		}
 
 		/// <summary>
@@ -1667,6 +1788,8 @@ namespace Lyrious.UILib.Setlists
 				ShowSongbookLyrics(group, await service.CreateSongAsync(group.Id, name, lyrics, TimeSpan.Zero)));
 			view.InternetSearchRequested += () => _ = RunAsync(async () => ShowInternetSearch(group, await service.GetSongbookSongsAsync(group.Id)));
 			view.SongEditRequested += song => ShowSongEditor(group, song);
+			view.LoadSetlists = () => service.GetSetlistsAsync(group.Id);
+			view.SongAddToSetlistRequested += (song, setlist) => _ = AddSongToSetlistAsync(song, setlist);
 			view.SongDeleteRequested += song => _ = RunAsync(async () =>
 			{
 				await service.DeleteSongAsync(song.Id);
@@ -1681,6 +1804,32 @@ namespace Lyrious.UILib.Setlists
 				ShowSongs(group, await service.GetSongbookSongsAsync(group.Id), replace: true);
 			});
 			ShowPage(view, replace);
+		}
+
+		/// <summary>
+		/// Adds a song from the songbook to the end of a setlist. The songbook stays up; a notice says
+		/// how it went.
+		/// </summary>
+		private async Task AddSongToSetlistAsync(SongDetails song, SetlistSummary setlist)
+		{
+			try
+			{
+				await service.AddSongsAsync(setlist.Id, [song.Id]);
+			}
+			catch (Exception ex)
+			{
+				ShowNotice($"Couldn't add \"{song.Name}\" to {setlist.Name}. {ex.Message}");
+				return;
+			}
+
+			if (setlist.Id == currentSetlist?.Id)
+			{
+				// The current setlist is longer now: the drawer and the next/previous song follow.
+				playbackEntries = [];
+				RefreshSetlistDrawer(reload: true);
+			}
+
+			ShowNotice($"Added \"{song.Name}\" to {setlist.Name}.");
 		}
 
 		/// <summary>A song was edited: its name, key, tempo and beat show in the menu and the setlists too.</summary>
@@ -1874,8 +2023,9 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// Focus mode on: hides the drawers (keeping them pinned if they were) and the buttons that
-		/// open them, and leaves only the song's name, details and lyrics on the page. Off: brings
+		/// Focus mode on (also while playing): hides the drawers (keeping them pinned if they were)
+		/// but not the buttons that open them, and leaves only the song's name, details and lyrics on
+		/// the page, which also get the room of a pinned right drawer. Off: brings
 		/// them back, reopening the drawers that were open.
 		/// </summary>
 		private void SetFocusMode(bool on)
@@ -1889,13 +2039,24 @@ namespace Lyrious.UILib.Setlists
 			if (on)
 			{
 				menuHiding = HideDrawer(menuDrawer);
-				setlistHiding = HideDrawer(setlistDrawer);
-				topRow.IsVisible = false; // It floats over the page, so hiding it moves nothing.
+				// The right drawer gives its room to the lyrics, also when pinned.
+				setlistHiding = HideDrawer(setlistDrawer, keepRoom: false);
+				// The buttons that open the drawers stay; also the one of a pinned drawer made
+				// invisible, which shows that drawer again.
+				if (menuHiding == DrawerHiding.Invisible)
+				{
+					topRow.Children[0].IsVisible = true;
+				}
+
 				Focus(); // So Escape reaches this view.
 			}
 			else
 			{
-				topRow.IsVisible = true;
+				if (menuHiding == DrawerHiding.Invisible)
+				{
+					topRow.Children[0].IsVisible = false; // Its pinned drawer shows again.
+				}
+
 				ShowDrawer(menuDrawer, menuHiding);
 				ShowDrawer(setlistDrawer, setlistHiding);
 			}
@@ -1907,18 +2068,19 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// Hides a drawer for focus mode without moving the page. A drawer sliding over the page is
-		/// closed. A pinned, open drawer stays open but is made invisible: closing it would widen the
-		/// page and make the lyrics move and rewrap.
+		/// Hides a drawer for focus mode. A drawer sliding over the page is closed. A pinned, open
+		/// drawer stays open but is made invisible, so the page doesn't move (closing it would widen
+		/// the page and make the lyrics move and rewrap); unless <paramref name="keepRoom"/> is false:
+		/// then it's closed too (still pinned, for when it's shown again) and the page gets its room.
 		/// </summary>
-		private static DrawerHiding HideDrawer(SplitView drawer)
+		private static DrawerHiding HideDrawer(SplitView drawer, bool keepRoom = true)
 		{
 			if (!drawer.IsPaneOpen)
 			{
 				return DrawerHiding.None;
 			}
 
-			if (!IsPinned(drawer))
+			if (!IsPinned(drawer) || !keepRoom)
 			{
 				drawer.IsPaneOpen = false;
 				return DrawerHiding.Closed;
@@ -2023,21 +2185,34 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			_ = RunAsync(ReopenCurrentSongAsync);
+			// The page left isn't one to go back to: it was the last one, and ✕ on the page shown now
+			// would lead back to it, and ✕ there back here, round and round.
+			_ = RunAsync(async () =>
+			{
+				await ReopenCurrentSongAsync();
+				history.Clear();
+			});
 		}
 
-		/// <summary>Opens the current song's lyrics, if a song from a setlist is current.</summary>
+		/// <summary>
+		/// Opens the lyrics of the current song; with no current song (e.g. a setlist was just chosen),
+		/// those of the current setlist's first song, shown here only: the band's current song stays
+		/// as it is. Without a setlist or any song in it, the start page.
+		/// </summary>
 		private async Task ReopenCurrentSongAsync()
 		{
-			if (currentGroup is { } group && currentSetlist is { } setlist && currentEntryId is { } entryId
-			    && await service.GetEntryAsync(entryId) is { } entry)
+			if (currentGroup is { } group && currentSetlist is { } setlist)
 			{
-				ShowLyrics(group, setlist, entry);
+				var entry = currentEntryId is { } entryId ? await service.GetEntryAsync(entryId) : null;
+				entry ??= (await service.GetEntriesAsync(setlist.Id)).FirstOrDefault();
+				if (entry != null)
+				{
+					ShowLyrics(group, setlist, entry);
+					return;
+				}
 			}
-			else
-			{
-				await OpenStartPageAsync();
-			}
+
+			await OpenStartPageAsync();
 		}
 
 		/// <summary>Whether the lyrics are playing (scrolling by themselves): the song can't be changed then.</summary>

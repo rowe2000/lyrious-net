@@ -11,7 +11,7 @@ namespace Lyrious.UILib.Setlists
 	/// The band's songbook, to pick a song to show; the current song is highlighted. The "+" menu
 	/// adds a song: an empty one (named here, then edited), one imported from a text or ChordPro
 	/// file, or one found on the internet. A click selects a song and shows its toolbar (open,
-	/// edit, delete); a double click opens it. The search box above the list filters it by name
+	/// add to a setlist, edit, delete); a double click opens it. The search box above the list filters it by name
 	/// and lyrics as you type.
 	/// </summary>
 	public sealed class SongsView : UserControl
@@ -32,6 +32,15 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Raised when the user confirms deleting a song.</summary>
 		public event Action<SongDetails>? SongDeleteRequested;
+
+		/// <summary>Raised when the user chooses a setlist to add a song to (at its end).</summary>
+		public event Action<SongDetails, SetlistSummary>? SongAddToSetlistRequested;
+
+		/// <summary>Gets the band's setlists, for the menu of the add-to-setlist button.</summary>
+		public Func<Task<IReadOnlyList<SetlistSummary>>>? LoadSetlists { get; set; }
+
+		// A list (three lines) with a plus at its lower right.
+		private const string AddToSetlistIcon = "M4,7 H15 M4,12 H12 M4,17 H10 M17,13 V21 M13,17 H21";
 
 		/// <summary>Raised when the user wants to find a song on the internet.</summary>
 		public event Action? InternetSearchRequested;
@@ -84,11 +93,60 @@ namespace Lyrious.UILib.Setlists
 				song =>
 				[
 					PageLayout.OpenButton($"Open {song.Name}", () => SongSelected?.Invoke(song)),
+					AddToSetlistButton(song),
 					PageLayout.EditButton($"Edit {song.Name}", () => SongEditRequested?.Invoke(song)),
 					PageLayout.DeleteButton($"Delete {song.Name}", $"Delete \"{song.Name}\"? It's also removed from every setlist it's in.", () => SongDeleteRequested?.Invoke(song)),
 				],
 				song => SongSelected?.Invoke(song),
 				emptyText);
+
+		/// <summary>
+		/// A toolbar button that adds the song to a setlist: it opens a menu of the band's setlists
+		/// (loaded when it's clicked, so they're the ones there are now) to choose the one.
+		/// </summary>
+		private Button AddToSetlistButton(SongDetails song)
+		{
+			var button = HomeView.IconButton(AddToSetlistIcon, $"Add {song.Name} to a setlist");
+			button.Click += async (_, _) =>
+			{
+				if (LoadSetlists is not { } load)
+				{
+					return;
+				}
+
+				IReadOnlyList<SetlistSummary> setlists;
+				button.IsEnabled = false;
+				try
+				{
+					setlists = await load();
+				}
+				catch (Exception ex)
+				{
+					ShowStatus($"Couldn't get the setlists. {ex.Message}");
+					return;
+				}
+				finally
+				{
+					button.IsEnabled = true;
+				}
+
+				var menu = new MenuFlyout();
+				if (setlists.Count == 0)
+				{
+					menu.Items.Add(new MenuItem { Header = "There are no setlists yet", IsEnabled = false });
+				}
+
+				foreach (var setlist in setlists)
+				{
+					var item = new MenuItem { Header = setlist.Name };
+					item.Click += (_, _) => SongAddToSetlistRequested?.Invoke(song, setlist);
+					menu.Items.Add(item);
+				}
+
+				menu.ShowAt(button);
+			};
+			return button;
+		}
 
 		/// <summary>Whether the song's name or lyrics contain the text (ignoring case; chords in the lyrics don't get in the way).</summary>
 		private static bool Matches(SongDetails song, string text)

@@ -6,11 +6,12 @@ namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
 	/// The group's setlists, to pick the one to work with or add a new one; the current one is
-	/// highlighted. A click selects a setlist and shows its toolbar (open, delete); a double click opens it.
+	/// highlighted and has a check in its row. A click selects a setlist and shows its toolbar
+	/// (delete); a double click opens it (makes it the current one).
 	/// </summary>
 	public sealed class SetlistsView : UserControl
 	{
-		/// <summary>Raised when the user opens a setlist (double click, or the open button).</summary>
+		/// <summary>Raised when the user opens a setlist (double click).</summary>
 		public event Action<SetlistSummary>? SetlistSelected;
 
 		/// <summary>Raised with the name when the user adds a setlist.</summary>
@@ -24,11 +25,10 @@ namespace Lyrious.UILib.Setlists
 		{
 			var list = new SelectableList<SetlistSummary>(
 				setlists,
-				setlist => PageLayout.RowContent(setlist.Name, null),
+				setlist => PageLayout.RowContent(setlist.Name, setlist.Id == currentSetlistId),
 				setlist => setlist.Id == currentSetlistId,
 				setlist =>
 				[
-					PageLayout.OpenButton($"Open {setlist.Name}", () => SetlistSelected?.Invoke(setlist)),
 					PageLayout.DeleteButton($"Delete {setlist.Name}", $"Delete the setlist \"{setlist.Name}\"? Its songs stay in the songbook.", () => SetlistDeleteRequested?.Invoke(setlist)),
 				],
 				setlist => SetlistSelected?.Invoke(setlist),

@@ -18,7 +18,10 @@ namespace Lyrious.UILib.Setlists
 	{
 		private readonly IReadOnlyList<PlaylogSummary> playlogs;
 		private readonly StackPanel shown = new() { Spacing = 8 };
-		private readonly TextBlock shownTitle = new() { FontSize = 20, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
+		private readonly TextBlock shownTitle = new() { FontSize = 20, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 10, 0) };
+		// The date and time after the title: smaller and dimmed, on the title's baseline (the
+		// smaller text sits a little less deep below it).
+		private readonly TextBlock shownDate = new() { Opacity = 0.7, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 2) };
 		private readonly List<(PlaylogSummary Playlog, Button Row)> rows = [];
 
 		public PlaylogView(GroupSummary group, IReadOnlyList<PlaylogSummary> playlogs)
@@ -47,7 +50,7 @@ namespace Lyrious.UILib.Setlists
 						Spacing = 8,
 						Children =
 						{
-							shownTitle,
+							new WrapPanel { Orientation = Orientation.Horizontal, Children = { shownTitle, shownDate } },
 							shown,
 							Section("All playlogs"),
 							list,
@@ -63,7 +66,8 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Shows the playlog's songs at the top, and highlights its row in the list.</summary>
 		private void Show(PlaylogSummary playlog)
 		{
-			shownTitle.Text = (ReferenceEquals(playlog, playlogs[0]) ? "Last playlog · " : "Playlog · ") + Date(playlog.CreatedAt);
+			shownTitle.Text = ReferenceEquals(playlog, playlogs[0]) ? "Last playlog" : "Playlog";
+			shownDate.Text = Date(playlog.CreatedAt);
 			shown.Children.Clear();
 			if (playlog.Plays.Count == 0)
 			{

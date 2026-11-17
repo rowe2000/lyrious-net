@@ -348,6 +348,36 @@ namespace Lyrious.UILib.Setlists
 		// A check: "make this the current one".
 		private const string OpenIcon = "M5,12 L10,17 L19,7";
 
+		/// <summary>
+		/// A list row's text with a check at the right when it's the current one (e.g. the band's
+		/// current setlist). The check has the colour of the row's text.
+		/// </summary>
+		public static Control RowContent(string text, bool isCurrent)
+		{
+			var row = (DockPanel)RowContent(text, (string?)null);
+			if (isCurrent)
+			{
+				var check = new Avalonia.Controls.Shapes.Path
+				{
+					Data = Geometry.Parse(OpenIcon),
+					StrokeThickness = 2,
+					StrokeLineCap = PenLineCap.Round,
+					StrokeJoin = PenLineJoin.Round,
+					Width = 24,
+					Height = 24,
+					// No taller than the text, so the row is as high as the others.
+					Margin = new Thickness(12, -2, 0, -2),
+					VerticalAlignment = VerticalAlignment.Center,
+				};
+				check.Bind(Avalonia.Controls.Shapes.Shape.StrokeProperty, check.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
+				ToolTip.SetTip(check, "The current setlist");
+				DockPanel.SetDock(check, Dock.Right);
+				row.Children.Insert(0, check);
+			}
+
+			return row;
+		}
+
 		// A trash can: lid, handle, can and two lines on it.
 		private const string TrashIcon = "M5,7 H19 M10,7 V5 H14 V7 M7,7 L8,20 H16 L17,7 M10,11 V16 M14,11 V16";
 
