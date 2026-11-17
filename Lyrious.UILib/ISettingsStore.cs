@@ -50,6 +50,12 @@ namespace Lyrious.UILib
 		/// <summary>"true" sizes the whole app to the window (see <see cref="Setlists.DisplaySettings.DynamicZoom"/>); off unless set.</summary>
 		public const string DynamicZoom = "dynamic-zoom";
 
+		/// <summary>"true" shares the app on the local network (see <see cref="ILanSharing"/>); off unless set.</summary>
+		public const string LanSharing = "lan-sharing";
+
+		/// <summary>The port the app is shared on, e.g. "8080"; none for <see cref="LanSharingSettings.DefaultPort"/>.</summary>
+		public const string LanSharingPort = "lan-sharing-port";
+
 		/// <summary>"true" shows the song's name and details above the lyrics in the scroll view; off unless set.</summary>
 		public const string ShowSongHeader = "show-song-header";
 	}

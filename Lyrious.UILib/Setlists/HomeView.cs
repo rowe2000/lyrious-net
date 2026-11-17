@@ -53,6 +53,12 @@ namespace Lyrious.UILib.Setlists
 		private readonly Button playlogButton;
 		private readonly Button chooseGroupButton;
 		private readonly TextBlock syncStatus = new() { FontSize = 13, Opacity = 0.7 };
+		// In the Sync item while the app is shared on the local network: at its right a QR code of
+		// the address for the other devices, and under the sync status the address itself (see
+		// ShowSharingCode).
+		private readonly ContentControl sharingCode = new() { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Top, IsVisible = false };
+		private readonly TextBlock sharingAddress = new() { FontSize = 13, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, IsVisible = false };
+		private string? sharingCodeAddress;
 		// The left drawer's Sync button: highlighted while changes made here haven't reached the server.
 		private Button? syncButton;
 		private readonly Button addSongsButton = IconButton(AddIcon, "Add a song to the setlist");
@@ -248,6 +254,8 @@ namespace Lyrious.UILib.Setlists
 			};
 			// Opened again some other way (e.g. after focus mode): the current song in the middle too.
 			setlistDrawer.PaneOpened += (_, _) => CenterDrawerSong();
+			// The computer may have changed networks since.
+			menuDrawer.PaneOpened += (_, _) => ShowSharingCode();
 
 			Content = menuDrawer;
 
@@ -496,6 +504,12 @@ namespace Lyrious.UILib.Setlists
 			// Listened to on the whole window, so the keys also work when nothing has keyboard focus
 			// (then they don't pass through this view). Tunnelling: seen before the focused control.
 			keyWindow = TopLevel.GetTopLevel(this);
+			if (App.LanSharing is { } sharing)
+			{
+				sharing.Changed += OnSharingChanged;
+			}
+
+			ShowSharingCode();
 			keyWindow?.AddHandler(KeyDownEvent, OnLyricsKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 			// Bubbling: after everything else had its go at the key (see OnLyricsEscape).
 			keyWindow?.AddHandler(KeyDownEvent, OnLyricsEscape, Avalonia.Interactivity.RoutingStrategies.Bubble);
@@ -522,6 +536,33 @@ namespace Lyrious.UILib.Setlists
 			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsKey);
 			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsEscape);
 			keyWindow = null;
+			if (App.LanSharing is { } sharing)
+			{
+				sharing.Changed -= OnSharingChanged;
+			}
+		}
+
+		// Raised on any thread.
+		private void OnSharingChanged() => Dispatcher.UIThread.Post(ShowSharingCode);
+
+		/// <summary>
+		/// In the left drawer's Sync item, while the app is shared on the local network (the Sync
+		/// page): a QR code to point another device's camera at, which opens the web app there
+		/// through this computer, and the address below it for typing. With several networks it's
+		/// the first one's address; the Sync page lists them all.
+		/// </summary>
+		private void ShowSharingCode()
+		{
+			var address = App.LanSharing is { IsRunning: true } sharing ? sharing.Addresses.FirstOrDefault() : null;
+			if (address == sharingCodeAddress)
+			{
+				return;
+			}
+
+			sharingCodeAddress = address;
+			sharingCode.Content = address != null ? QrCodeImage.Create(address, 104) : null;
+			sharingCode.IsVisible = sharingAddress.IsVisible = address != null;
+			sharingAddress.Text = address;
 		}
 
 		/// <summary>
@@ -988,10 +1029,20 @@ namespace Lyrious.UILib.Setlists
 			var sync = DrawerItem("Sync");
 			syncButton = sync;
 			// Under "Sync": whether the server can be reached and how many changes are waiting.
-			sync.Content = new StackPanel
+			// At the right, level with "Sync": the QR code while the app is shared on the local network.
+			DockPanel.SetDock(sharingCode, Dock.Right);
+			sync.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+			sync.Content = new DockPanel
 			{
-				Spacing = 2,
-				Children = { new TextBlock { Text = "Sync" }, syncStatus },
+				Children =
+				{
+					sharingCode,
+					new StackPanel
+					{
+						Spacing = 2,
+						Children = { new TextBlock { Text = "Sync" }, syncStatus, sharingAddress },
+					},
+				},
 			};
 			sync.Click += (_, _) =>
 			{

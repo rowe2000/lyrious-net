@@ -33,6 +33,12 @@ namespace Lyrious.UILib
 		/// </summary>
 		public static ISettingsStore Settings { get; set; } = new MemorySettingsStore();
 
+		/// <summary>
+		/// Sharing on the local network (the Sync page). Hosts that can listen on the
+		/// network set this before starting the app; by default it isn't offered.
+		/// </summary>
+		public static ILanSharing? LanSharing { get; set; }
+
 		public override void Initialize()
 		{
 			// Default follows the system theme; ThemeVariant.Dark or ThemeVariant.Light force one.
