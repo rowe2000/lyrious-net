@@ -518,6 +518,23 @@ public sealed class HttpSetlistService : ISetlistService
         Queued(current);
     }
 
+    public async Task InviteByEmailAsync(Guid groupId, string email, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(auth.AccessToken))
+        {
+            throw new InvalidOperationException("Inviting by email needs a connection to the server.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/member/invite-email");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", auth.AccessToken);
+        request.Content = JsonContent.Create(new EmailInvitationRequest(groupId, email.Trim()), ClientJsonContext.Default.EmailInvitationRequest);
+        using var response = await auth.Http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(await HttpAuthService.ReadErrorAsync(response, cancellationToken));
+        }
+    }
+
     public async Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default)
     {
         var current = await CacheAsync();

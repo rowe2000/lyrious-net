@@ -24,8 +24,19 @@
     <ShouldIncludeAvaloniaStaticAssets>false</ShouldIncludeAvaloniaStaticAssets>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The copies made below, which would otherwise be found as a second set of the same files. -->
+    <Content Remove="wwwroot/_framework/**" />
     <Content Include="$(PkgAvalonia_Browser)/staticwebassets/*.*" Link="wwwroot/_framework/%(Filename)%(Extension)" />
   </ItemGroup>
+  <!-- Running from a build (not a publish), the files are served from where the link says they are,
+       wwwroot/_framework, rather than from the package: without a copy there, the scripts are
+       served empty and the app stays on its splash screen. The copies aren't in source control. -->
+  <Target Name="CopyAvaloniaScriptsForRunningFromBuild" AfterTargets="Build">
+    <ItemGroup>
+      <_AvaloniaScript Include="$(PkgAvalonia_Browser)/staticwebassets/*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_AvaloniaScript)" DestinationFolder="$(MSBuildProjectDirectory)/wwwroot/_framework" SkipUnchangedFiles="true" />
+  </Target>
 
   <ItemGroup>
     <ProjectReference Include="..\Lyrious.UILib\Lyrious.UILib.csproj" />

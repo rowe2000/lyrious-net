@@ -87,6 +87,13 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Invites a member to a band (as a plain member). Admins only; the server refuses others.</summary>
 		Task InviteMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default);
 
+		/// <summary>
+		/// Emails someone who has no account yet, asking them to create one to join the band. They
+		/// aren't in the band by this: once they have an account they're invited as any member.
+		/// Admins only. Needs the server; throws (with why) if the email can't be sent.
+		/// </summary>
+		Task InviteByEmailAsync(Guid groupId, string email, CancellationToken cancellationToken = default);
+
 		/// <summary>Changes a member's role in a band. Admins only, and the last admin stays one.</summary>
 		Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default);
 
@@ -217,6 +224,7 @@ namespace Lyrious.UILib.Setlists
 		public Task SelectGroupAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<FoundMember?> FindMemberAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task InviteMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task InviteByEmailAsync(Guid groupId, string email, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RenameMemberAsync(Guid memberId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();

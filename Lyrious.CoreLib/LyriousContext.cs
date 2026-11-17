@@ -34,10 +34,11 @@ public class LyriousContext : LocalContext<Member, Role>
 	public bool EnsureCreatedAndUpToDate()
 	{
 		var created = Database.EnsureCreated();
-		if (!created && Database.IsSqlite())
+		if (!created)
 		{
-			AddColumnIfMissing(nameof(Songs), nameof(Song.MediaLink), "TEXT NOT NULL DEFAULT ''");
-			AddColumnIfMissing(nameof(Members), nameof(Member.LastLoginAt), "TEXT NULL");
+			var sqlite = Database.IsSqlite();
+			AddColumnIfMissing(nameof(Songs), nameof(Song.MediaLink), sqlite ? "TEXT NOT NULL DEFAULT ''" : "nvarchar(500) NOT NULL DEFAULT ''");
+			AddColumnIfMissing(nameof(Members), nameof(Member.LastLoginAt), sqlite ? "TEXT NULL" : "datetime2 NULL");
 		}
 
 		return created;
@@ -54,22 +55,24 @@ public class LyriousContext : LocalContext<Member, Role>
 
 		try
 		{
+			// SQLite and SQL Server differ in how to ask for a table's columns and how to add one.
+			var sqlite = Database.IsSqlite();
 			using (var command = connection.CreateCommand())
 			{
-				command.CommandText = $"PRAGMA table_info(\"{table}\")";
-				using var reader = command.ExecuteReader();
-				while (reader.Read())
+				command.CommandText = sqlite
+					? $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE lower(name) = lower('{column}')"
+					: $"SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID('{table}') AND name = '{column}'";
+				if (Convert.ToInt32(command.ExecuteScalar()) > 0)
 				{
-					if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
-					{
-						return;
-					}
+					return;
 				}
 			}
 
 			using (var alter = connection.CreateCommand())
 			{
-				alter.CommandText = $"ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {definition}";
+				alter.CommandText = sqlite
+					? $"ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {definition}"
+					: $"ALTER TABLE [{table}] ADD [{column}] {definition}";
 				alter.ExecuteNonQuery();
 			}
 

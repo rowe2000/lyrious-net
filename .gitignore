@@ -460,3 +460,6 @@ Lyrious.Api/*.db-wal
 
 # Logs of locally started services
 .claude-run/
+
+# Copies of Avalonia's scripts, made by the build (see Lyrious.Web.csproj)
+Lyrious.Web/wwwroot/_framework/

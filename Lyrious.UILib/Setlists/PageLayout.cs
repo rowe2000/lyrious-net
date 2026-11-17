@@ -130,6 +130,63 @@ namespace Lyrious.UILib.Setlists
 			return page;
 		}
 
+		/// <summary>Changes the title and details of a <see cref="SongPage"/>, e.g. after the song is renamed.</summary>
+		public static void SetSongTitle(Control songPage, string title, string? details)
+		{
+			if (songPage is not Grid { Children: [DockPanel { Children: [_, WrapPanel { Children: [TextBlock titleText, ..] } titleRow, ..] }, ..] })
+			{
+				return;
+			}
+
+			titleText.Text = title;
+			var detailsText = titleRow.Children.Count > 1 ? titleRow.Children[1] as TextBlock : null;
+			if (string.IsNullOrEmpty(details))
+			{
+				if (detailsText != null)
+				{
+					titleRow.Children.Remove(detailsText);
+				}
+			}
+			else if (detailsText != null)
+			{
+				detailsText.Text = details;
+			}
+			else
+			{
+				titleRow.Children.Add(new TextBlock { Text = details, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 5) });
+			}
+		}
+
+		/// <summary>
+		/// Puts <paramref name="replacement"/> in the place of the title and details of a
+		/// <see cref="SongPage"/> (e.g. the song's editable name while it is edited); null brings the
+		/// title and details back.
+		/// </summary>
+		public static void SetSongTitleContent(Control songPage, Control? replacement)
+		{
+			if (songPage is not Grid { Children: [DockPanel header, ..] } || header.Children.Count < 2)
+			{
+				return;
+			}
+
+			if (header.Children.Count == 3 && header.Children[2] == replacement)
+			{
+				return;
+			}
+
+			while (header.Children.Count > 2)
+			{
+				header.Children.RemoveAt(2);
+			}
+
+			if (replacement != null)
+			{
+				header.Children.Add(replacement);
+			}
+
+			header.Children[1].IsVisible = replacement == null;
+		}
+
 		/// <summary>
 		/// Shows or hides the title and details of a <see cref="SongPage"/>. Hidden, the title action
 		/// (e.g. the pencil) stays at the top right, over the content, which takes the whole page.
@@ -141,7 +198,13 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			header.Children[1].IsVisible = shown;
+			// A replacement (see SetSongTitleContent) is shown instead of the title and details.
+			header.Children[1].IsVisible = shown && header.Children.Count == 2;
+			for (var i = 2; i < header.Children.Count; i++)
+			{
+				header.Children[i].IsVisible = shown;
+			}
+
 			header.Margin = new Thickness(0, 0, 0, shown ? 16 : 0);
 			// Hidden: the content starts at the top, under the action, so the header takes no room.
 			header.HorizontalAlignment = shown ? HorizontalAlignment.Stretch : HorizontalAlignment.Right;

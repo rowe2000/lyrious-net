@@ -6,6 +6,9 @@ namespace Lyrious.Api.Services;
 /// <summary>Sends account emails (e.g. password reset codes).</summary>
 public interface IEmailSender
 {
+	/// <summary>Whether emails really are sent (a mail server is configured), not just logged.</summary>
+	bool CanSend { get; }
+
 	Task SendAsync(string to, string subject, string body, CancellationToken cancellationToken = default);
 }
 
@@ -26,9 +29,11 @@ public sealed class SmtpSettings
 /// </summary>
 public sealed class EmailSender(SmtpSettings settings, ILogger<EmailSender> logger) : IEmailSender
 {
+	public bool CanSend => !string.IsNullOrWhiteSpace(settings.Host);
+
 	public async Task SendAsync(string to, string subject, string body, CancellationToken cancellationToken = default)
 	{
-		if (string.IsNullOrWhiteSpace(settings.Host))
+		if (!CanSend)
 		{
 			logger.LogWarning("No SMTP server configured (Smtp:Host); email not sent. To: {To} | Subject: {Subject} | {Body}", to, subject, body);
 			return;

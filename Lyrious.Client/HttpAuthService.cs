@@ -407,7 +407,7 @@ public sealed class HttpAuthService : IAuthService
     /// Identity errors ([{ "code", "description" }]), an ASP.NET validation problem
     /// ({ "errors": { field: [messages] } }) or plain text.
     /// </summary>
-    private static async Task<string> ReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    internal static async Task<string> ReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var text = await response.Content.ReadAsStringAsync(cancellationToken);
         var messages = new List<string>();

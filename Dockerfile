@@ -20,6 +20,8 @@ COPY --from=build /app .
 # SQLite (the default off Windows), in /data: mount a volume there so the database outlives deploys.
 ENV Database__Provider=Sqlite \
     Database__SqliteFile=/data/lyrious-api.db
+# The platform's proxy says how the app was reached (https), e.g. for links in emails.
+ENV ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
 RUN mkdir -p /data
 
 ENTRYPOINT ["dotnet", "Lyrious.Api.dll"]

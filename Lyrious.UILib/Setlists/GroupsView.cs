@@ -17,7 +17,7 @@ namespace Lyrious.UILib.Setlists
 	/// one. A click selects a band and shows its toolbar (✓ joins it; the joined band has none); a
 	/// double click joins it too. Above the list, the selected band's details: who's in it (role,
 	/// invited or not, last login), Join, and for the band's admins tools to invite, set roles,
-	/// remove members and delete the band.
+	/// remove members and delete the band. A member of just one band sees its details only.
 	/// </summary>
 	public sealed class GroupsView : UserControl
 	{
@@ -82,11 +82,18 @@ namespace Lyrious.UILib.Setlists
 			var (addButton, nameRow) = PageLayout.AddByName("Add band", "Name of the new band", name => GroupCreateRequested?.Invoke(name));
 
 			// The details and the list scroll together (the details can be long in a big band).
-			var column = new StackPanel { Spacing = 16, Children = { nameRow, details, list } };
+			// With one band there's nothing to choose between: its details only, no list.
+			var onlyBand = groups.Count == 1;
+			var column = new StackPanel { Spacing = 16, Children = { nameRow, details } };
+			if (!onlyBand)
+			{
+				column.Children.Add(list);
+			}
+
 			Content = PageLayout.Page(
-				"Bands",
+				onlyBand ? "Band" : "Bands",
 				new ScrollViewer { Content = column, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
-				subtitle: "Choose a band",
+				subtitle: onlyBand ? null : "Choose a band",
 				titleAction: addButton,
 				closable: true);
 		}

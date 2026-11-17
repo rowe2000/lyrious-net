@@ -261,7 +261,8 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				// Remember the page left, for ✕ (pages only: not loading indicators or messages).
-				if (!goingBack && e.OldValue is UserControl left && !ReferenceEquals(left, e.NewValue))
+				// (Nor a song's editor opened by itself: it's done with once it's left.)
+				if (!goingBack && e.OldValue is UserControl left && !ReferenceEquals(left, e.NewValue) && left is not LyricScrollView { EditorOnly: true })
 				{
 					history.Remove(left);
 					history.Add(left);
@@ -280,7 +281,8 @@ namespace Lyrious.UILib.Setlists
 					Dispatcher.UIThread.Post(() => _ = FollowGroupAsync(follow, catchUp));
 				}
 
-				var isLyrics = e.NewValue is LyricScrollView;
+				// (A song's editor opened by itself has nothing to play.)
+				var isLyrics = e.NewValue is LyricScrollView { EditorOnly: false };
 				playbackBar.IsVisible = isLyrics;
 
 				// The member joined another group in another session while busy here: switch now.
@@ -373,7 +375,7 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Pages where the member is in the middle of something that a switch would throw away.</summary>
 		private static bool IsBusy(object? content)
-			=> content is SongEditView or AddSongsView or InternetSongView or LyricScrollView { IsEditing: true };
+			=> content is AddSongsView or InternetSongView or LyricScrollView { IsEditing: true };
 
 		private bool? wasOnline;
 
@@ -976,13 +978,13 @@ namespace Lyrious.UILib.Setlists
 		private void ShowNewSongEditor(GroupSummary group, SetlistSummary setlist)
 		{
 			var blank = new SongDetails(Guid.Empty, "", "", 120, "4/4", "");
-			var view = new SongEditView(blank, async filled =>
+			var view = new LyricScrollView(blank, async filled =>
 			{
 				var created = await service.CreateSongAsync(group.Id, filled.Name, filled.Lyrics, TimeSpan.Zero);
 				return await service.UpdateSongAsync(filled with { Id = created.Id });
-			}, title: "New song");
-			view.Cancelled += () => _ = RunAsync(() => ShowSetlistAsync(group, setlist));
-			view.Saved += song => _ = RunAsync(() => AddToSetlistAndShowAsync(group, setlist, song));
+			}, startEditing: true) { EditorOnly = true };
+			view.EditCancelled += () => _ = RunAsync(() => ShowSetlistAsync(group, setlist));
+			view.SongSaved += song => _ = RunAsync(() => AddToSetlistAndShowAsync(group, setlist, song));
 			page.Content = view;
 		}
 
@@ -1532,7 +1534,17 @@ namespace Lyrious.UILib.Setlists
 				{
 					if (await service.FindMemberAsync(query) is not { } found)
 					{
-						return $"No member has the username, email or phone \"{query}\".";
+						// Someone without an account can't be in the band yet, but can be asked by
+						// email to create one.
+						if (!query.Contains('@'))
+						{
+							return $"No member has the username, email or phone \"{query}\". To invite someone who has no account yet, enter their email address.";
+						}
+
+						await service.InviteByEmailAsync(group.Id, query);
+						ShowNotice($"{query} has no account yet: sent them an email invitation");
+						await ShowGroupsAsync(group.Id, replace: true);
+						return null;
 					}
 
 					await service.InviteMemberAsync(group.Id, found.Id);
@@ -1624,7 +1636,7 @@ namespace Lyrious.UILib.Setlists
 			SetCurrentSetlist(setlist);
 			SetCurrentSong(entry.Song, entry.Id);
 
-			var view = new LyricScrollView(entry.Song, lyrics => service.UpdateLyricsAsync(entry.Song.Id, lyrics));
+			var view = new LyricScrollView(entry.Song, edited => service.UpdateSongAsync(edited));
 			ShowLyricsPage(view);
 			RefreshSetlistDrawer();
 		}
@@ -1671,22 +1683,28 @@ namespace Lyrious.UILib.Setlists
 			ShowPage(view, replace);
 		}
 
+		/// <summary>A song was edited: its name, key, tempo and beat show in the menu and the setlists too.</summary>
+		private void SongEdited(SongDetails saved)
+		{
+			if (saved.Id == currentSongId)
+			{
+				SetCurrentSong(saved, currentEntryId);
+			}
+
+			playbackEntries = [];
+			RefreshSetlistDrawer(reload: true);
+		}
+
 		/// <summary>Edits a song's name, key, tempo, beat and lyrics; back to the songbook afterwards.</summary>
 		private void ShowSongEditor(GroupSummary group, SongDetails song)
 		{
-			var view = new SongEditView(song, edited => service.UpdateSongAsync(edited));
+			// The same editor as the pencil on a song's lyrics.
+			var view = new LyricScrollView(song, edited => service.UpdateSongAsync(edited), startEditing: true) { EditorOnly = true };
 			// Back to the songbook it was opened from (nothing changed), which ✕ then leaves as usual.
-			view.Cancelled += GoBack;
-			view.Saved += saved => _ = RunAsync(async () =>
+			view.EditCancelled += GoBack;
+			view.SongSaved += saved => _ = RunAsync(async () =>
 			{
-				if (saved.Id == currentSongId)
-				{
-					SetCurrentSong(saved, currentEntryId);
-				}
-
-				// Setlists show the song's name, key, tempo and beat too.
-				playbackEntries = [];
-				RefreshSetlistDrawer(reload: true);
+				SongEdited(saved);
 				var songs = await service.GetSongbookSongsAsync(group.Id);
 
 				// The songbook again, updated, in the old one's place: neither the editor nor the old
@@ -1731,12 +1749,12 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>The lyrics of a song that isn't in the current setlist; back goes to the songbook.</summary>
-		/// <param name="startEditing">Opens the lyrics editor straight away (for a new empty song).</param>
+		/// <param name="startEditing">Opens the editor straight away (for a new empty song).</param>
 		private void ShowSongbookLyrics(GroupSummary group, SongDetails song, bool startEditing = false)
 		{
 			SetCurrentSong(song, null);
 
-			var view = new LyricScrollView(song, lyrics => service.UpdateLyricsAsync(song.Id, lyrics), startEditing);
+			var view = new LyricScrollView(song, edited => service.UpdateSongAsync(edited), startEditing);
 			ShowLyricsPage(view);
 			RefreshSetlistDrawer();
 		}
@@ -1745,6 +1763,12 @@ namespace Lyrious.UILib.Setlists
 		{
 			view.FocusModeToggled += () => SetFocusMode(!focusMode);
 			view.SetFocusMode(focusMode);
+			view.SongSaved += saved =>
+			{
+				SongEdited(saved);
+				// The next song's name in the toolbar may be the one just renamed.
+				_ = UpdatePlaybackNavigationAsync();
+			};
 			// Playing turns focus mode on, stopping (pause, or editing) turns it off.
 			// A page that's been replaced (e.g. by the next song) no longer counts.
 			view.AutoScrollChanged += () =>

@@ -8,15 +8,19 @@ using Avalonia.Input;
 using Avalonia.Input.GestureRecognizers;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using Avalonia.Threading;
 
 namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
 	/// A song's lyrics in large type, scrollable, with its key, tempo and beat. The pencil button
-	/// switches to editing the lyrics in place; Save (✓) and Cancel (✕) then take its place beside
-	/// the title: Save stores the lyrics, Cancel drops the changes.
+	/// switches to editing the song in place (name, key, tempo, beat and lyrics); Save (✓) and
+	/// Cancel (✕) then take its place beside the title: Save stores the song, Cancel drops the
+	/// changes. This editor is the only one for a song: Edit in the songbook and a new song open
+	/// this view with it showing (<see cref="EditorOnly"/>).
 	/// Tapping the lyrics once asks for focus mode on or off (<see cref="FocusModeToggled"/>); in
 	/// focus mode only the song's name, key, tempo, beat and lyrics are shown. The lyrics can also
 	/// scroll by themselves (<see cref="SetAutoScroll"/>), at <see cref="ScrollSpeed"/>.
@@ -28,8 +32,22 @@ namespace Lyrious.UILib.Setlists
 		private const string SaveIcon = "M5,12 L10,17 L19,7";
 		private const string CancelIcon = "M6,6 L18,18 M18,6 L6,18";
 
-		/// <summary>The most the server stores for a song's lyrics.</summary>
+		/// <summary>The most the server stores for a song's name and lyrics.</summary>
+		private const int MaxNameLength = 100;
 		private const int MaxLyricsLength = 5000;
+
+		private static readonly string[] Keys =
+		[
+			"C", "C#", "Db", "D", "D#", "Eb", "E", "F", "F#", "Gb", "G", "G#", "Ab", "A", "A#", "Bb", "B",
+			"Cm", "C#m", "Dm", "D#m", "Ebm", "Em", "Fm", "F#m", "Gm", "G#m", "Am", "A#m", "Bbm", "Bm",
+		];
+
+		private static readonly string[] Beats = ["4/4", "3/4", "2/4", "6/8", "12/8", "5/4", "7/8"];
+
+		private const string NoKey = "(no key)";
+
+		/// <summary>The title of a song that has no name yet.</summary>
+		private const string NewSongTitle = "New song";
 
 		private readonly ContentControl body = new();
 		private readonly Button editButton;
@@ -43,7 +61,10 @@ namespace Lyrious.UILib.Setlists
 			VerticalAlignment = VerticalAlignment.Center,
 			HorizontalContentAlignment = HorizontalAlignment.Right,
 		};
-		private readonly Func<string, Task<SongDetails>> saveLyrics;
+		// While editing: the name and details as text that turns into inputs when clicked, shown in
+		// the place of the page's title.
+		private Control? editHeader;
+		private readonly Func<SongDetails, Task<SongDetails>> saveSong;
 		private readonly DispatcherTimer scrollTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
 		private readonly System.Diagnostics.Stopwatch scrollClock = new();
 		private ScrollViewer? scroller;
@@ -111,7 +132,7 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The song shown.</summary>
 		public Guid SongId => song.Id;
 
-		/// <summary>Whether the lyrics editor is open (so the page shouldn't be replaced under the user).</summary>
+		/// <summary>Whether the editor is open (so the page shouldn't be replaced under the user).</summary>
 		public bool IsEditing => titleActions.Content != editButton;
 
 		/// <summary>Whether the lyrics are scrolling by themselves.</summary>
@@ -124,14 +145,26 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when the user taps the lyrics, to turn focus mode on or off.</summary>
 		public event Action? FocusModeToggled;
 
-		/// <param name="saveLyrics">Stores new lyrics for the song and returns the updated song; throws if that fails.</param>
-		/// <param name="startEditing">Opens with the lyrics editor showing, e.g. for a new empty song.</param>
-		public LyricScrollView(SongDetails song, Func<string, Task<SongDetails>> saveLyrics, bool startEditing = false)
+		/// <summary>
+		/// Whether the view is there only for its editor (Edit in the songbook, a new song): whoever
+		/// opened it shows another page when the editing is saved or cancelled.
+		/// </summary>
+		public bool EditorOnly { get; init; }
+
+		/// <summary>Raised with the stored song after the editor saved it (the lyrics are showing again).</summary>
+		public event Action<SongDetails>? SongSaved;
+
+		/// <summary>Raised when the user cancels the editor (the lyrics are showing again).</summary>
+		public event Action? EditCancelled;
+
+		/// <param name="saveSong">Stores the edited song and returns it as stored; throws if that fails.</param>
+		/// <param name="startEditing">Opens with the editor showing, e.g. for a new song or Edit in the songbook.</param>
+		public LyricScrollView(SongDetails song, Func<SongDetails, Task<SongDetails>> saveSong, bool startEditing = false)
 		{
 			this.song = song;
-			this.saveLyrics = saveLyrics;
+			this.saveSong = saveSong;
 
-			editButton = HomeView.IconButton(EditIcon, "Edit lyrics");
+			editButton = HomeView.IconButton(EditIcon, "Edit song");
 			editButton.Click += (_, _) => ShowEditor();
 			scrollTimer.Tick += (_, _) => ScrollStep();
 			nudgeTimer.Tick += (_, _) => NudgeStep();
@@ -145,8 +178,19 @@ namespace Lyrious.UILib.Setlists
 				ShowLyrics();
 			}
 
-			Content = PageLayout.SongPage(song.Name, body, PageLayout.SongInfo(song), titleActions);
+			Content = PageLayout.SongPage(TitleOf(song), body, PageLayout.SongInfo(song), titleActions);
 			ShowTitle();
+		}
+
+		private static string TitleOf(SongDetails song) => string.IsNullOrWhiteSpace(song.Name) ? NewSongTitle : song.Name;
+
+		/// <summary>The song's name and details in the page's header, after they were edited.</summary>
+		private void ShowSongHeader()
+		{
+			if (Content is Control page)
+			{
+				PageLayout.SetSongTitle(page, TitleOf(song), PageLayout.SongInfo(song));
+			}
 		}
 
 		/// <summary>
@@ -157,6 +201,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (Content is Control page)
 			{
+				PageLayout.SetSongTitleContent(page, editHeader);
 				PageLayout.SetSongTitleShown(page, DisplaySettings.ShowSongHeader || IsEditing || string.IsNullOrWhiteSpace(song.Lyrics));
 			}
 		}
@@ -865,6 +910,7 @@ namespace Lyrious.UILib.Setlists
 			body.Content = scroller;
 			this.scroller = scroller;
 			titleActions.Content = editButton;
+			editHeader = null;
 			ShowTitle();
 		}
 
@@ -949,12 +995,19 @@ namespace Lyrious.UILib.Setlists
 			ScheduleBars();
 		}
 
-		/// <summary>The lyrics in a text box (with the error above it, if saving fails); Save and Cancel go beside the title.</summary>
+		/// <summary>
+		/// The song's name, key, tempo and beat, and its lyrics in a text box (with the error above, if
+		/// saving fails); Save and Cancel go beside the title. This is the one place a song is edited.
+		/// </summary>
 		private void ShowEditor()
 		{
 			SetAutoScroll(false);
 			StopNudge();
 			scroller = null;
+			var name = new TextBox { Text = song.Name, MaxLength = MaxNameLength, PlaceholderText = "Song name" };
+			var key = Choice(Keys, song.Key, NoKey);
+			var beat = Choice(Beats, song.Beat, null);
+			var tempo = new NumericUpDown { Value = (decimal)Math.Clamp(song.Tempo, 20, 300), Minimum = 20, Maximum = 300, Increment = 1, FormatString = "0", MinWidth = 140 };
 			var editor = new TextBox
 			{
 				Text = song.Lyrics,
@@ -962,41 +1015,240 @@ namespace Lyrious.UILib.Setlists
 				TextWrapping = TextWrapping.Wrap,
 				MaxLength = MaxLyricsLength,
 				FontSize = 18,
+				MinHeight = 120,
 				VerticalContentAlignment = VerticalAlignment.Top,
 				PlaceholderText = "Type or paste the lyrics",
 			};
-			var save = HomeView.IconButton(SaveIcon, "Save lyrics");
+			var save = HomeView.IconButton(SaveIcon, "Save song");
 			// Escape cancels too (before the page's ✕).
 			var cancel = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, "Cancel editing"), first: true);
 			var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Margin = new Thickness(0, 0, 0, 12) };
 			error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable(LyriousTheme.ErrorBrush));
-			DockPanel.SetDock(error, Dock.Top);
+
+			// The name is plain text, as in the title; clicking it puts the text box in its place, and
+			// leaving the box (or Enter) brings the text back.
+			var nameText = new TextBlock
+			{
+				FontSize = 28,
+				FontWeight = FontWeight.Bold,
+				TextWrapping = TextWrapping.Wrap,
+				Background = Brushes.Transparent,
+				Cursor = new Cursor(StandardCursorType.Hand),
+			};
+			ToolTip.SetTip(nameText, "Click to rename");
+			var nameSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 12, 0) };
+			name.FontSize = 22;
+			name.FontWeight = FontWeight.Bold;
+			name.MinWidth = 240;
+
+			void ShowNameText()
+			{
+				nameText.Text = string.IsNullOrWhiteSpace(name.Text) ? NewSongTitle : name.Text.Trim();
+				nameSlot.Content = nameText;
+			}
+
+			void ShowNameBox()
+			{
+				nameSlot.Content = name;
+				Dispatcher.UIThread.Post(() =>
+				{
+					name.Focus();
+					name.SelectAll();
+				});
+			}
+
+			nameText.Tapped += (_, e) =>
+			{
+				e.Handled = true;
+				ShowNameBox();
+			};
+			name.LostFocus += (_, _) => ShowNameText();
+			name.KeyDown += (_, e) =>
+			{
+				if (e.Key == Avalonia.Input.Key.Enter)
+				{
+					e.Handled = true;
+					editor.Focus();
+				}
+			};
+
+			// Key, tempo and beat likewise: text until clicked, then their inputs, side by side on one
+			// line (so without labels and spin buttons), until none of them has the focus any more.
+			key.MinWidth = 0;
+			beat.MinWidth = 0;
+			tempo.MinWidth = 0;
+			tempo.Width = 72;
+			tempo.ShowButtonSpinner = false;
+			ToolTip.SetTip(key, "Key");
+			ToolTip.SetTip(tempo, "Tempo (bpm)");
+			ToolTip.SetTip(beat, "Beat");
+			var detailsInputs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { key, tempo, beat } };
+
+			// The song with the key, tempo and beat as they are in the inputs.
+			SongDetails WithDetails() => song with
+			{
+				Key = key.SelectedItem as string is { } k && k != NoKey ? k : "",
+				Beat = beat.SelectedItem as string ?? song.Beat,
+				Tempo = (float)(tempo.Value ?? (decimal)song.Tempo),
+			};
+
+			var info = PageLayout.SongInfo(song);
+			var detailsText = new TextBlock
+			{
+				Text = string.IsNullOrEmpty(info) ? "Set key, tempo and beat" : info,
+				Opacity = 0.7,
+				Background = Brushes.Transparent,
+				Cursor = new Cursor(StandardCursorType.Hand),
+				Margin = new Thickness(0, 0, 0, 5),
+			};
+			ToolTip.SetTip(detailsText, "Click to change key, tempo and beat");
+			var detailsSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Content = detailsText };
+			detailsText.Tapped += (_, e) =>
+			{
+				e.Handled = true;
+				detailsSlot.Content = detailsInputs;
+				Dispatcher.UIThread.Post(() => key.Focus());
+			};
+
+			// Whether the focus is in one of the three inputs: in the input itself, or in the open
+			// list of a drop-down (which is in a window of its own, but logically inside the drop-down).
+			bool FocusInDetails()
+			{
+				if (key.IsDropDownOpen || beat.IsDropDownOpen)
+				{
+					return true;
+				}
+
+				var focused = TopLevel.GetTopLevel(detailsInputs)?.FocusManager?.GetFocusedElement();
+				if (focused is Visual visual && (visual == detailsInputs || detailsInputs.IsVisualAncestorOf(visual)))
+				{
+					return true;
+				}
+
+				for (var logical = focused as ILogical; logical != null; logical = logical.LogicalParent)
+				{
+					if (logical == detailsInputs)
+					{
+						return true;
+					}
+				}
+
+				return false;
+			}
+
+			// Checked a moment after the focus left one of them: by then it is where it went.
+			void CheckDetailsFocus() => Dispatcher.UIThread.Post(() =>
+			{
+				if (detailsSlot.Content == detailsInputs && !FocusInDetails())
+				{
+					var edited = PageLayout.SongInfo(WithDetails());
+					detailsText.Text = string.IsNullOrEmpty(edited) ? "Set key, tempo and beat" : edited;
+					detailsSlot.Content = detailsText;
+				}
+			});
+			detailsInputs.LostFocus += (_, _) => CheckDetailsFocus();
+			key.DropDownClosed += (_, _) => CheckDetailsFocus();
+			beat.DropDownClosed += (_, _) => CheckDetailsFocus();
+
+			editHeader = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { nameSlot, detailsSlot } };
 
 			// Save and Cancel take the pencil's place at the right of the title.
 			titleActions.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { save, cancel } };
 			ShowTitle();
 
-			cancel.Click += (_, _) => ShowLyrics();
+			// A song needs a name.
+			save.IsEnabled = !string.IsNullOrWhiteSpace(song.Name);
+			name.TextChanged += (_, _) => save.IsEnabled = !string.IsNullOrWhiteSpace(name.Text);
+
+			cancel.Click += (_, _) =>
+			{
+				ShowLyrics();
+				EditCancelled?.Invoke();
+			};
 			save.Click += async (_, _) =>
 			{
-				save.IsEnabled = cancel.IsEnabled = editor.IsEnabled = false;
+				var edited = WithDetails() with
+				{
+					Name = name.Text!.Trim(),
+					Lyrics = editor.Text ?? string.Empty,
+				};
+
+				var inputs = new Control[] { save, cancel, name, key, tempo, beat, editor };
+				foreach (var input in inputs)
+				{
+					input.IsEnabled = false;
+				}
+
 				error.IsVisible = false;
 				try
 				{
-					song = await saveLyrics(editor.Text ?? string.Empty);
+					song = await saveSong(edited);
+					ShowSongHeader();
 					ShowLyrics();
+					SongSaved?.Invoke(song);
 				}
 				catch (Exception ex)
 				{
-					// The edits stay in the box, so nothing is lost; Save can be tried again.
+					// The edits stay in the boxes, so nothing is lost; Save can be tried again.
 					error.Text = $"Couldn't save. {ex.Message}";
 					error.IsVisible = true;
-					save.IsEnabled = cancel.IsEnabled = editor.IsEnabled = true;
+					foreach (var input in inputs)
+					{
+						input.IsEnabled = true;
+					}
 				}
 			};
 
-			body.Content = new DockPanel { Margin = new Thickness(0, 0, 0, 16), Children = { error, editor } };
-			editor.Focus();
+			// The name and details are in the title; the lyrics take the page.
+			Grid.SetRow(editor, 1);
+			body.Content = new Grid
+			{
+				Margin = new Thickness(0, 0, 0, 16),
+				RowDefinitions = new RowDefinitions("Auto,*"),
+				Children = { error, editor },
+			};
+
+			// A song without a name yet (a new one) starts in the name's box, others in the lyrics.
+			if (string.IsNullOrWhiteSpace(song.Name))
+			{
+				nameSlot.Content = name;
+				name.AttachedToVisualTree += (_, _) => name.Focus();
+			}
+			else
+			{
+				ShowNameText();
+				editor.Focus();
+			}
 		}
+
+		/// <summary>A drop-down of <paramref name="options"/>, with the current value added if it isn't one of them.</summary>
+		private static ComboBox Choice(IEnumerable<string> options, string current, string? none)
+		{
+			var items = new List<string>();
+			if (none != null)
+			{
+				items.Add(none);
+			}
+
+			items.AddRange(options);
+			if (!string.IsNullOrWhiteSpace(current) && !items.Contains(current))
+			{
+				items.Add(current);
+			}
+
+			return new ComboBox
+			{
+				ItemsSource = items,
+				SelectedItem = string.IsNullOrWhiteSpace(current) ? none ?? items.FirstOrDefault() : current,
+				MinWidth = 120,
+			};
+		}
+
+		private static Control Field(string label, Control input) => new StackPanel
+		{
+			Spacing = 4,
+			Margin = new Thickness(0, 0, 16, 0),
+			Children = { new TextBlock { Text = label, FontSize = 13, Opacity = 0.75 }, input },
+		};
 	}
 }
