@@ -47,6 +47,9 @@ namespace Lyrious.UILib
 		/// <summary>The lyrics' zoom in the scroll view (pinch), e.g. "1.4"; none for normal size.</summary>
 		public const string LyricsZoom = "lyrics-zoom";
 
+		/// <summary>"true" sizes the whole app to the window (see <see cref="Setlists.DisplaySettings.DynamicZoom"/>); off unless set.</summary>
+		public const string DynamicZoom = "dynamic-zoom";
+
 		/// <summary>"true" shows the song's name and details above the lyrics in the scroll view; off unless set.</summary>
 		public const string ShowSongHeader = "show-song-header";
 	}

@@ -64,24 +64,56 @@ namespace Lyrious.UILib
 		/// <summary>"125%".</summary>
 		public static string Describe(double scale) => $"{Math.Round(scale * 100)}%";
 
-		/// <summary>Puts the app's content in a scaled box that follows <see cref="Value"/>.</summary>
+		/// <summary>
+		/// Puts the app's content in a scaled box that follows <see cref="Value"/> and, with the
+		/// dynamic zoom on, the window's size. The box fills the window and isn't scaled itself, so
+		/// its size is the window's.
+		/// </summary>
 		public static Control Wrap(Control content)
 		{
-			return Track(new LayoutTransformControl { Child = content });
+			var root = new LayoutTransformControl { Child = content };
+			root.SizeChanged += (_, e) =>
+			{
+				windowSize = e.NewSize;
+				Apply();
+			};
+			return Track(root);
 		}
 
-		/// <summary>Scales the box now and whenever <see cref="Value"/> changes (while it's alive).</summary>
+		// The window's size, for the dynamic zoom; nothing until the app's content has been laid out.
+		private static Size windowSize;
+
+		static UiScale() => Setlists.DisplaySettings.DynamicZoomChanged += Apply;
+
+		/// <summary>
+		/// The scale shown: <see cref="Value"/>, times the dynamic zoom's factor when that is on
+		/// (<see cref="Setlists.DisplaySettings.DynamicZoom"/>): the smaller of the window's width and
+		/// height, where <see cref="Setlists.DisplaySettings.DynamicZoomSize"/> is 1.
+		/// </summary>
+		private static double Effective
+		{
+			get
+			{
+				var smaller = Math.Min(windowSize.Width, windowSize.Height);
+				var dynamic = Setlists.DisplaySettings.DynamicZoom && smaller > 0
+					? Math.Clamp(smaller / Setlists.DisplaySettings.DynamicZoomSize, 0.5, 4)
+					: 1;
+				return Value * dynamic;
+			}
+		}
+
+		/// <summary>Scales the box now and whenever the scale changes (while it's alive).</summary>
 		private static T Track<T>(T root) where T : LayoutTransformControl
 		{
 			roots.RemoveAll(reference => !reference.TryGetTarget(out _));
 			roots.Add(new WeakReference<LayoutTransformControl>(root));
-			ApplyTo(root, Value);
+			ApplyTo(root, Effective);
 			return root;
 		}
 
 		private static void Apply()
 		{
-			var scale = Value;
+			var scale = Effective;
 			roots.RemoveAll(reference => !reference.TryGetTarget(out _));
 			foreach (var reference in roots)
 			{
@@ -93,6 +125,13 @@ namespace Lyrious.UILib
 		}
 
 		private static void ApplyTo(LayoutTransformControl root, double scale)
-			=> root.LayoutTransform = Math.Abs(scale - 1) < 0.001 ? null : new ScaleTransform(scale, scale);
+		{
+			// Left alone when unchanged: resizing the window asks on every step.
+			var shown = root.LayoutTransform is ScaleTransform current ? current.ScaleX : 1;
+			if (Math.Abs(scale - shown) >= 0.001)
+			{
+				root.LayoutTransform = Math.Abs(scale - 1) < 0.001 ? null : new ScaleTransform(scale, scale);
+			}
+		}
 	}
 }

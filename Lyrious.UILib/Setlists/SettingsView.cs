@@ -27,6 +27,13 @@ namespace Lyrious.UILib.Setlists
 			};
 			songHeader.IsCheckedChanged += (_, _) => DisplaySettings.ShowSongHeader = songHeader.IsChecked == true;
 
+			var dynamicZoom = new ToggleSwitch
+			{
+				IsChecked = DisplaySettings.DynamicZoom,
+				OnContent = "On",
+				OffContent = "Off",
+			};
+			dynamicZoom.IsCheckedChanged += (_, _) => DisplaySettings.DynamicZoom = dynamicZoom.IsChecked == true;
 
 			// The interface size: a list of sizes, applied at once.
 			var scale = new ComboBox { MinWidth = 100 };
@@ -68,6 +75,10 @@ namespace Lyrious.UILib.Setlists
 						"Song title above the lyrics",
 						"Shows the song's name, key, tempo and beat above the lyrics. The song's name is in the drawer either way.",
 						songHeader),
+					Setting(
+						"Dynamic zoom",
+						"Sizes the whole app, lyrics included, to the window: the smaller of its width and height sets the zoom, where 500 px is 100 %. The interface size above and the lyrics' own zoom apply on top.",
+						dynamicZoom),
 					Section("Playback"),
 					Setting(
 						"Next song when stopping at the end",
@@ -298,6 +309,26 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Raised when <see cref="ShowSongHeader"/> changes.</summary>
 		public static event Action? ShowSongHeaderChanged;
+
+		/// <summary>The smaller of the window's width and height at which <see cref="DynamicZoom"/> is 100 %.</summary>
+		public const double DynamicZoomSize = 500;
+
+		/// <summary>
+		/// Whether the whole app is sized to the window (see <see cref="UiScale"/>): the smaller of its width and height,
+		/// where <see cref="DynamicZoomSize"/> is 100 %. Off unless turned on.
+		/// </summary>
+		public static bool DynamicZoom
+		{
+			get => App.Settings.Get(SettingKeys.DynamicZoom) == "true";
+			set
+			{
+				App.Settings.Set(SettingKeys.DynamicZoom, value ? "true" : null);
+				DynamicZoomChanged?.Invoke();
+			}
+		}
+
+		/// <summary>Raised when <see cref="DynamicZoom"/> changes.</summary>
+		public static event Action? DynamicZoomChanged;
 	}
 
 	/// <summary>Playback settings, read from and saved to <see cref="App.Settings"/>.</summary>
