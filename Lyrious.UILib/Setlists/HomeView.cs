@@ -43,7 +43,6 @@ namespace Lyrious.UILib.Setlists
 		private readonly ISetlistService service;
 		private readonly TextBlock groupName = new() { Text = "Choose a band", FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
 		private readonly TextBlock setlistTitle = new() { Text = "Setlist", FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
-		private readonly TextBlock setlistSubtitle = new() { Opacity = 0.7, IsVisible = false };
 		private readonly ContentControl setlistDrawerBody = new();
 		private readonly TextBlock currentSetlistName = new() { Text = "Choose a setlist", FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
 		private readonly TextBlock currentSongName = new() { Text = NoSong, FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -168,7 +167,6 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 			chooseGroupButton = DrawerPicker("Band", groupName, "Choose a band", () => _ = RunAsync(ShowGroupsAsync));
-			chooseGroupButton.Margin = new Thickness(0, 12, 0, 0);
 
 			var menuButton = IconButton(MenuIcon, "Open menu");
 			menuButton.HorizontalAlignment = HorizontalAlignment.Left;
@@ -981,7 +979,6 @@ namespace Lyrious.UILib.Setlists
 			{
 				Content = new StackPanel
 				{
-					Spacing = 2,
 					Children = { new TextBlock { Text = caption, FontSize = 13, Opacity = 0.75 }, current },
 				},
 				HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -1071,7 +1068,9 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 4,
 				Children =
 				{
-					new DockPanel { Children = { buttons, new TextBlock { Text = user.DisplayName, FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center } } },
+					// The name sits in a little from the edge, in line with the items' text below,
+					// and 8px above the first item (4 of margin plus the panel's 4 of spacing).
+					new DockPanel { Margin = new Thickness(0, 0, 0, 4), Children = { buttons, new TextBlock { Text = user.DisplayName, FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) } } },
 					chooseGroupButton,
 					chooseSetlistButton,
 					chooseSongButton,
@@ -1102,7 +1101,7 @@ namespace Lyrious.UILib.Setlists
 
 			var panel = new DockPanel
 			{
-				Margin = new Thickness(16, 8, 8, 16),
+				Margin = new Thickness(8, 8, 8, 16),
 				LastChildFill = false,
 				Children = { header, account },
 			};
@@ -1176,7 +1175,7 @@ namespace Lyrious.UILib.Setlists
 			await ShowSetlistAsync(group, setlist);
 		}
 
-		/// <summary>The right drawer: a fixed header (setlist name, song count, "+", pin and ✕) and the song list.</summary>
+		/// <summary>The right drawer: a fixed header (setlist name, "+", pin and ✕) and the song list.</summary>
 		private Control SetlistDrawerContent(Button openButton)
 		{
 			var buttons = DrawerButtons(setlistDrawer, openButton, "setlist");
@@ -1273,22 +1272,17 @@ namespace Lyrious.UILib.Setlists
 				ColumnDefinitions = new ColumnDefinitions("*,Auto"),
 				Children = { setlistTitle, setlistSearchBox, buttons, endSearchButton },
 			};
-			var header = new StackPanel
-			{
-				Spacing = 2,
-				Margin = new Thickness(0, 0, 0, 12),
-				Children = { titleRow, setlistSubtitle },
-			};
-			DockPanel.SetDock(header, Dock.Top);
+			titleRow.Margin = new Thickness(8, 0, 0, 8);
+			DockPanel.SetDock(titleRow, Dock.Top);
 
 			// As wide as the open drawer whatever room it has, so it slides in and out as it is instead
 			// of being squeezed while the drawer opens or closes.
 			return new DockPanel
 			{
-				Margin = new Thickness(16, 8, 8, 0),
-				Width = setlistDrawer.OpenPaneLength - 24,
+				Margin = new Thickness(8, 8, 8, 0),
+				Width = setlistDrawer.OpenPaneLength - 16,
 				HorizontalAlignment = HorizontalAlignment.Left,
-				Children = { header, setlistDrawerBody },
+				Children = { titleRow, setlistDrawerBody },
 			};
 		}
 
@@ -1305,7 +1299,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				drawerSetlistId = null;
 				drawerRows.Clear();
-				SetSetlistHeader("Setlist", null);
+				setlistTitle.Text = "Setlist";
 				setlistDrawerBody.Content = DrawerMessage("No setlist is selected yet. Choose one from the list of setlists.");
 				return;
 			}
@@ -1313,7 +1307,7 @@ namespace Lyrious.UILib.Setlists
 			var sameSetlist = drawerSetlistId == setlist.Id;
 			if (!sameSetlist)
 			{
-				SetSetlistHeader(setlist.Name, null);
+				setlistTitle.Text = setlist.Name;
 				setlistDrawerBody.Content = new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 8) };
 			}
 
@@ -1325,7 +1319,7 @@ namespace Lyrious.UILib.Setlists
 					return;
 				}
 
-				SetSetlistHeader(setlist.Name, entries.Count == 1 ? "1 song" : $"{entries.Count} songs");
+				setlistTitle.Text = setlist.Name;
 				drawerSetlistId = setlist.Id;
 				drawerRows.Clear();
 				if (entries.Count == 0)
@@ -1418,13 +1412,6 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The first song listed in the right drawer (the first found, while searching).</summary>
 		private Button? FirstDrawerSongShown()
 			=> setlistDrawerBody.Content is ScrollViewer { Content: Panel list } ? list.Children.OfType<Button>().FirstOrDefault(row => row.IsVisible) : null;
-
-		private void SetSetlistHeader(string title, string? subtitle)
-		{
-			setlistTitle.Text = title;
-			setlistSubtitle.Text = subtitle;
-			setlistSubtitle.IsVisible = subtitle != null;
-		}
 
 		/// <summary>
 		/// Keeps the setlist drawer in step with the page. When only the song changed within the
