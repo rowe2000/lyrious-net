@@ -1134,8 +1134,12 @@ namespace Lyrious.UILib.Setlists
 				var site = sound != null ? MediaSite.Sound : MediaLinks.SiteOf(uri);
 				var playing = sound != null && sounds?.Playing == sound.Id;
 				button.Content = MediaLinks.Icon(site, playing);
+				// Played slower or faster, or in another key: said, so it's no surprise.
+				var tuned = sounds != null && (Math.Abs(sounds.Speed - 1) > 0.001 || Math.Abs(sounds.Pitch) > 0.001)
+					? $" at {SoundTuning.DescribeSpeed(sounds.Speed)}, {SoundTuning.DescribePitch(sounds.Pitch).ToLowerInvariant()}"
+					: "";
 				var tip = sound != null
-					? playing ? $"Stop {sound.Name}" : $"Play {sound.Name} (hold for more)"
+					? playing ? $"Stop {sound.Name}" : $"Play {sound.Name}{tuned} (hold for more, e.g. speed and pitch)"
 					: uri == null
 						? "Media: hold for a search on Spotify or YouTube, to paste a link or to pick a sound file"
 						: site switch
@@ -1314,8 +1318,30 @@ namespace Lyrious.UILib.Setlists
 				menu.Items.Add(Item("Pick a sound file…", PickSoundAsync));
 			}
 
+			// For a sound file: slower or faster, higher or lower (see SoundTuning), where the app plays it.
+			var tuning = Item("Speed and pitch…", () =>
+			{
+				if (sounds != null)
+				{
+					var flyout = new Flyout { Content = SoundTuning.Create(sounds) };
+					// The tooltip says the speed and pitch.
+					flyout.Closed += (_, _) => ShowLink();
+					flyout.ShowAt(button);
+				}
+
+				return Task.CompletedTask;
+			});
+			if (sounds is { CanChangeSpeed: true } or { CanChangePitch: true })
+			{
+				menu.Items.Add(tuning);
+			}
+
 			menu.Items.Add(remove);
-			menu.Opening += (_, _) => remove.IsVisible = !string.IsNullOrWhiteSpace(getLink());
+			menu.Opening += (_, _) =>
+			{
+				remove.IsVisible = !string.IsNullOrWhiteSpace(getLink());
+				tuning.IsVisible = MediaLinks.SoundOf(getLink()) != null;
+			};
 
 			button.LongClick += () => menu.ShowAt(button);
 			button.Click += (_, _) =>

@@ -12,6 +12,10 @@
     <PackageReference Include="Avalonia.Desktop" Version="12.1.6" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.6" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.6" />
+    <!-- Sound files played in the app (FileSoundStore.cs): NAudio plays them, SoundTouch changes
+         speed and pitch apart. SoundTouch (LGPL) is fed by FileSoundStore's own sample provider. -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="SoundTouch.Net" Version="2.3.2" />
     <!-- Sharing on the local network (LanSharing.cs): forwards other devices' browsers to the server. -->
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
   </ItemGroup>

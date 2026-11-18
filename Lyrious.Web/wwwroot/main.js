@@ -94,8 +94,89 @@ globalThis.lyriousInstances = (() => {
 })();
 
 // Sound files for songs' media links (BrowserSoundStore.cs): kept in IndexedDB (local storage is
-// far too small for them), played in the page with an <audio> element.
+// far too small for them), played in the page with an <audio> element. Its playbackRate, with the
+// pitch kept, changes the speed; a pitch shifter in the Web Audio API changes the pitch, without
+// the speed. That needs an AudioWorklet, only in a secure context (https or localhost).
 globalThis.lyriousSounds = (() => {
+    // A pitch shifter: two read heads glide through a short delay line, faster (higher) or slower
+    // (lower) than it's written, each faded in and out as the other wraps around, so the jumps
+    // aren't heard. The speed stays: as much comes out as goes in.
+    const shifterCode = `
+        class LyriousPitchShifter extends AudioWorkletProcessor {
+            static get parameterDescriptors() {
+                return [{ name: "ratio", defaultValue: 1, minValue: 0.25, maxValue: 4, automationRate: "k-rate" }];
+            }
+            constructor() {
+                super();
+                this.size = 1 << 15;
+                this.window = Math.round(sampleRate * 0.07);
+                this.buffers = [];
+                this.write = 0;
+                this.phase = 0;
+            }
+            read(buffer, delay) {
+                const position = this.write - delay;
+                const index = Math.floor(position);
+                const fraction = position - index;
+                const mask = this.size - 1;
+                const a = buffer[index & mask], b = buffer[(index + 1) & mask];
+                return a + (b - a) * fraction;
+            }
+            process(inputs, outputs, parameters) {
+                const input = inputs[0], output = outputs[0];
+                const ratio = parameters.ratio[0];
+                const frames = output[0] ? output[0].length : 128;
+                while (this.buffers.length < output.length) this.buffers.push(new Float32Array(this.size));
+                const step = (1 - ratio) / this.window;
+                for (let i = 0; i < frames; i++) {
+                    for (let c = 0; c < output.length; c++) {
+                        const channel = input[c] || input[0];
+                        this.buffers[c][this.write] = channel ? channel[i] : 0;
+                    }
+                    if (ratio === 1) {
+                        for (let c = 0; c < output.length; c++) output[c][i] = this.buffers[c][this.write];
+                    } else {
+                        this.phase = (this.phase + step) % 1;
+                        if (this.phase < 0) this.phase += 1;
+                        const first = this.phase, second = (this.phase + 0.5) % 1;
+                        const gainFirst = Math.sin(Math.PI * first) ** 2, gainSecond = Math.sin(Math.PI * second) ** 2;
+                        for (let c = 0; c < output.length; c++) {
+                            output[c][i] = this.read(this.buffers[c], 1 + first * this.window) * gainFirst
+                                + this.read(this.buffers[c], 1 + second * this.window) * gainSecond;
+                        }
+                    }
+                    this.write = (this.write + 1) & (this.size - 1);
+                }
+                return true;
+            }
+        }
+        registerProcessor("lyrious-pitch-shifter", LyriousPitchShifter);`;
+
+    const canShiftPitch = typeof AudioWorkletNode === "function" && globalThis.isSecureContext;
+    let context = null;
+    let shifterReady = null;
+    let shifter = null;
+    let source = null;
+    let speed = 1;
+    let pitch = 0;
+
+    async function connect(element) {
+        if (!canShiftPitch) return;
+        try {
+            context ??= new AudioContext();
+            shifterReady ??= context.audioWorklet.addModule(URL.createObjectURL(new Blob([shifterCode], { type: "text/javascript" })));
+            await shifterReady;
+            await context.resume();
+            shifter ??= new AudioWorkletNode(context, "lyrious-pitch-shifter");
+            shifter.connect(context.destination);
+            shifter.parameters.get("ratio").value = 2 ** (pitch / 12);
+            source = context.createMediaElementSource(element);
+            source.connect(shifter);
+        } catch (error) {
+            console.warn("The pitch can't be changed here:", error);
+        }
+    }
+
     let database = null;
     function open() {
         database ??= new Promise((resolve, reject) => {
@@ -125,6 +206,8 @@ globalThis.lyriousSounds = (() => {
 
     function stop() {
         audio?.pause();
+        source?.disconnect();
+        source = null;
         audio = null;
         playingId = null;
         if (url) URL.revokeObjectURL(url);
@@ -142,15 +225,28 @@ globalThis.lyriousSounds = (() => {
             if (!blob) return false;
             stop();
             url = URL.createObjectURL(blob);
-            audio = new Audio(url);
+            const element = new Audio(url);
+            audio = element;
             playingId = id;
-            audio.onended = () => { stop(); changed(); };
-            await audio.play();
+            element.preservesPitch = true;
+            element.playbackRate = speed;
+            element.onended = () => { if (audio === element) { stop(); changed(); } };
+            await connect(element);
+            await element.play();
             return true;
         },
         stop,
         playing: () => playingId,
         onChanged: callback => { changed = callback; },
+        canChangePitch: () => canShiftPitch,
+        setSpeed: value => {
+            speed = value;
+            if (audio) audio.playbackRate = speed;
+        },
+        setPitch: value => {
+            pitch = value;
+            shifter?.parameters.get("ratio").setValueAtTime(2 ** (pitch / 12), context.currentTime);
+        },
     };
 })();
 

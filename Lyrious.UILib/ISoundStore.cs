@@ -27,5 +27,23 @@ namespace Lyrious.UILib
 
 		/// <summary>Raised when <see cref="Playing"/> changes, on any thread.</summary>
 		event Action? PlayingChanged;
+
+		/// <summary>Whether <see cref="Speed"/> can be changed here (not when the device's own player plays the sounds).</summary>
+		bool CanChangeSpeed { get; }
+
+		/// <summary>Whether <see cref="Pitch"/> can be changed here.</summary>
+		bool CanChangePitch { get; }
+
+		/// <summary>
+		/// How fast sounds play, without changing their pitch: 1 as recorded, 0.75 three quarters as
+		/// fast (to practise along). Applies at once to the sound playing, and to those played after.
+		/// </summary>
+		double Speed { get; set; }
+
+		/// <summary>
+		/// The pitch in semitones, without changing the speed: 0 as recorded, -2 a whole tone lower (to
+		/// play along in another key). Applies at once to the sound playing, and to those played after.
+		/// </summary>
+		double Pitch { get; set; }
 	}
 }

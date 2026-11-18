@@ -21,6 +21,35 @@ internal sealed partial class BrowserSoundStore : ISoundStore
 
     public event Action? PlayingChanged;
 
+    private double speed = 1;
+    private double pitch;
+
+    // The browser keeps the pitch when the speed changes (playbackRate with preservesPitch).
+    public bool CanChangeSpeed => true;
+
+    // Needs an AudioWorklet: only in a secure context (https, or http://localhost).
+    public bool CanChangePitch => GetCanChangePitch();
+
+    public double Speed
+    {
+        get => speed;
+        set
+        {
+            speed = Math.Clamp(value, 0.25, 4);
+            SetSpeedNow(speed);
+        }
+    }
+
+    public double Pitch
+    {
+        get => pitch;
+        set
+        {
+            pitch = Math.Clamp(value, -24, 24);
+            SetPitchNow(pitch);
+        }
+    }
+
     public async Task SaveAsync(string id, Stream content)
     {
         using var copy = new MemoryStream();
@@ -69,6 +98,15 @@ internal sealed partial class BrowserSoundStore : ISoundStore
 
     [JSImport("globalThis.lyriousSounds.playing")]
     private static partial string? GetPlaying();
+
+    [JSImport("globalThis.lyriousSounds.canChangePitch")]
+    private static partial bool GetCanChangePitch();
+
+    [JSImport("globalThis.lyriousSounds.setSpeed")]
+    private static partial void SetSpeedNow(double speed);
+
+    [JSImport("globalThis.lyriousSounds.setPitch")]
+    private static partial void SetPitchNow(double semitones);
 
     [JSImport("globalThis.lyriousSounds.onChanged")]
     private static partial void SetEndedCallback([JSMarshalAs<JSType.Function>] Action changed);
