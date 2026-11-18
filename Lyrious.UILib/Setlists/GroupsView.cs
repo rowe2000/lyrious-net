@@ -43,6 +43,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised with the name when the user adds a band.</summary>
 		public event Action<string>? GroupCreateRequested;
 
+		/// <summary>Raised with the new name when the user renames a band (clicking its name).</summary>
+		public event Action<GroupSummary, string>? GroupRenameRequested;
+
 		/// <summary>Raised when an admin deletes the band (after confirming).</summary>
 		public event Action<GroupSummary>? GroupDeleteRequested;
 
@@ -92,27 +95,28 @@ namespace Lyrious.UILib.Setlists
 		private IReadOnlyList<GroupMember> MembersOf(GroupSummary group) => members.GetValueOrDefault(group.Id) ?? [];
 
 		/// <summary>
-		/// Shows the band's details (nothing when there's no band), and all the other bands in the
-		/// list above; clicking one of them shows that one instead.
+		/// Shows the band's details (nothing when there's no band), and all the bands (this one
+		/// highlighted) as buttons above; clicking another shows that one instead.
 		/// </summary>
 		private void ShowBand(GroupSummary? group)
 		{
 			shownGroup = group;
 			details.Content = group == null ? null : Details(group);
 
-			var others = groups.Where(other => other.Id != group?.Id).ToArray();
 			otherBands.Children.Clear();
-			foreach (var other in others)
+			foreach (var band in groups)
 			{
-				// As wide as the name (and the joined band's ✓).
-				var button = new Button { Content = GroupContent(other, joined: other.Id == currentGroupId), Padding = new Thickness(12, 6) };
-				if (other.Id == currentGroupId)
+				// As wide as the name (and the joined band's ✓); the one shown below is highlighted.
+				var button = new Button { Content = GroupContent(band, joined: band.Id == currentGroupId), Padding = new Thickness(12, 6) };
+				if (band.Id == group?.Id)
 				{
-					// The joined band is highlighted.
 					button.Classes.Add("accent");
 				}
+				else
+				{
+					button.Click += (_, _) => ShowBand(band);
+				}
 
-				button.Click += (_, _) => ShowBand(other);
 				otherBands.Children.Add(button);
 			}
 		}
@@ -154,20 +158,24 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			DockPanel.SetDock(actions, Dock.Right);
-			var header = new DockPanel
+			// The name (or the box to change it) on one line with the tools; the status below.
+			var header = new StackPanel
 			{
+				Spacing = 2,
 				Children =
 				{
-					actions,
-					new StackPanel
+					new DockPanel
 					{
-						Spacing = 2,
 						Children =
 						{
-							new TextBlock { Text = group.Name, FontSize = 20, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
-							new TextBlock { Text = string.Join(" · ", status), Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
+							actions,
+							// The private band's name is fixed; any other band's can be changed by its members.
+							group.IsPrivate
+								? new TextBlock { Text = group.Name, FontSize = 20, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MinHeight = 40, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0, 6) }
+								: PageLayout.EditableTitle(group.Name, name => GroupRenameRequested?.Invoke(group, name)),
 						},
 					},
+					new TextBlock { Text = string.Join(" · ", status), Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
 				},
 			};
 
@@ -182,6 +190,16 @@ namespace Lyrious.UILib.Setlists
 			{
 				panel.Children.Add(new TextBlock { Text = $"Members ({bandMembers.Count})", FontWeight = FontWeight.SemiBold });
 				panel.Children.Add(memberRows);
+			}
+			else
+			{
+				// What the private band is for.
+				panel.Children.Add(new TextBlock
+				{
+					Text = "This is your private place to keep your own songs and setlists. No one else can see them, and no one can be invited here.",
+					TextWrapping = TextWrapping.Wrap,
+					Opacity = 0.85,
+				});
 			}
 
 			if (isAdmin)

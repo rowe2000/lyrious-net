@@ -432,6 +432,78 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
+		/// A card's title (e.g. a setlist's or band's name); clicking it turns it into a box to change
+		/// it. Enter (or leaving the box) calls <paramref name="rename"/> with a new, non-empty name;
+		/// Escape keeps the old one.
+		/// </summary>
+		public static Control EditableTitle(string text, Action<string> rename)
+		{
+			var host = new ContentControl();
+			var title = new TextBlock
+			{
+				Text = text,
+				FontSize = 20,
+				FontWeight = FontWeight.SemiBold,
+				TextWrapping = TextWrapping.Wrap,
+				Cursor = new Cursor(StandardCursorType.Ibeam),
+				Background = Brushes.Transparent,
+				// As tall as the tool buttons (and the box), centred on their line, so nothing moves when editing.
+				MinHeight = 40,
+				Padding = new Thickness(0, 6),
+				VerticalAlignment = VerticalAlignment.Center,
+			};
+			ToolTip.SetTip(title, "Click to rename");
+
+			void Edit()
+			{
+				var box = new TextBox { Text = title.Text, FontSize = 20, FontWeight = FontWeight.SemiBold, MaxLength = 100, Height = 40, VerticalAlignment = VerticalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+				var done = false;
+
+				void Finish(bool save)
+				{
+					if (done)
+					{
+						return;
+					}
+
+					done = true;
+					var newName = box.Text?.Trim() ?? "";
+					host.Content = title;
+					if (save && newName.Length > 0 && newName != title.Text)
+					{
+						title.Text = newName;
+						rename(newName);
+					}
+				}
+
+				box.KeyDown += (_, e) =>
+				{
+					if (e.Key == Key.Enter)
+					{
+						e.Handled = true;
+						Finish(save: true);
+					}
+					else if (e.Key == Key.Escape)
+					{
+						e.Handled = true;
+						Finish(save: false);
+					}
+				};
+				box.LostFocus += (_, _) => Finish(save: true);
+				box.AttachedToVisualTree += (_, _) =>
+				{
+					box.Focus();
+					box.SelectAll();
+				};
+				host.Content = box;
+			}
+
+			title.Tapped += (_, _) => Edit();
+			host.Content = title;
+			return host;
+		}
+
+		/// <summary>
 		/// Gives an icon button (e.g. the trash) a red background with a white icon while the
 		/// pointer is over it or it's pressed.
 		/// </summary>

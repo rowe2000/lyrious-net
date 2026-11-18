@@ -160,7 +160,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				if (currentGroup is { } group)
 				{
-					_ = RunAsync(async () => ShowSongs(group, await service.GetSongbookSongsAsync(group.Id)));
+					_ = RunAsync(() => ShowSongsAsync(group));
 				}
 			});
 			chooseSongButton.IsEnabled = false;
@@ -1638,6 +1638,10 @@ namespace Lyrious.UILib.Setlists
 			history.Clear();
 			var start = await StartPage.DetermineAsync(service);
 			groupName.Text = start.Group?.Name ?? "Choose a band";
+			// The private band's name in italics (it's not a band as such); a band's in bold.
+			var isPrivate = start.Group?.IsPrivate == true;
+			groupName.FontWeight = isPrivate ? FontWeight.Normal : FontWeight.SemiBold;
+			groupName.FontStyle = isPrivate ? FontStyle.Italic : FontStyle.Normal;
 			currentGroup = start.Group;
 			_ = ShowPresentMembersAsync();
 			currentSetlist = null;
@@ -1710,6 +1714,18 @@ namespace Lyrious.UILib.Setlists
 				await service.RenameMemberAsync(member.MemberId, name);
 				await ShowGroupsAsync(group.Id, replace: true);
 				_ = ShowPresentMembersAsync();
+			});
+			// Renamed: the page (and, for the joined band, the menu) show the new name.
+			view.GroupRenameRequested += (group, name) => _ = RunAsync(async () =>
+			{
+				await service.RenameGroupAsync(group.Id, name);
+				if (group.Id == currentGroup?.Id)
+				{
+					currentGroup = currentGroup with { Name = name };
+					groupName.Text = name;
+				}
+
+				await ShowGroupsAsync(group.Id, replace: true);
 			});
 			view.MemberRemoveRequested += (group, member) => _ = RunAsync(async () =>
 			{
@@ -1789,6 +1805,18 @@ namespace Lyrious.UILib.Setlists
 				RefreshSetlistDrawer(reload: true);
 				_ = UpdatePlaybackNavigationAsync();
 				ShowSetlists(group, setlists, replace: true);
+			});
+			// Renamed: the page (and, for the current setlist, the drawers) show the new name.
+			view.SetlistRenameRequested += (setlist, name) => _ = RunAsync(async () =>
+			{
+				await service.RenameSetlistAsync(setlist.Id, name);
+				if (setlist.Id == currentSetlist?.Id)
+				{
+					SetCurrentSetlist(setlist with { Name = name });
+					RefreshSetlistDrawer(reload: false);
+				}
+
+				ShowSetlists(group, await service.GetSetlistsAsync(group.Id), replace: true, selectedSetlistId: setlist.Id);
 			});
 			view.SetlistDeleteRequested += setlist => _ = RunAsync(async () =>
 			{
@@ -1876,13 +1904,32 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// The band's songbook, to choose a song. A song that is in the current setlist opens from
-		/// there (and becomes the group's current song); any other song just shows its lyrics.
+		/// The songbooks to choose between on the songbook page: the private band's and the joined
+		/// band's. None (nothing to choose) when the joined band is the private one.
+		/// </summary>
+		private async Task<IReadOnlyList<GroupSummary>> SongbookChoicesAsync()
+		{
+			if (currentGroup is not { IsPrivate: false } joined)
+			{
+				return [];
+			}
+
+			var own = (await service.GetGroupsAsync()).FirstOrDefault(group => group.IsPrivate);
+			return own == null ? [] : [own, joined];
+		}
+
+		/// <summary>
+		/// A band's songbook (the joined band's, or the private one), to choose a song. A song that is
+		/// in the current setlist opens from there (and becomes the group's current song); any other
+		/// song just shows its lyrics.
 		/// </summary>
 		/// <param name="replace">Takes the current songbook page's place (after a change to it), so ✕ doesn't go back to the old one.</param>
-		private void ShowSongs(GroupSummary group, IReadOnlyList<SongDetails> songs, bool replace = false)
+		private async Task ShowSongsAsync(GroupSummary group, bool replace = false)
 		{
-			var view = new SongsView(group, songs, currentSongId);
+			var songs = await service.GetSongbookSongsAsync(group.Id);
+			var view = new SongsView(group, songs, currentSongId, await SongbookChoicesAsync());
+			// Another songbook chosen: shown in this page's place.
+			view.SongbookChosen += chosen => _ = RunAsync(() => ShowSongsAsync(chosen, replace: true));
 			view.SongSelected += song => _ = RunAsync(async () =>
 			{
 				if (currentSetlist is { } setlist
@@ -1914,7 +1961,7 @@ namespace Lyrious.UILib.Setlists
 				// The setlist may have lost a song too.
 				playbackEntries = [];
 				RefreshSetlistDrawer(reload: true);
-				ShowSongs(group, await service.GetSongbookSongsAsync(group.Id), replace: true);
+				await ShowSongsAsync(group, replace: true);
 			});
 			ShowPage(view, replace);
 		}
@@ -1967,12 +2014,10 @@ namespace Lyrious.UILib.Setlists
 			view.SongSaved += saved => _ = RunAsync(async () =>
 			{
 				SongEdited(saved);
-				var songs = await service.GetSongbookSongsAsync(group.Id);
-
 				// The songbook again, updated, in the old one's place: neither the editor nor the old
 				// songbook is left to go back to.
 				ForgetBackTo<SongsView>();
-				ShowSongs(group, songs, replace: true);
+				await ShowSongsAsync(group, replace: true);
 			});
 			page.Content = view;
 		}
@@ -2315,7 +2360,7 @@ namespace Lyrious.UILib.Setlists
 
 				if (previous is SongsView songbook && songbook.CurrentSongId != currentSongId)
 				{
-					_ = RunAsync(async () => ShowSongs(songbook.Group, await service.GetSongbookSongsAsync(songbook.Group.Id), replace: true));
+					_ = RunAsync(() => ShowSongsAsync(songbook.Group, replace: true));
 					return;
 				}
 

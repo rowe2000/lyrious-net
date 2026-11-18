@@ -32,6 +32,8 @@ namespace Lyrious.UILib.Setlists
 		private const string EditIcon = "M4,20 L8,19 L19,8 L16,5 L5,16 Z M14,7 L17,10";
 		private const string SaveIcon = "M5,12 L10,17 L19,7";
 		private const string CancelIcon = "M6,6 L18,18 M18,6 L6,18";
+		// A grid of three columns: the chord grid.
+		private const string ChordGridIcon = "M4,5 H20 V19 H4 Z M9.3,5 V19 M14.7,5 V19";
 
 		/// <summary>The most the server stores for a song's name and lyrics.</summary>
 		private const int MaxNameLength = 100;
@@ -54,6 +56,7 @@ namespace Lyrious.UILib.Setlists
 
 		private readonly ContentControl body = new();
 		private readonly Button editButton;
+		private readonly Button chordGridButton;
 		// Beside the pencil: the song's media link (see MediaButton); a change to it is saved at once.
 		private readonly LongClickButton mediaButton;
 		private readonly Action showMediaLink;
@@ -121,6 +124,16 @@ namespace Lyrious.UILib.Setlists
 		private double? pendingZoom;
 		private double pendingZoomAnchor;
 
+		/// <summary>
+		/// Whether lyrics with chords show as a chord grid (chords only, in equal columns by bar) instead
+		/// of chords over the words; remembered on this device for every song.
+		/// </summary>
+		public static bool ChordGrid
+		{
+			get => App.Settings.Get(SettingKeys.ChordGrid) == "true";
+			private set => App.Settings.Set(SettingKeys.ChordGrid, value ? "true" : null);
+		}
+
 		/// <summary>The lyrics' zoom, remembered between songs and app starts; 1 is normal size.</summary>
 		public static double LyricsZoom
 		{
@@ -176,6 +189,13 @@ namespace Lyrious.UILib.Setlists
 
 			editButton = HomeView.IconButton(EditIcon, "Edit song");
 			editButton.Click += (_, _) => ShowEditor();
+			// Chords only, in bar columns, or chords over the words (remembered for every song).
+			chordGridButton = HomeView.IconButton(ChordGridIcon, "Chord grid");
+			chordGridButton.Click += (_, _) =>
+			{
+				ChordGrid = !ChordGrid;
+				ShowLyrics();
+			};
 			(mediaButton, showMediaLink, addSoundBesidePencil) = MediaButton(
 				() => this.song.MediaLink,
 				async link =>
@@ -193,7 +213,7 @@ namespace Lyrious.UILib.Setlists
 				Orientation = Orientation.Horizontal,
 				Spacing = 4,
 				HorizontalAlignment = HorizontalAlignment.Right,
-				Children = { mediaButton, editButton },
+				Children = { chordGridButton, mediaButton, editButton },
 			};
 			// A sound file dropped anywhere on the view becomes the song's media link (handled ones too:
 			// the editor's text box takes drops of its own).
@@ -949,10 +969,28 @@ namespace Lyrious.UILib.Setlists
 			Control text;
 			markers = [];
 			timeline = null;
+			// The chord grid button only for lyrics with chords; highlighted while the grid is on.
+			// Lyrics with chords, or bar lines ("|"), can be shown as a chord grid.
+			var hasChords = hasLyrics && (ChordPro.IsChordPro(song.Lyrics) || ChordPro.HasBarLines(song.Lyrics));
+			var grid = hasChords && ChordGrid;
+			chordGridButton.IsVisible = hasChords;
+			if (grid)
+			{
+				chordGridButton.Classes.Add("accent");
+				chordGridButton.ClearValue(BackgroundProperty);
+			}
+			else
+			{
+				chordGridButton.Classes.Remove("accent");
+				chordGridButton.Background = Brushes.Transparent;
+			}
+
+			ToolTip.SetTip(chordGridButton, grid ? "Show chords over the words" : "Show a chord grid (chords only, by bar)");
+
 			if (hasLyrics && ChordPro.HasFormatting(song.Lyrics))
 			{
-				// Chords above the words they belong to, headings, notes, and time tags for the scrolling.
-				var rendered = ChordPro.Render(song.Lyrics, fontSize: 24, lineHeight: 36, song.Tempo, song.Beat);
+				// Chords above the words they belong to (or the chord grid), headings, notes, and time tags for the scrolling.
+				var rendered = ChordPro.Render(song.Lyrics, fontSize: 24, lineHeight: 36, song.Tempo, song.Beat, chordGrid: grid);
 				text = rendered.Content;
 				markers = rendered.Markers;
 			}

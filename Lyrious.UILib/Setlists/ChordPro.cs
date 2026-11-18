@@ -31,7 +31,8 @@ namespace Lyrious.UILib.Setlists
 	/// <item>Time tags (not shown): "[1:23]" is a time from the start of the song (minutes:seconds,
 	/// tenths allowed); "[12]" is a bar count from the start, turned into a time with the song's tempo
 	/// and beats per bar. Their places in the lyrics come back as <see cref="TimeMarker"/>s, so the
-	/// lyrics can scroll in time with the song.</item>
+	/// lyrics can scroll in time with the song. A bar mark "|" anywhere in a line is one bar after the
+	/// previous time tag, the same as "[+1]" (not in tab blocks, where '|' is part of the tab).</item>
 	/// <item>Bold and italic much as in Markdown: **bold** or __bold__, _italic_, ***both*** or
 	/// ___both___, within a line (also across chords). Unlike Markdown, a single * is bold too:
 	/// *bold* (only _ makes italic).</item>
@@ -56,8 +57,15 @@ namespace Lyrious.UILib.Setlists
 		public static bool IsChordPro(string text)
 			=> DirectiveLine().IsMatch(text) || BracketTag().Matches(text).Any(tag => IsChord(tag.Groups[1].Value));
 
+		/// <summary>Whether a line of the text starts with a bar mark '|' (bars that can be shown in the chord grid).</summary>
+		public static bool HasBarLines(string text)
+			=> text.Replace("\r\n", "\n").Split('\n').Any(line => line.TrimStart().StartsWith('|'));
+
 		/// <summary>Whether the text needs <see cref="Render"/>: ChordPro, Markdown-style "# " headings or bold/italic, or time tags.</summary>
 		public static bool HasFormatting(string text)
+			=> HasFormattingExpanded(ExpandBarMarks(text));
+
+		private static bool HasFormattingExpanded(string text)
 			=> IsChordPro(text)
 			   || HeadingLine().IsMatch(text)
 			   || BracketTag().Matches(text).Any(tag => IsTimeTag(tag.Groups[1].Value))
@@ -126,7 +134,7 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>The text without chords, other bracket tags, directive lines and bold/italic markers, e.g. for searching the words.</summary>
 		public static string StripChords(string text)
-			=> string.Join('\n', DirectiveLine().Replace(BracketTag().Replace(text, ""), "").Split('\n').Select(PlainText));
+			=> string.Join('\n', DirectiveLine().Replace(BracketTag().Replace(ExpandBarMarks(text), ""), "").Split('\n').Select(PlainText));
 
 		/// <summary>A line without its Markdown bold/italic markers.</summary>
 		private static string PlainText(string line)
@@ -156,8 +164,22 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="lineHeight">The height of a plain lyrics line.</param>
 		/// <param name="tempo">The song's tempo (beats per minute), to turn bar counts into times.</param>
 		/// <param name="beat">The song's time signature, e.g. "4/4", for the beats in a bar.</param>
-		public static RenderedLyrics Render(string text, double fontSize, double lineHeight, double tempo = 0, string beat = "4/4")
+		/// <param name="chordGrid">
+		/// Chords only, in a grid: each line with chords is a row of equal columns, as many as the line
+		/// with the most (so every row fills the width the same way). On a line starting with '|' the
+		/// bar marks decide the columns (a chord goes in the bar it's written in); on other lines each
+		/// chord has a column of its own (a bar line without chords is a row of empty bars). The words are
+		/// left out; headings, notes and tabs stay.
+		/// </param>
+		public static RenderedLyrics Render(string text, double fontSize, double lineHeight, double tempo = 0, string beat = "4/4", bool chordGrid = false)
 		{
+			// Which lines are bar lines (start with '|'), before the bar marks become time tags.
+			var barLines = text.Replace("\r\n", "\n").Split('\n').Select(line => line.TrimStart().StartsWith('|')).ToArray();
+
+			// Bar marks ('|') are time tags too ("[+1]").
+			text = ExpandBarMarks(text);
+			var lines = text.Replace("\r\n", "\n").Split('\n');
+			var gridColumns = chordGrid ? Math.Max(1, GridColumnCount(lines, barLines)) : 0;
 			var markers = new List<TimeMarker>();
 			var beatsPerBar = BeatsPerBar(beat);
 
@@ -186,9 +208,9 @@ namespace Lyrious.UILib.Setlists
 			var current = root;
 			var inTab = false;
 
-			foreach (var rawLine in text.Replace("\r\n", "\n").Split('\n'))
+			for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
 			{
-				var line = rawLine.TrimEnd();
+				var line = lines[lineIndex].TrimEnd();
 				var trimmed = line.Trim();
 
 				if (!inTab && HeadingLine().Match(trimmed) is { Success: true } heading)
@@ -262,6 +284,23 @@ namespace Lyrious.UILib.Setlists
 				{
 					current.Children.Add(new Border { Height = lineHeight * 0.6, Classes = { LyricsClasses.Gap } });
 				}
+				else if (chordGrid && (barLines[lineIndex] || BracketTag().Matches(line).Any(tag => IsChord(tag.Groups[1].Value))))
+				{
+					// The chords in their columns; the line's time tags mark the row.
+					var row = GridRow(GridCells(line, barLines[lineIndex]), gridColumns, fontSize);
+					Mark(TimesOn(line), row);
+					current.Children.Add(row);
+				}
+				else if (chordGrid)
+				{
+					// No chords: the words aren't shown in the grid, but time tags still mark their place.
+					if (TimesOn(line) is { Count: > 0 } times)
+					{
+						var place = new Border { Height = 0 };
+						Mark(times, place);
+						current.Children.Add(place);
+					}
+				}
 				else if (BracketTag().Matches(line).Any(tag => IsChord(tag.Groups[1].Value)))
 				{
 					current.Children.Add(ChordLine(line, fontSize, lineHeight, Resolve, markers));
@@ -289,6 +328,131 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			return new RenderedLyrics(root, markers);
+		}
+
+		/// <summary>
+		/// The chords of a line by column, for the chord grid (each column's chords, joined by spaces;
+		/// "" for an empty bar). On a bar line (one starting with '|', its marks already "[+1]") each
+		/// bar mark starts a column (one at the end of the line too: "| | | |" is 4 bars) and a chord goes
+		/// in the bar it's in. On other lines each chord is a column.
+		/// </summary>
+		private static List<string> GridCells(string line, bool barLine)
+		{
+			if (!barLine)
+			{
+				return Segments(line).Where(segment => segment.Chord != null).Select(segment => segment.Chord!).ToList();
+			}
+
+			var cells = new List<(List<string> Chords, bool HasText)>();
+			foreach (var (chord, text, timeTag) in Segments(line))
+			{
+				if (timeTag?.Trim() == "+1")
+				{
+					cells.Add(([], false));
+					continue;
+				}
+
+				if (timeTag != null)
+				{
+					continue; // Another time tag: no new bar.
+				}
+
+				if (cells.Count == 0)
+				{
+					cells.Add(([], false));
+				}
+
+				var cell = cells[^1];
+				if (chord != null)
+				{
+					cell.Chords.Add(chord);
+				}
+
+				cells[^1] = (cell.Chords, cell.HasText || text.Trim().Length > 0);
+			}
+
+			return cells.Select(cell => string.Join(" ", cell.Chords)).ToList();
+		}
+
+		private static readonly IBrush GridLineBrush = new SolidColorBrush(Colors.Gray, 0.85);
+
+		/// <summary>The chord grid's number of columns: the most any line with chords needs (tab blocks, headings and comments aside).</summary>
+		private static int GridColumnCount(string[] lines, bool[] barLines)
+		{
+			var most = 0;
+			var inTab = false;
+			for (var i = 0; i < lines.Length; i++)
+			{
+				var trimmed = lines[i].Trim();
+				if (DirectiveLine().Match(trimmed) is { Success: true } directive)
+				{
+					var name = directive.Groups[1].Value.ToLowerInvariant();
+					inTab = name is "start_of_tab" or "sot" || (inTab && name is not ("end_of_tab" or "eot"));
+					continue;
+				}
+
+				if (inTab || HeadingLine().IsMatch(trimmed) || LeadingTimeTags().Replace(trimmed, "").StartsWith('#'))
+				{
+					continue;
+				}
+
+				if (barLines[i] || BracketTag().Matches(lines[i]).Any(tag => IsChord(tag.Groups[1].Value)))
+				{
+					most = Math.Max(most, GridCells(lines[i], barLines[i]).Count);
+				}
+			}
+
+			return most;
+		}
+
+		/// <summary>
+		/// A row of the chord grid: <paramref name="columns"/> columns of the same width across the
+		/// whole width, the line's chords in the first ones, each column with a thin bar line at its left
+		/// (and one closing the last used column).
+		/// </summary>
+		private static Control GridRow(IReadOnlyList<string> cells, int columns, double fontSize)
+		{
+			var grid = new Grid { Margin = new Thickness(0, 2, 0, 2) };
+			for (var i = 0; i < columns; i++)
+			{
+				grid.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star));
+			}
+
+			for (var i = 0; i < Math.Min(cells.Count, columns); i++)
+			{
+				var chord = new TextBlock
+				{
+					Text = cells[i],
+					FontSize = fontSize,
+					FontWeight = FontWeight.Bold,
+					TextTrimming = TextTrimming.CharacterEllipsis,
+					VerticalAlignment = VerticalAlignment.Center,
+				};
+				chord.Bind(TextBlock.ForegroundProperty, chord.GetResourceObservable(LyriousTheme.ChordBrush));
+				// The last column of the grid closes itself at its right (as in every row that fills it).
+				var closesGrid = i == columns - 1;
+				var cell = new Border
+				{
+					BorderThickness = new Thickness(2, 0, closesGrid ? 2 : 0, 0),
+					Padding = new Thickness(8, 4),
+					Child = chord,
+					// Grey bar lines, which show on light and dark backgrounds alike.
+					BorderBrush = GridLineBrush,
+				};
+				Grid.SetColumn(cell, i);
+				grid.Children.Add(cell);
+			}
+
+			// A row with fewer columns is closed by a bar line at the left of the next column: exactly
+			// where the next bar starts in longer rows, so the lines line up.
+			if (cells.Count > 0 && cells.Count < columns)
+			{
+				var closing = new Border { BorderThickness = new Thickness(2, 0, 0, 0), BorderBrush = GridLineBrush };
+				Grid.SetColumn(closing, cells.Count);
+				grid.Children.Add(closing);
+			}
+
+			return grid;
 		}
 
 		/// <summary>
@@ -554,6 +718,69 @@ namespace Lyrious.UILib.Setlists
 			};
 			SetStyledText(note, text, Emphasis(text), 0, text.Length);
 			return note;
+		}
+
+		/// <summary>
+		/// The text with each bar mark '|' written as the time tag it stands for, "[+1]" (one bar after
+		/// the previous time tag), so it's handled (and hidden) like one. A '|' stays as it is in a tab
+		/// block ({sot} … {eot}, where it's part of the tab), on a {directive} line, and inside a
+		/// bracket tag.
+		/// </summary>
+		private static string ExpandBarMarks(string text)
+		{
+			if (!text.Contains('|'))
+			{
+				return text;
+			}
+
+			var lines = text.Replace("\r\n", "\n").Split('\n');
+			var inTab = false;
+			for (var i = 0; i < lines.Length; i++)
+			{
+				var line = lines[i];
+				if (DirectiveLine().Match(line) is { Success: true } directive)
+				{
+					var name = directive.Groups[1].Value.ToLowerInvariant();
+					if (name is "start_of_tab" or "sot")
+					{
+						inTab = true;
+					}
+					else if (name is "end_of_tab" or "eot")
+					{
+						inTab = false;
+					}
+
+					continue;
+				}
+
+				if (inTab || !line.Contains('|'))
+				{
+					continue;
+				}
+
+				// Outside bracket tags only: a '|' inside one (e.g. a chord "[G|D]") is left alone.
+				var expanded = new System.Text.StringBuilder(line.Length + 8);
+				var inTag = false;
+				for (var at = 0; at < line.Length; at++)
+				{
+					var c = line[at];
+					// A "[" only opens a tag when a "]" closes it later on the line (else it's text).
+					if (c == '[' && !inTag && line.IndexOf(']', at) >= 0)
+					{
+						inTag = true;
+					}
+					else if (c == ']')
+					{
+						inTag = false;
+					}
+
+					expanded.Append(c == '|' && !inTag ? "[+1]" : c.ToString());
+				}
+
+				lines[i] = expanded.ToString();
+			}
+
+			return string.Join('\n', lines);
 		}
 
 		/// <summary>A time tag: an integer (bars), or numbers with ':' (minutes:seconds, perhaps hours and tenths).</summary>

@@ -116,6 +116,12 @@ namespace Lyrious.UILib.Setlists
 
 		Task<SetlistSummary> CreateSetlistAsync(Guid groupId, string name, CancellationToken cancellationToken = default);
 
+		/// <summary>Gives the band a new name (not the private band's, which is fixed).</summary>
+		Task RenameGroupAsync(Guid groupId, string name, CancellationToken cancellationToken = default);
+
+		/// <summary>Gives the setlist a new name.</summary>
+		Task RenameSetlistAsync(Guid setlistId, string name, CancellationToken cancellationToken = default);
+
 		/// <summary>Deletes the setlist; its songs stay in the songbook.</summary>
 		Task DeleteSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default);
 
@@ -246,6 +252,8 @@ namespace Lyrious.UILib.Setlists
 		public Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary?> GetSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary> CreateSetlistAsync(Guid groupId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task RenameGroupAsync(Guid groupId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task RenameSetlistAsync(Guid setlistId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistEntry>> GetEntriesAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistEntry?> GetEntryAsync(Guid setlistItemId, CancellationToken cancellationToken = default) => throw NotConnected();

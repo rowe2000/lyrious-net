@@ -37,6 +37,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised with the name when the user adds a setlist.</summary>
 		public event Action<string>? SetlistCreateRequested;
 
+		/// <summary>Raised with the new name when the user renames a setlist (clicking its name).</summary>
+		public event Action<SetlistSummary, string>? SetlistRenameRequested;
+
 		/// <summary>Raised when the user confirms deleting a setlist.</summary>
 		public event Action<SetlistSummary>? SetlistDeleteRequested;
 
@@ -88,7 +91,7 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// Shows the setlist's card and songs (nothing when there's no setlist), and all the other
-		/// setlists as buttons above it; clicking one of them shows that one instead.
+		/// setlists (this one highlighted) as buttons above it; clicking another shows that one instead.
 		/// </summary>
 		private void ShowSetlist(SetlistSummary? setlist)
 		{
@@ -96,17 +99,19 @@ namespace Lyrious.UILib.Setlists
 			details.Content = setlist == null ? null : Details(setlist);
 
 			otherSetlists.Children.Clear();
-			foreach (var other in setlists.Where(other => other.Id != setlist?.Id))
+			foreach (var other in setlists)
 			{
-				// As wide as the name (and the current setlist's check).
-				var isCurrent = other.Id == CurrentSetlistId;
-				var button = new Button { Content = PageLayout.RowContent(other.Name, isCurrent), Padding = new Thickness(12, 6) };
-				if (isCurrent)
+				// As wide as the name (and the current setlist's check); the one shown below is highlighted.
+				var button = new Button { Content = PageLayout.RowContent(other.Name, other.Id == CurrentSetlistId), Padding = new Thickness(12, 6) };
+				if (other.Id == setlist?.Id)
 				{
 					button.Classes.Add("accent");
 				}
+				else
+				{
+					button.Click += (_, _) => ShowSetlist(other);
+				}
 
-				button.Click += (_, _) => ShowSetlist(other);
 				otherSetlists.Children.Add(button);
 			}
 		}
@@ -134,20 +139,21 @@ namespace Lyrious.UILib.Setlists
 				() => SetlistDeleteRequested?.Invoke(setlist)));
 
 			DockPanel.SetDock(actions, Dock.Right);
-			var header = new DockPanel
+			// The name (or the box to change it) on one line with the tools; the song count below.
+			var header = new StackPanel
 			{
+				Spacing = 2,
 				Children =
 				{
-					actions,
-					new StackPanel
+					new DockPanel
 					{
-						Spacing = 2,
 						Children =
 						{
-							new TextBlock { Text = setlist.Name, FontSize = 20, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
-							songCount,
+							actions,
+							PageLayout.EditableTitle(setlist.Name, newName => SetlistRenameRequested?.Invoke(setlist, newName)),
 						},
 					},
+					songCount,
 				},
 			};
 

@@ -51,7 +51,11 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The song shown as the current one (when the page was made).</summary>
 		public Guid? CurrentSongId { get; }
 
-		public SongsView(GroupSummary group, IReadOnlyList<SongDetails> songs, Guid? currentSongId)
+		/// <summary>Raised when the user chooses another songbook (the private one or the joined band's).</summary>
+		public event Action<GroupSummary>? SongbookChosen;
+
+		/// <param name="songbooks">The songbooks to choose between (e.g. the private one and the joined band's), shown as buttons above the list; none hides them.</param>
+		public SongsView(GroupSummary group, IReadOnlyList<SongDetails> songs, Guid? currentSongId, IReadOnlyList<GroupSummary>? songbooks = null)
 		{
 			Group = group;
 			CurrentSongId = currentSongId;
@@ -85,11 +89,49 @@ namespace Lyrious.UILib.Setlists
 			addButton.Flyout = new MenuFlyout { Items = { empty, import, internet } };
 
 			Content = PageLayout.Page(
-				group.Name,
-				new DockPanel { Children = { nameRow, status, search, list } },
-				subtitle: "Songbook · choose a song",
+				"Songbook",
+				new DockPanel { Children = { SongbookChooser(group, songbooks ?? []), nameRow, status, search, list } },
+				subtitle: $"{group.Name} · choose a song",
 				titleAction: addButton,
 				closable: true);
+		}
+
+		/// <summary>
+		/// The songbooks to choose between as buttons flowing left to right, as wide as their names;
+		/// the shown one is highlighted. Hidden when there's nothing to choose between.
+		/// </summary>
+		private Control SongbookChooser(GroupSummary shown, IReadOnlyList<GroupSummary> songbooks)
+		{
+			var chooser = new WrapPanel
+			{
+				Orientation = Avalonia.Layout.Orientation.Horizontal,
+				ItemSpacing = 8,
+				LineSpacing = 8,
+				Margin = new Avalonia.Thickness(0, 0, 0, 16),
+				IsVisible = songbooks.Count > 1,
+			};
+			foreach (var songbook in songbooks)
+			{
+				var button = new Button
+				{
+					Content = new TextBlock { Text = songbook.Name, FontSize = 16, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center },
+					Padding = new Avalonia.Thickness(12, 6),
+				};
+				if (songbook.Id == shown.Id)
+				{
+					button.Classes.Add("accent");
+				}
+				else
+				{
+					button.Click += (_, _) => SongbookChosen?.Invoke(songbook);
+				}
+
+				ToolTip.SetTip(button, songbook.IsPrivate ? "Your private songbook" : $"{songbook.Name}'s songbook");
+				chooser.Children.Add(button);
+			}
+
+			DockPanel.SetDock(chooser, Dock.Top);
+			return chooser;
 		}
 
 		/// <summary>The songs as a selectable list: a click selects (toolbar: open, edit, delete), a double click opens.</summary>

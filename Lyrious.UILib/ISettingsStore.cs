@@ -44,6 +44,9 @@ namespace Lyrious.UILib
 		/// <summary>The size of the whole interface, e.g. "1.25"; none for normal size (see <see cref="UiScale"/>).</summary>
 		public const string UiScale = "ui-scale";
 
+		/// <summary>"true" shows lyrics with chords as a chord grid (chords only, by bar) in the scroll view; off unless set.</summary>
+		public const string ChordGrid = "chord-grid";
+
 		/// <summary>The lyrics' zoom in the scroll view (pinch), e.g. "1.4"; none for normal size.</summary>
 		public const string LyricsZoom = "lyrics-zoom";
 

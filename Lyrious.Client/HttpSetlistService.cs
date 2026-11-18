@@ -816,6 +816,34 @@ public sealed class HttpSetlistService : ISetlistService
         return ToSummary(setlist);
     }
 
+    /// <summary>Gives the band a new name (not empty).</summary>
+    public async Task RenameGroupAsync(Guid groupId, string name, CancellationToken cancellationToken = default)
+    {
+        name = name.Trim();
+        if (name.Length == 0)
+        {
+            throw new InvalidOperationException("A name is needed.");
+        }
+
+        var current = await CacheAsync();
+        current.Update("group", groupId, new JsonObject { ["name"] = name });
+        Queued(current);
+    }
+
+    /// <summary>Gives the setlist a new name (not empty).</summary>
+    public async Task RenameSetlistAsync(Guid setlistId, string name, CancellationToken cancellationToken = default)
+    {
+        name = name.Trim();
+        if (name.Length == 0)
+        {
+            throw new InvalidOperationException("A name is needed.");
+        }
+
+        var current = await CacheAsync();
+        current.Update("setlist", setlistId, new JsonObject { ["name"] = name });
+        Queued(current);
+    }
+
     /// <summary>Deletes the setlist (the API keeps it, marked as removed). Its songs stay in the songbook.</summary>
     public async Task DeleteSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default)
     {
