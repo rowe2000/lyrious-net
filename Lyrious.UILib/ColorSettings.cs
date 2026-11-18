@@ -5,7 +5,8 @@ using Avalonia.Media;
 namespace Lyrious.UILib
 {
 	/// <summary>
-	/// The colours the user has picked (Settings → Colors), kept in <see cref="App.Settings"/>. Each is
+	/// The colours the user has picked (Settings → Colors), kept with the user (the same on all their
+	/// devices, see <see cref="UserSettings"/>) and, as the last known copy, in <see cref="App.Settings"/>. Each is
 	/// null for the theme's own. <see cref="Apply"/> puts them into the app's resources, so everything
 	/// showing them changes at once.
 	/// </summary>
@@ -129,6 +130,7 @@ namespace Lyrious.UILib
 		{
 			App.Settings.Set(key, color is { } value ? ToHex(value) : null);
 			Apply();
+			UserSettings.ChangedHere();
 		}
 	}
 }

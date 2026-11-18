@@ -50,6 +50,7 @@ public sealed class HttpSetlistService : ISetlistService
         live.PlaybackChanged += (groupId, playing) => PlaybackChanged?.Invoke(groupId, playing);
         live.SongSelected += OnSongSelected;
         live.MemberConnectionChanged += (memberId, connected) => MemberConnectionChanged?.Invoke(memberId, connected);
+        live.SettingsChanged += settings => MySettingsChanged?.Invoke(settings);
         live.Reconnected += () => { if (cache is { } c) _ = engine.SyncAsync(c); };
         live.Lost += () => { if (cache is { } c && liveWanted) engine.ReportOffline(c); };
         engine.StatusChanged += () => StatusChanged?.Invoke();
@@ -68,6 +69,8 @@ public sealed class HttpSetlistService : ISetlistService
 
     public event Action<Guid, bool>? MemberConnectionChanged;
     public event Action? MembersChanged;
+
+    public event Action<string>? MySettingsChanged;
 
     public event Action? StatusChanged;
 
@@ -914,6 +917,55 @@ public sealed class HttpSetlistService : ISetlistService
 
     public Task RenameMeAsync(string name, CancellationToken cancellationToken = default)
         => RenameMemberAsync(auth.MemberId ?? throw new InvalidOperationException("You're not logged in."), name, cancellationToken);
+
+    public async Task<string?> GetMySettingsAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await SendMySettingsAsync(HttpMethod.Get, null, cancellationToken);
+        var settings = await response.Content.ReadAsStringAsync(cancellationToken);
+        // 204 No Content: never saved.
+        return string.IsNullOrWhiteSpace(settings) ? null : settings;
+    }
+
+    public async Task SaveMySettingsAsync(string settings, CancellationToken cancellationToken = default)
+    {
+        using var response = await SendMySettingsAsync(HttpMethod.Put, settings, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets or puts api/member/me/settings. Tells the server this app's live connection, so it
+    /// doesn't send this app its own change back. Throws if the server can't be reached or refuses.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendMySettingsAsync(HttpMethod method, string? body, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(auth.AccessToken))
+        {
+            throw new InvalidOperationException("Your settings need a connection to the server.");
+        }
+
+        using var request = new HttpRequestMessage(method, "api/member/me/settings");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", auth.AccessToken);
+        if (live.ConnectionId is { } connectionId)
+        {
+            request.Headers.Add("X-Lyrious-ConnectionId", connectionId);
+        }
+
+        if (body != null)
+        {
+            request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+        }
+
+        var response = await auth.Http.SendAsync(request, cancellationToken);
+        try
+        {
+            response.EnsureSuccessStatusCode();
+            return response;
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
+    }
 
     public async Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default)
     {

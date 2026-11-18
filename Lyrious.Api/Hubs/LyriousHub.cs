@@ -39,6 +39,9 @@ public class LyriousHub(LyriousRepository repo, HubConnectionRegistry registry) 
 	/// <summary>Sent to a group's members when one of them picks its current setlist and song: (groupId, setlistId, setlistItemId).</summary>
 	public const string SongSelectedMethod = "SongSelected";
 
+	/// <summary>Sent to a member's other connections when they change their own settings (see api/member/me/settings): (settings as a JSON object string).</summary>
+	public const string SettingsChangedMethod = "SettingsChanged";
+
 	public override async Task OnConnectedAsync()
 	{
 		var cameOnline = Context.UserIdentifier is { } userId && registry.Add(userId, Context.ConnectionId);

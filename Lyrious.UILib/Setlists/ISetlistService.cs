@@ -103,6 +103,21 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Changes the logged-in member's own name (everywhere), saved here and sent to the server like other changes.</summary>
 		Task RenameMeAsync(string name, CancellationToken cancellationToken = default);
 
+		/// <summary>
+		/// The logged-in member's own settings, the same on all their devices (e.g. the colours): a JSON
+		/// object, null if they've never saved any. Needs the server: throws if it can't be reached.
+		/// </summary>
+		Task<string?> GetMySettingsAsync(CancellationToken cancellationToken = default);
+
+		/// <summary>Replaces the logged-in member's own settings (a JSON object). Needs the server: throws if it can't be reached.</summary>
+		Task SaveMySettingsAsync(string settings, CancellationToken cancellationToken = default);
+
+		/// <summary>
+		/// Raised (on a background thread) with the member's own settings (a JSON object) when they're
+		/// changed on another of their devices. Only while live updates are started.
+		/// </summary>
+		event Action<string>? MySettingsChanged;
+
 		/// <summary>Removes a member from a band. Admins only, and not the last admin.</summary>
 		Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default);
 
@@ -269,6 +284,9 @@ namespace Lyrious.UILib.Setlists
 		public Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RenameMemberAsync(Guid memberId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RenameMeAsync(string name, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<string?> GetMySettingsAsync(CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task SaveMySettingsAsync(string settings, CancellationToken cancellationToken = default) => throw NotConnected();
+		public event Action<string>? MySettingsChanged { add { } remove { } }
 		public Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteGroupAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();

@@ -44,6 +44,12 @@ namespace Lyrious.UILib
 		/// <summary>The colour of the other headings in the lyrics (levels 3 to 6), "#RRGGBB"; none for the text colour.</summary>
 		public const string HeadingColor = "heading-color";
 
+		/// <summary>
+		/// The user name whose own settings (see <see cref="UserSettings"/>) were changed here and not yet
+		/// sent to the server; none if nothing is waiting.
+		/// </summary>
+		public const string UserSettingsPending = "user-settings-pending";
+
 		/// <summary>The size of the whole interface, e.g. "1.25"; none for normal size (see <see cref="UiScale"/>).</summary>
 		public const string UiScale = "ui-scale";
 

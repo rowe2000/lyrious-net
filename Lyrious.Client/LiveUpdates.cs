@@ -51,6 +51,9 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
     /// <summary>Raised on a background thread when a bandmate comes online (true) or goes offline.</summary>
     public event Action<Guid, bool>? MemberConnectionChanged;
 
+    /// <summary>Raised with the member's own settings (a JSON object) when another of their devices changes them.</summary>
+    public event Action<string>? SettingsChanged;
+
     /// <summary>Raised after reconnecting by itself: changes may have been missed meanwhile.</summary>
     public event Action? Reconnected;
 
@@ -84,6 +87,7 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
             connection.On<Guid, bool>("PlaybackChanged", (groupId, playing) => PlaybackChanged?.Invoke(groupId, playing));
             connection.On<Guid, Guid?, Guid?>("SongSelected", (groupId, setlistId, itemId) => SongSelected?.Invoke(groupId, setlistId, itemId));
             connection.On<Guid, bool>("MemberConnectionChanged", (memberId, connected) => MemberConnectionChanged?.Invoke(memberId, connected));
+            connection.On<string>("SettingsChanged", settings => SettingsChanged?.Invoke(settings));
             connection.Reconnected += _ =>
             {
                 Reconnected?.Invoke();

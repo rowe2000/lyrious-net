@@ -1,14 +1,68 @@
 ﻿using System.Net.Mail;
+using System.Text.Json.Nodes;
+using Lyrious.Api.Hubs;
 using Lyrious.Api.Services;
 using Lyrious.CoreLib;
 using Lyrious.CoreLib.ApiModels;
 using Lyrious.CoreLib.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 
 namespace Lyrious.Api.Controllers;
 
-public class MemberController(LyriousRepository repo, IEmailSender emailSender) : Controller<Member>(repo)
+public class MemberController(LyriousRepository repo, IEmailSender emailSender, IHubContext<LyriousHub> hub, HubConnectionRegistry registry) : Controller<Member>(repo)
 {
+	// GET api/member/me/settings
+	/// <summary>The caller's own settings (the same on all their devices): a JSON object; 204 No Content if they've never saved any.</summary>
+	[HttpGet("me/settings")]
+	public ActionResult<JsonObject> GetMySettings()
+	{
+		Repo.SetIdentity(User.Identity);
+		if (Repo.Me is not { } me)
+		{
+			return Unauthorized();
+		}
+
+		if (string.IsNullOrEmpty(me.Settings))
+		{
+			return NoContent();
+		}
+
+		return JsonNode.Parse(me.Settings) as JsonObject ?? [];
+	}
+
+	// PUT api/member/me/settings
+	/// <summary>
+	/// Replaces the caller's own settings with the JSON object sent, and sends it to their other
+	/// connected devices ("SettingsChanged"), not the one that sent it.
+	/// </summary>
+	[HttpPut("me/settings")]
+	public async Task<IActionResult> PutMySettings([FromBody] JsonObject settings)
+	{
+		Repo.SetIdentity(User.Identity);
+		if (Repo.Me is not { } me)
+		{
+			return Unauthorized();
+		}
+
+		var json = settings.ToJsonString();
+		if (json.Length > Member.MaxSettingsLength)
+		{
+			return BadRequest($"Settings may be at most {Member.MaxSettingsLength} characters.");
+		}
+
+		// "{}" (not null) once saved, so all settings back to their defaults differs from none saved yet.
+		Repo.SaveMySettings(json);
+		var sender = Request.Headers[ChangeNotifier.ConnectionIdHeader].FirstOrDefault();
+		var others = registry.GetConnections(me.Id.ToString()).Where(id => id != sender).ToList();
+		if (others.Count > 0)
+		{
+			await hub.Clients.Clients(others).SendAsync(LyriousHub.SettingsChangedMethod, json);
+		}
+
+		return NoContent();
+	}
+
 	// Other members' Identity fields (password hash, email, ...) are never sent.
 	protected override Member ForCaller(Member entity) => entity.ToPublicProfile();
 

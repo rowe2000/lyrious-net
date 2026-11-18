@@ -24,6 +24,17 @@ public sealed class Member : IdentityUser<Guid>, IEntity, IName
     [DataMember] public DateTime? LastLoginAt { get; set; }
 
     /// <summary>
+    /// The member's own settings, the same on all their devices (e.g. the colours): a JSON object,
+    /// null if none. Private: not part of <see cref="ToPublicProfile"/>, and read and written through
+    /// api/member/me/settings only. "{}" once saved with nothing set.
+    /// </summary>
+    [MaxLength(MaxSettingsLength)]
+    [DataMember] public string? Settings { get; set; }
+
+    /// <summary>The longest <see cref="Settings"/> stored.</summary>
+    public const int MaxSettingsLength = 4000;
+
+    /// <summary>
     /// What other members may see of a member: name, joined group and last login. Identity fields
     /// (password hash, security stamp, email, phone) stay on the server.
     /// </summary>

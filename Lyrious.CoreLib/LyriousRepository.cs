@@ -327,7 +327,9 @@ public class LyriousRepository(LyriousContext context)
 	/// </summary>
 	private bool CanRenameBandMember(Member stored, Member changed)
 	{
-		if (string.IsNullOrWhiteSpace(changed.Name) || changed.JoinedGroupId != stored.JoinedGroupId || changed.Removed != stored.Removed)
+		// An admin changes the name only: not where they are, nor their own settings.
+		if (string.IsNullOrWhiteSpace(changed.Name) || changed.JoinedGroupId != stored.JoinedGroupId || changed.Removed != stored.Removed
+		    || changed.Settings != stored.Settings)
 			return false;
 
 		var meId = Me!.Id;
@@ -381,6 +383,16 @@ public class LyriousRepository(LyriousContext context)
 	}
 
 	/// <summary>Notes that the current member has just logged in (or opened the app connected).</summary>
+	/// <summary>Stores the current member's own settings (a JSON object, or null for none).</summary>
+	public void SaveMySettings(string? settings)
+	{
+		if (Me == null)
+			return;
+
+		Me.Settings = settings;
+		context.SaveChanges();
+	}
+
 	public void RecordLogin()
 	{
 		if (Me == null)

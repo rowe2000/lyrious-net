@@ -22,7 +22,8 @@ namespace Lyrious.UILib.Setlists
 	/// Cancel (✕) then take its place beside the title: Save stores the song, Cancel drops the
 	/// changes. This editor is the only one for a song: Edit in the songbook and a new song open
 	/// this view with it showing (<see cref="EditorOnly"/>).
-	/// Tapping the lyrics once asks for focus mode on or off (<see cref="FocusModeToggled"/>); in
+	/// Tapping the lyrics once asks for focus mode on or off (<see cref="FocusModeToggled"/>: off when
+	/// it's on, on only while the lyrics scroll by themselves); in
 	/// focus mode only the song's name, key, tempo, beat and lyrics are shown. The lyrics can also
 	/// scroll by themselves (<see cref="SetAutoScroll"/>), at <see cref="ScrollSpeed"/>.
 	/// </summary>

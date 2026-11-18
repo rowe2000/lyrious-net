@@ -93,6 +93,7 @@ namespace Lyrious.UILib.Setlists
 						"When the lyrics have scrolled all the way to the bottom, pressing stop also goes on to the next song in the setlist.",
 						nextOnStop),
 					Section("Colors"),
+					new TextBlock { Text = "Yours on all your devices.", Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
 					ColorSetting(
 						"Highlight",
 						"The current song, setlist and band, the selected row's outline, and the main buttons.",
@@ -456,6 +457,10 @@ namespace Lyrious.UILib.Setlists
 			};
 
 			Show();
+			// Changed on another of the user's devices while this shows.
+			void OnChangedElsewhere() => Show();
+			button.AttachedToVisualTree += (_, _) => UserSettings.Changed += OnChangedElsewhere;
+			button.DetachedFromVisualTree += (_, _) => UserSettings.Changed -= OnChangedElsewhere;
 			return new DockPanel
 			{
 				Children =

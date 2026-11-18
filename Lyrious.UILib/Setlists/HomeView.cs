@@ -353,6 +353,8 @@ namespace Lyrious.UILib.Setlists
 			service.MembersChanged += OnMembersChanged;
 			service.StatusChanged += OnStatusChanged;
 			service.JoinedGroupChanged += OnJoinedGroupChanged;
+			// The user's colours, the same on all their devices.
+			UserSettings.Attach(service, user.UserName);
 			OnStatusChanged();
 			_ = StartLiveUpdatesAsync();
 
@@ -386,6 +388,7 @@ namespace Lyrious.UILib.Setlists
 			service.MembersChanged -= OnMembersChanged;
 			service.StatusChanged -= OnStatusChanged;
 			service.JoinedGroupChanged -= OnJoinedGroupChanged;
+			UserSettings.Detach();
 			_ = service.StopLiveUpdatesAsync();
 		}
 
@@ -2175,7 +2178,19 @@ namespace Lyrious.UILib.Setlists
 
 		private void ShowLyricsPage(LyricScrollView view)
 		{
-			view.FocusModeToggled += () => SetFocusMode(!focusMode);
+			// A tap on the lyrics shows the toolbars when they're hidden; it hides them only while the
+			// lyrics scroll by themselves (when stopped, they stay, as a tap is then likely a mistake).
+			view.FocusModeToggled += () =>
+			{
+				if (focusMode)
+				{
+					SetFocusMode(false);
+				}
+				else if (view.IsAutoScrolling)
+				{
+					SetFocusMode(true);
+				}
+			};
 			view.SetFocusMode(focusMode);
 			view.SongSaved += saved =>
 			{
