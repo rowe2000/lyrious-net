@@ -20,6 +20,22 @@ globalThis.lyriousCredentials = {
     },
 };
 
+// The on-screen keyboard on iOS (Safari, and any iOS browser): it only shows for an input focused
+// while handling a tap (a user gesture). Avalonia types into a hidden input (.avalonia-input-element)
+// that it shows and focuses when a text box gets focus, but only after the tap has been handled, so
+// iOS shows no keyboard. So when a tap ends, a hidden input that a text box has shown is focused
+// again, now within the tap. Listened to on the document after the app's own handlers (bubbling);
+// pointerup, touchend and click all count as the tap's end, in case the text box got focus late.
+function focusTextInputOnTap() {
+    const input = document.querySelector(".avalonia-input-element");
+    if (input && input.style.display !== "none" && document.activeElement !== input) {
+        input.focus({ preventScroll: true });
+    }
+}
+document.addEventListener("pointerup", e => { if (e.pointerType === "touch") focusTextInputOnTap(); });
+document.addEventListener("touchend", focusTextInputOnTap, { passive: true });
+document.addEventListener("click", focusTextInputOnTap);
+
 // PBKDF2-SHA256 with the browser's Web Crypto (BrowserPasswordHasher.cs): native and asynchronous,
 // so the offline login's password hash doesn't freeze the page. Web Crypto needs a secure context
 // (https, or http://localhost); elsewhere this throws and the app falls back to a slower hash.
