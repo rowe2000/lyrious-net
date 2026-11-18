@@ -17,6 +17,9 @@ namespace Lyrious.UILib
 	/// <summary>Keys of the settings the app uses.</summary>
 	public static class SettingKeys
 	{
+		/// <summary>When the member last saw the screen after login (see <see cref="Setlists.OnboardingView"/>), round-trip format; none before the first time.</summary>
+		public static string LastVisit(string userName) => $"last-visit:{userName.ToLowerInvariant()}";
+
 		/// <summary>The address of the Lyrious API to sync with, e.g. http://localhost:5180.</summary>
 		public const string Host = "host";
 

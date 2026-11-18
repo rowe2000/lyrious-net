@@ -1,0 +1,227 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading.Tasks;
+
+namespace Lyrious.UILib.Setlists
+{
+	/// <summary>A song from a SongbookPro backup, ready for the songbook (its id in the backup, for its sets).</summary>
+	public sealed record SongbookProSong(int SourceId, string Name, string Key, float Tempo, string Beat, string Lyrics, string MediaLink, TimeSpan Duration);
+
+	/// <summary>A set from a SongbookPro backup: its name and its songs' ids in the backup, in order.</summary>
+	public sealed record SongbookProSet(string Name, IReadOnlyList<int> SongIds);
+
+	/// <summary>What a SongbookPro backup holds that can be imported, and what had to be left out (and why).</summary>
+	public sealed record SongbookProBackup(IReadOnlyList<SongbookProSong> Songs, IReadOnlyList<SongbookProSet> Sets, IReadOnlyList<string> Skipped);
+
+	/// <summary>How an import went: what was added, and what was left out.</summary>
+	public sealed record SongbookProImportResult(int Songs, int Setlists, IReadOnlyList<string> Skipped);
+
+	/// <summary>
+	/// Reads SongbookPro backups (a "SongbookPro Backup.zip", or the same as a .sbpbackup) and imports
+	/// them into a band: its songs into the band's songbook, its sets as the band's setlists.
+	/// <para>
+	/// The backup is a zip with "dataFile.txt": a version line ("1.0"), then JSON with "songs" and
+	/// "sets". A song has a name, author, ChordPro content, key (a number: 0 is A, counting up in
+	/// semitones; 12 and up are the minor keys), capo, tempo, time signature and a link. PDF songs
+	/// (type 2: their content is a PDF file) have no text, so they're left out, and so are deleted
+	/// songs and sets. Songs are imported even when the songbook has a song of the same name.
+	/// </para>
+	/// </summary>
+	public static partial class SongbookProImport
+	{
+		/// <summary>The most a song's lyrics can hold (as the server stores them).</summary>
+		private const int MaxLyricsLength = 5000;
+
+		private static readonly string[] KeyNames = ["A", "Bb", "B", "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab"];
+
+		/// <summary>Reads the backup; throws <see cref="InvalidOperationException"/> when it isn't a SongbookPro backup.</summary>
+		/// <param name="convert">Converts the lyrics to Lyrious' format (see <see cref="Lyrics"/>).</param>
+		public static SongbookProBackup Read(Stream zip, bool convert = false)
+		{
+			string data;
+			try
+			{
+				using var archive = new ZipArchive(zip, ZipArchiveMode.Read, leaveOpen: true);
+				var entry = archive.Entries.FirstOrDefault(e => e.FullName.Replace('\\', '/').EndsWith("dataFile.txt", StringComparison.OrdinalIgnoreCase))
+				            ?? throw new InvalidOperationException("This isn't a SongbookPro backup (it has no dataFile.txt).");
+				using var reader = new StreamReader(entry.Open());
+				data = reader.ReadToEnd();
+			}
+			catch (InvalidDataException ex)
+			{
+				throw new InvalidOperationException("This isn't a SongbookPro backup (it isn't a zip file).", ex);
+			}
+
+			// A version line ("1.0") before the JSON.
+			var start = data.IndexOf('{');
+			JsonObject json;
+			try
+			{
+				json = start >= 0 && JsonNode.Parse(data[start..]) is JsonObject parsed ? parsed : throw new InvalidOperationException("The backup's data couldn't be read.");
+			}
+			catch (JsonException ex)
+			{
+				throw new InvalidOperationException($"The backup's data couldn't be read. {ex.Message}", ex);
+			}
+
+			var skipped = new List<string>();
+			var songs = new List<SongbookProSong>();
+			foreach (var song in (json["songs"] as JsonArray ?? []).OfType<JsonObject>())
+			{
+				var name = Text(song, "name").Trim();
+				if (Bool(song, "Deleted"))
+				{
+					continue;
+				}
+
+				if (Int(song, "type") == 2)
+				{
+					skipped.Add($"{name} (a PDF)");
+					continue;
+				}
+
+				var lyrics = Lyrics(song, convert);
+				if (lyrics.Length > MaxLyricsLength)
+				{
+					skipped.Add($"{name} (too long: {lyrics.Length} characters, at most {MaxLyricsLength})");
+					continue;
+				}
+
+				var tempo = Int(song, "TempoInt");
+				var beat = Text(song, "timeSig").Trim();
+				var link = Text(song, "Url").Trim();
+				songs.Add(new SongbookProSong(
+					Int(song, "Id"),
+					name.Length > 0 ? name : "Untitled",
+					KeyName(Int(song, "key")),
+					tempo > 0 ? tempo : 120,
+					beat.Length > 0 ? beat : "4/4",
+					lyrics,
+					link.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? link : "",
+					TimeSpan.FromSeconds(Math.Max(0, Int(song, "Duration")))));
+			}
+
+			var sets = new List<SongbookProSet>();
+			foreach (var set in (json["sets"] as JsonArray ?? []).OfType<JsonObject>())
+			{
+				if (set["details"] is not JsonObject details || Bool(details, "Deleted"))
+				{
+					continue;
+				}
+
+				var songIds = (set["contents"] as JsonArray ?? []).OfType<JsonObject>()
+					.Where(item => !Bool(item, "Deleted") && Int(item, "ItemType") is 0 or 1)
+					.OrderBy(item => Int(item, "Order"))
+					.Select(item => Int(item, "SongId"))
+					.ToList();
+				var setName = Text(details, "name").Trim();
+				sets.Add(new SongbookProSet(setName.Length > 0 ? setName : "Imported set", songIds));
+			}
+
+			return new SongbookProBackup(songs, sets, skipped);
+		}
+
+		/// <summary>
+		/// Adds the backup's songs to the band's songbook and its sets as the band's setlists (with the
+		/// songs that were imported, in their order). Changes go through the service like any other,
+		/// so this works offline too.
+		/// </summary>
+		public static async Task<SongbookProImportResult> ImportAsync(ISetlistService service, Guid groupId, SongbookProBackup backup)
+		{
+			var imported = new Dictionary<int, Guid>();
+			foreach (var song in backup.Songs)
+			{
+				var created = await service.CreateSongAsync(groupId, song.Name, song.Lyrics, song.Duration);
+				await service.UpdateSongAsync(created with { Key = song.Key, Tempo = song.Tempo, Beat = song.Beat, MediaLink = song.MediaLink });
+				imported[song.SourceId] = created.Id;
+			}
+
+			var setlists = 0;
+			var skipped = backup.Skipped.ToList();
+			foreach (var set in backup.Sets)
+			{
+				var songIds = set.SongIds.Where(imported.ContainsKey).Select(id => imported[id]).ToList();
+				if (songIds.Count == 0)
+				{
+					// Only PDF songs (or none): it would be an empty setlist.
+					skipped.Add($"the set {set.Name} (no songs that could be imported)");
+					continue;
+				}
+
+				var setlist = await service.CreateSetlistAsync(groupId, set.Name);
+				await service.AddSongsAsync(setlist.Id, songIds);
+				setlists++;
+			}
+
+			return new SongbookProImportResult(imported.Count, setlists, skipped);
+		}
+
+		/// <summary>
+		/// The song's lyrics: its ChordPro content, after an {artist: …} line for its author (shown
+		/// nowhere, but used to search for the song) and a {capo: n} line when it has a capo.
+		/// Converted to Lyrious' format, the first line is a heading with the key and the name
+		/// ("# [D] Amazing Grace"), and each comment line "{c: Verse 1}" is a heading "## Verse 1".
+		/// </summary>
+		private static string Lyrics(JsonObject song, bool convert)
+		{
+			var lines = new List<string>();
+			if (convert)
+			{
+				var key = KeyName(Int(song, "key"));
+				var name = Text(song, "name").Trim();
+				lines.Add(key.Length > 0 ? $"# [{key}] {name}" : $"# {name}");
+			}
+
+			if (Text(song, "author").Trim() is { Length: > 0 } author)
+			{
+				lines.Add($"{{artist: {author}}}");
+			}
+
+			if (Int(song, "Capo") is > 0 and var capo)
+			{
+				lines.Add($"{{capo: {capo}}}");
+			}
+
+			var content = Text(song, "content").Replace("\r\n", "\n").Trim();
+			if (convert)
+			{
+				content = CommentLine().Replace(content, match => $"## {match.Groups[1].Value.Trim()}");
+			}
+
+			lines.Add(content);
+			return string.Join('\n', lines).Trim();
+		}
+
+		/// <summary>A ChordPro comment on a line of its own, "{c: Verse 1}": the text is group 1.</summary>
+		[System.Text.RegularExpressions.GeneratedRegex(@"^[ \t]*\{c:[ \t]*(.*?)[ \t]*\}[ \t]*$", System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+		private static partial System.Text.RegularExpressions.Regex CommentLine();
+
+		/// <summary>The key's name from SongbookPro's number: 0–11 major from A (5 is D), 12–23 the same minor (22 is Gm).</summary>
+		internal static string KeyName(int key) => key switch
+		{
+			>= 0 and < 12 => KeyNames[key],
+			>= 12 and < 24 => KeyNames[key - 12] + "m",
+			_ => "",
+		};
+
+		private static string Text(JsonObject item, string field) => item[field] is JsonValue value && value.TryGetValue<string>(out var text) ? text : "";
+
+		private static int Int(JsonObject item, string field)
+		{
+			if (item[field] is not JsonValue value)
+			{
+				return 0;
+			}
+
+			return value.TryGetValue<int>(out var number) ? number : value.TryGetValue<double>(out var real) ? (int)real : 0;
+		}
+
+		private static bool Bool(JsonObject item, string field)
+			=> item[field] is JsonValue value && (value.TryGetValue<bool>(out var flag) ? flag : value.TryGetValue<int>(out var number) && number != 0);
+	}
+}

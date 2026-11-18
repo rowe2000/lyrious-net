@@ -215,7 +215,20 @@ namespace Lyrious.UILib.Setlists
 
 				if (!inTab && HeadingLine().Match(trimmed) is { Success: true } heading)
 				{
-					var headingBlock = Heading(heading.Groups[1].Length, BracketTag().Replace(heading.Groups[2].Value, "").Trim(), fontSize);
+					var level = heading.Groups[1].Length;
+					var headingText = heading.Groups[2].Value;
+					if (BracketTag().Matches(headingText).Any(tag => IsChord(tag.Groups[1].Value)))
+					{
+						// Chords in the heading: over its words, as on a lyrics line, in the heading's size and colour.
+						// The time tags before the '#' come first (a '+' tag counts from the one before it).
+						var before = TimesOn(trimmed[..trimmed.IndexOf('#')]);
+						var row = HeadingStyle(ChordLine(headingText, Math.Round(fontSize * HeadingScale(level)), lineHeight * HeadingScale(level), Resolve, markers), level, fontSize);
+						Mark(before, row);
+						current.Children.Add(row);
+						continue;
+					}
+
+					var headingBlock = Heading(level, BracketTag().Replace(headingText, "").Trim(), fontSize);
 					Mark(TimesOn(line), headingBlock);
 					current.Children.Add(headingBlock);
 					continue;
@@ -577,29 +590,43 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>A heading: level 1 largest, down to level 6, with room above.</summary>
+		/// <summary>A heading level's size (times the lyrics'), weight and opacity.</summary>
+		private static (double Scale, FontWeight Weight, double Opacity) HeadingLook(int level) => Math.Clamp(level, 1, 6) switch
+		{
+			1 => (1.45, FontWeight.Bold, 1.0),
+			2 => (1.25, FontWeight.Bold, 1.0),
+			3 => (1.1, FontWeight.SemiBold, 1.0),
+			4 => (1.0, FontWeight.SemiBold, 1.0),
+			5 => (0.9, FontWeight.SemiBold, 0.85),
+			_ => (0.8, FontWeight.SemiBold, 0.7),
+		};
+
+		private static double HeadingScale(int level) => HeadingLook(level).Scale;
+
 		private static TextBlock Heading(int level, string text, double fontSize)
 		{
-			var (scale, weight, opacity) = Math.Clamp(level, 1, 6) switch
-			{
-				1 => (1.45, FontWeight.Bold, 1.0),
-				2 => (1.25, FontWeight.Bold, 1.0),
-				3 => (1.1, FontWeight.SemiBold, 1.0),
-				4 => (1.0, FontWeight.SemiBold, 1.0),
-				5 => (0.9, FontWeight.SemiBold, 0.85),
-				_ => (0.8, FontWeight.SemiBold, 0.7),
-			};
-
 			var heading = new TextBlock
 			{
-				FontSize = Math.Round(fontSize * scale),
-				FontWeight = weight,
-				Opacity = opacity,
+				FontSize = Math.Round(fontSize * HeadingScale(level)),
 				TextWrapping = TextWrapping.Wrap,
-				Margin = new Thickness(0, fontSize * 0.5, 0, fontSize * 0.2),
 			};
 			SetStyledText(heading, text, Emphasis(text), 0, text.Length);
+			return HeadingStyle(heading, level, fontSize);
+		}
+
+		/// <summary>
+		/// Gives a heading (its text, or a line of chords over its words) the level's weight, opacity,
+		/// colour and room around it. On a chord line the words take the weight and colour; the chords
+		/// keep their own colour.
+		/// </summary>
+		private static T HeadingStyle<T>(T heading, int level, double fontSize) where T : Control
+		{
+			var (_, weight, opacity) = HeadingLook(level);
+			heading.SetValue(TextElement.FontWeightProperty, weight);
+			heading.Opacity = opacity;
+			heading.Margin = new Thickness(0, fontSize * 0.5, 0, fontSize * 0.2);
 			var brush = level switch { <= 1 => LyriousTheme.Heading1Brush, 2 => LyriousTheme.Heading2Brush, _ => LyriousTheme.HeadingBrush };
-			heading.Bind(TextBlock.ForegroundProperty, heading.GetResourceObservable(brush));
+			heading.Bind(TextElement.ForegroundProperty, heading.GetResourceObservable(brush));
 			heading.Classes.Add(LyricsClasses.Heading);
 			return heading;
 		}

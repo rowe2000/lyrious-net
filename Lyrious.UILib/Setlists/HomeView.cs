@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -48,7 +49,7 @@ namespace Lyrious.UILib.Setlists
 		private readonly TextBlock groupName = new() { Text = "Choose a band", FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
 		private readonly TextBlock setlistTitle = new() { Text = "Setlist", FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
 		private readonly ContentControl setlistDrawerBody = new();
-		private readonly TextBlock currentSetlistName = new() { Text = "Choose a setlist", FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+		private readonly TextBlock currentSetlistName = new() { Text = "Choose a setlist", FontSize = 18, FontWeight = FontWeight.Normal, FontStyle = FontStyle.Italic, TextTrimming = TextTrimming.CharacterEllipsis };
 		private readonly TextBlock currentSongName = new() { Text = NoSong, FontSize = 18, FontWeight = FontWeight.Normal, FontStyle = FontStyle.Italic, TextTrimming = TextTrimming.CharacterEllipsis };
 		private readonly Button chooseSetlistButton;
 		private readonly Button chooseSongButton;
@@ -211,7 +212,11 @@ namespace Lyrious.UILib.Setlists
 				IsHitTestVisible = false,
 			};
 			notice.Bind(Border.BackgroundProperty, notice.GetResourceObservable(LyriousTheme.CardBrush));
-			setlistDrawer.Content = new Grid { Children = { new DockPanel { Children = { playbackBar, page } }, topRow, notice } };
+			// Over the pages: the media player, which plays on whichever page shows (see MediaPlayerLayer).
+			var mediaPlayer = new MediaPlayerLayer();
+			MediaPlayerLayer.Current = mediaPlayer;
+			mediaPlayer.PlayingChanged += OnMediaPlayingChanged;
+			setlistDrawer.Content = new Grid { Children = { new DockPanel { Children = { playbackBar, page } }, mediaPlayer, topRow, notice } };
 			playbackBar.PlayPauseRequested += PlayPause;
 			playbackBar.RestartRequested += () => (page.Content as LyricScrollView)?.ScrollToStart();
 			playbackBar.NextRequested += NextSong;
@@ -693,6 +698,31 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>Play/pause on the lyrics page (the toolbar button, or the space bar).</summary>
+		/// <summary>
+		/// The media player started or stopped playing (play or pause pressed in it): the song's lyrics,
+		/// if they're the page shown, start or stop scrolling with it, as with the play button (the
+		/// band that's joined follows too). Stopping this way doesn't go on to the next song.
+		/// </summary>
+		private void OnMediaPlayingChanged(bool playing)
+		{
+			if (page.Content is not LyricScrollView { EditorOnly: false, IsEditing: false } lyrics
+			    || lyrics.SongId != MediaPlayerLayer.Current?.SongId
+			    || lyrics.IsAutoScrolling == playing)
+			{
+				return;
+			}
+
+			if (playing)
+			{
+				PlayPause();
+			}
+			else
+			{
+				lyrics.SetAutoScroll(false);
+				_ = SendPlaybackAsync(false);
+			}
+		}
+
 		private void PlayPause()
 		{
 			if (page.Content is LyricScrollView lyrics)
@@ -1012,17 +1042,31 @@ namespace Lyrious.UILib.Setlists
 			return button;
 		}
 
+		/// <summary>The setlist's name on the left drawer's button in bold; with none, "Choose a setlist" in italics.</summary>
+		private void ShowSetlistName(string? name)
+		{
+			currentSetlistName.Text = name ?? "Choose a setlist";
+			currentSetlistName.FontWeight = name == null ? FontWeight.Normal : FontWeight.SemiBold;
+			currentSetlistName.FontStyle = name == null ? FontStyle.Italic : FontStyle.Normal;
+		}
+
 		/// <summary>Records the setlist the app is showing, and shows its name on the left drawer's button.</summary>
 		private void SetCurrentSetlist(SetlistSummary setlist)
 		{
 			currentSetlist = setlist;
-			currentSetlistName.Text = setlist.Name;
+			ShowSetlistName(setlist.Name);
 			addSongsButton.IsEnabled = true;
 		}
 
 		/// <summary>Records the song the app is showing (and its setlist entry, if it's shown from a setlist), for the Song button and the highlights.</summary>
 		private void SetCurrentSong(SongDetails? song, Guid? entryId)
 		{
+			// Another song: the media player stops (unless it plays this song's link).
+			if (song != null)
+			{
+				MediaPlayerLayer.Current?.StopUnlessSong(song.Id);
+			}
+
 			currentSongId = song?.Id;
 			currentEntryId = entryId;
 			currentSongName.Text = song?.Name ?? NoSong;
@@ -1097,6 +1141,21 @@ namespace Lyrious.UILib.Setlists
 			// Its top margin is the gap between items, kept when the two groups meet (a short drawer).
 			var account = new StackPanel { Spacing = 4, Margin = new Thickness(0, 4, 0, 0), Children = { profile, settings, sync } };
 			DockPanel.SetDock(account, Dock.Bottom);
+
+			// Last: about the app (version, release notes), and on desktop quitting it.
+			var about = DrawerItem("About");
+			about.Click += (_, _) =>
+			{
+				CloseUnlessPinned(menuDrawer);
+				page.Content = new AboutView();
+			};
+			account.Children.Add(about);
+			if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+			{
+				var exit = DrawerItem("Exit");
+				exit.Click += (_, _) => desktop.Shutdown();
+				account.Children.Add(exit);
+			}
 
 			// The songs' sound files kept on this device, after Settings (both about this device).
 			if (App.SoundStore is { } sounds)
@@ -1631,7 +1690,49 @@ namespace Lyrious.UILib.Setlists
 			return button;
 		}
 
-		private Task StartAsync() => RunAsync(() => OpenStartPageAsync());
+		/// <summary>After login: the start page, with the screen of what's new since the last visit over it.</summary>
+		private Task StartAsync() => RunAsync(async () =>
+		{
+			await OpenStartPageAsync();
+			await ShowOnboardingAsync();
+		});
+
+		/// <summary>
+		/// Shows what changed since the member's last visit on this device, and the release notes since
+		/// then; the first time, an introduction to the app. Not shown when nothing is new. Continue (or ✕)
+		/// goes back to the start page.
+		/// </summary>
+		private async Task ShowOnboardingAsync()
+		{
+			var key = SettingKeys.LastVisit(user.UserName);
+			DateTime? lastVisit = DateTime.TryParse(App.Settings.Get(key), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var saved) ? saved : null;
+			IReadOnlyList<Change>? changes = null;
+			if (lastVisit is { } since)
+			{
+				try
+				{
+					changes = await service.GetChangesSinceAsync(since);
+				}
+				catch (Exception ex)
+				{
+					// Shown anyway, with the release notes; it says the changes couldn't be found out.
+					System.Diagnostics.Debug.WriteLine($"Couldn't get the changes since the last visit: {ex.Message}");
+				}
+			}
+
+			// Shown the first time, and later only when something is new: changes, or release notes.
+			var anythingNew = lastVisit == null || changes is { Count: > 0 } || ReleaseNotes.Since(lastVisit).Count > 0;
+			if (anythingNew)
+			{
+				var view = new OnboardingView(user.DisplayName, lastVisit, changes);
+				view.Continued += GoBack;
+				page.Content = view;
+			}
+
+			// Seen: next time, what changed from now on (changes made here meanwhile are left out).
+			App.Settings.Set(key, DateTime.Now.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+			service.ForgetLocalChanges();
+		}
 
 		/// <summary>
 		/// Opens the start page of the member's current group (after login, and after adding a band).
@@ -1652,7 +1753,7 @@ namespace Lyrious.UILib.Setlists
 			_ = ShowPresentMembersAsync();
 			currentSetlist = null;
 			SetCurrentSong(null, null);
-			currentSetlistName.Text = "Choose a setlist";
+			ShowSetlistName(null);
 			addSongsButton.IsEnabled = false;
 			chooseSetlistButton.IsEnabled = start.Group != null;
 			chooseSongButton.IsEnabled = start.Group != null;
@@ -1831,7 +1932,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					// Nothing is current any more; the start page picks another setlist next time.
 					currentSetlist = null;
-					currentSetlistName.Text = "Choose a setlist";
+					ShowSetlistName(null);
 					addSongsButton.IsEnabled = false;
 					SetCurrentSong(null, null);
 					playbackEntries = [];
@@ -2278,7 +2379,86 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>The settings page; its ✕ goes back to the page before.</summary>
-		private void ShowSettings() => page.Content = new SettingsView();
+		private void ShowSettings()
+			=> page.Content = currentGroup is { } group
+				? new SettingsView((anchor, convert) => ImportSongbookProAsync(anchor, group, convert), () => ClearSongbookAsync(group), group.Name)
+				: new SettingsView();
+
+		/// <summary>Deletes every song in the band's songbook (they leave its setlists too); returns how many.</summary>
+		private async Task<string> ClearSongbookAsync(GroupSummary group)
+		{
+			var songs = await service.GetSongbookSongsAsync(group.Id);
+			foreach (var song in songs)
+			{
+				await service.DeleteSongAsync(song.Id);
+			}
+
+			// No song is current any more, and the setlists lost their songs.
+			if (songs.Any(song => song.Id == currentSongId))
+			{
+				SetCurrentSong(null, null);
+			}
+
+			playbackEntries = [];
+			RefreshSetlistDrawer(reload: true);
+			return songs.Count == 0
+				? $"{group.Name}'s songbook was already empty."
+				: $"Deleted {songs.Count} song{(songs.Count == 1 ? "" : "s")} from {group.Name}'s songbook.";
+		}
+
+		/// <summary>
+		/// Picks a SongbookPro backup and imports its songs and sets into the band; returns what was
+		/// imported and what was left out (null when no file was picked).
+		/// </summary>
+		private async Task<string?> ImportSongbookProAsync(Control anchor, GroupSummary group, bool convert)
+		{
+			if (TopLevel.GetTopLevel(anchor)?.StorageProvider is not { CanOpen: true } storage)
+			{
+				throw new InvalidOperationException("Opening files isn't possible here.");
+			}
+
+			var files = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+			{
+				Title = "Import a SongbookPro backup",
+				AllowMultiple = false,
+				FileTypeFilter =
+				[
+					new Avalonia.Platform.Storage.FilePickerFileType("SongbookPro backup") { Patterns = ["*.zip", "*.sbpbackup"] },
+					Avalonia.Platform.Storage.FilePickerFileTypes.All,
+				],
+			});
+			if (files.Count == 0)
+			{
+				return null;
+			}
+
+			// Read into memory first: a zip needs to move about in its file, which a browser's file can't.
+			using var data = new MemoryStream();
+			try
+			{
+				await using var stream = await files[0].OpenReadAsync();
+				await stream.CopyToAsync(data);
+			}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+			{
+				throw new InvalidOperationException($"Couldn't read the file. {ex.Message}", ex);
+			}
+
+			data.Position = 0;
+			var backup = SongbookProImport.Read(data, convert);
+			var result = await SongbookProImport.ImportAsync(service, group.Id, backup);
+
+			// The drawer's setlists and songs may include the new ones.
+			RefreshSetlistDrawer(reload: true);
+
+			var text = $"Imported {result.Songs} song{(result.Songs == 1 ? "" : "s")} and {result.Setlists} setlist{(result.Setlists == 1 ? "" : "s")} into {group.Name}.";
+			if (result.Skipped.Count > 0)
+			{
+				text += $" Left out {result.Skipped.Count}: {string.Join(", ", result.Skipped)}.";
+			}
+
+			return text;
+		}
 
 		private void ShowProfile()
 		{

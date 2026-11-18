@@ -214,7 +214,133 @@ public sealed class HttpSetlistService : ISetlistService
     private void OnChangeMadeHere(PendingChange change)
     {
         madeHere.Add(EntityCache.KeyOf(change));
+        RememberChangedHere(change.Type, change.Id);
         PostToInstances("change", change);
+    }
+
+    // ---- What changed since the last visit (see GetChangesSinceAsync) ----
+
+    private static string ChangedHereKey(Guid memberId) => $"made-here:{memberId:N}";
+
+    /// <summary>The entities changed on this device since the changes were last looked at ("type/id"), kept between runs.</summary>
+    private static HashSet<string> ChangedHere(Guid memberId)
+    {
+        try
+        {
+            return App.Settings.Get(ChangedHereKey(memberId)) is { Length: > 0 } saved && JsonNode.Parse(saved) is JsonArray list
+                ? list.Select(item => (string?)item).OfType<string>().ToHashSet()
+                : [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private void RememberChangedHere(string type, Guid id)
+    {
+        if (auth.MemberId is not { } memberId)
+        {
+            return;
+        }
+
+        var keys = ChangedHere(memberId);
+        if (keys.Add($"{type}/{id:N}"))
+        {
+            App.Settings.Set(ChangedHereKey(memberId), new JsonArray(keys.Select(key => (JsonNode?)key).ToArray()).ToJsonString());
+        }
+    }
+
+    public void ForgetLocalChanges()
+    {
+        if (auth.MemberId is { } memberId)
+        {
+            App.Settings.Set(ChangedHereKey(memberId), null);
+        }
+    }
+
+    public async Task<IReadOnlyList<Change>> GetChangesSinceAsync(DateTime since, CancellationToken cancellationToken = default)
+    {
+        var memberId = auth.MemberId ?? throw new InvalidOperationException("You're not logged in.");
+        var current = await CacheAsync();
+        var changedHere = ChangedHere(memberId);
+
+        static DateTime? Time(JsonObject entity, string field)
+            => entity[field] is JsonValue value && value.TryGetValue<string>(out var text) && DateTime.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var time)
+                ? (time.Kind == DateTimeKind.Utc ? time.ToLocalTime() : time)
+                : null;
+        static Guid? IdField(JsonObject entity, string field)
+            => entity[field] is JsonValue value && value.TryGetValue<string>(out var text) && Guid.TryParse(text, out var id) ? id : null;
+        static string Text(JsonObject? entity, string field) => entity?[field] is JsonValue value && value.TryGetValue<string>(out var text) ? text : "";
+        bool Mine(string type, JsonObject entity) => changedHere.Contains($"{type}/{EntityCache.IdOf(entity):N}");
+
+        var live = (string type) => current.All(type).Where(entity => !EntityCache.IsRemoved(entity)).ToList();
+        var groups = live("group").ToDictionary(EntityCache.IdOf);
+        var members = current.All("member").ToDictionary(EntityCache.IdOf);
+        var songbooks = live("songbook").ToDictionary(EntityCache.IdOf);
+        var setlists = live("setlist").ToDictionary(EntityCache.IdOf);
+        string BandName(Guid? groupId) => groupId is { } id && groups.TryGetValue(id, out var group) ? Text(group, "name") : "";
+
+        var changes = new List<Change>();
+
+        foreach (var membership in live("membership").Where(m => Time(m, "createdAt") > since && !Mine("membership", m)))
+        {
+            var groupId = IdField(membership, "groupId");
+            if (IdField(membership, "memberId") == memberId)
+            {
+                // Added to a band (invited, or a new one of their own made elsewhere).
+                changes.Add(new Change(ChangeKind.Band, BandName(groupId), BandName(groupId), true, Time(membership, "createdAt")!.Value));
+            }
+            else
+            {
+                var name = IdField(membership, "memberId") is { } other && members.TryGetValue(other, out var member) ? Text(member, "name") : "";
+                changes.Add(new Change(ChangeKind.Member, name.Length > 0 ? name : "A new member", BandName(groupId), true, Time(membership, "createdAt")!.Value));
+            }
+        }
+
+        // A setlist is changed when it is, or when songs in it were added or moved.
+        var changedSetlists = new Dictionary<Guid, DateTime>();
+        foreach (var item in live("setlistitem").Where(item => !Mine("setlistitem", item)))
+        {
+            var when = new[] { Time(item, "createdAt"), Time(item, "changedAt") }.Max();
+            if (when > since && IdField(item, "setlistId") is { } setlistId)
+            {
+                changedSetlists[setlistId] = changedSetlists.TryGetValue(setlistId, out var before) && before > when.Value ? before : when.Value;
+            }
+        }
+
+        foreach (var (id, setlist) in setlists)
+        {
+            var band = BandName(IdField(setlist, "groupId"));
+            if (Mine("setlist", setlist))
+            {
+                continue;
+            }
+
+            if (Time(setlist, "createdAt") is { } created && created > since)
+            {
+                changes.Add(new Change(ChangeKind.Setlist, Text(setlist, "name"), band, true, created));
+            }
+            else if (new[] { Time(setlist, "changedAt"), changedSetlists.TryGetValue(id, out var itemsChanged) ? itemsChanged : null }.Max() is { } changed && changed > since)
+            {
+                changes.Add(new Change(ChangeKind.Setlist, Text(setlist, "name"), band, false, changed));
+            }
+        }
+
+        foreach (var song in live("song").Where(song => !Mine("song", song)))
+        {
+            var band = IdField(song, "songbookId") is { } bookId && songbooks.TryGetValue(bookId, out var book) ? BandName(IdField(book, "groupId")) : "";
+            if (Time(song, "createdAt") is { } created && created > since)
+            {
+                changes.Add(new Change(ChangeKind.Song, Text(song, "name"), band, true, created));
+            }
+            else if (Time(song, "changedAt") is { } changed && changed > since)
+            {
+                changes.Add(new Change(ChangeKind.Song, Text(song, "name"), band, false, changed));
+            }
+        }
+
+        return changes.OrderByDescending(change => change.When).ToList();
     }
 
     private void PostToInstances(string what, PendingChange change, JsonObject? stored = null)

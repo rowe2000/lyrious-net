@@ -116,6 +116,16 @@ namespace Lyrious.UILib.Setlists
 
 		Task<SetlistSummary> CreateSetlistAsync(Guid groupId, string name, CancellationToken cancellationToken = default);
 
+		/// <summary>
+		/// What's new or changed in the member's bands since then, newest first: bands they were added
+		/// to, new members, new or changed setlists and songs. Changes made on this device (since
+		/// <see cref="ForgetLocalChanges"/>) are left out.
+		/// </summary>
+		Task<IReadOnlyList<Change>> GetChangesSinceAsync(DateTime since, CancellationToken cancellationToken = default);
+
+		/// <summary>Forgets which changes were made on this device, once the changes since the last visit have been shown.</summary>
+		void ForgetLocalChanges();
+
 		/// <summary>Gives the band a new name (not the private band's, which is fixed).</summary>
 		Task RenameGroupAsync(Guid groupId, string name, CancellationToken cancellationToken = default);
 
@@ -188,6 +198,18 @@ namespace Lyrious.UILib.Setlists
 	/// <param name="Problem">The last sync problem worth telling the member (e.g. a change the server refused).</param>
 	public sealed record SyncStatus(bool Online, int PendingChanges, DateTime? LastSynced, string? Problem);
 
+	/// <summary>What a <see cref="Change"/> is about.</summary>
+	public enum ChangeKind { Band, Member, Setlist, Song }
+
+	/// <summary>
+	/// Something new or changed in the member's bands (see <see cref="ISetlistService.GetChangesSinceAsync"/>):
+	/// a band they were added to, a new member, a new or changed setlist or song.
+	/// </summary>
+	/// <param name="Name">The band's, member's, setlist's or song's name.</param>
+	/// <param name="Band">The band it's in.</param>
+	/// <param name="IsNew">New (else changed).</param>
+	public sealed record Change(ChangeKind Kind, string Name, string Band, bool IsNew, DateTime When);
+
 	public sealed record GroupSummary(Guid Id, string Name, Guid? CurrentSetlistId, Guid? CurrentSetlistItemId, bool IsPrivate = false);
 
 	public enum GroupRole { Member, Conductor, Admin }
@@ -252,6 +274,8 @@ namespace Lyrious.UILib.Setlists
 		public Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary?> GetSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary> CreateSetlistAsync(Guid groupId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<IReadOnlyList<Change>> GetChangesSinceAsync(DateTime since, CancellationToken cancellationToken = default) => throw NotConnected();
+		public void ForgetLocalChanges() { }
 		public Task RenameGroupAsync(Guid groupId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RenameSetlistAsync(Guid setlistId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();

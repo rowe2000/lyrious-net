@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -9,7 +10,14 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>The app's settings, kept on this device (<see cref="App.Settings"/>). Changes apply at once.</summary>
 	public sealed class SettingsView : UserControl
 	{
-		public SettingsView()
+		/// <param name="importSongbookPro">
+		/// Picks a SongbookPro backup and imports it into the joined band (converted to Lyrious' format
+		/// or not), returning what happened (null: nothing picked); throws
+		/// <see cref="InvalidOperationException"/> with the reason when it can't.
+		/// </param>
+		/// <param name="clearSongbook">Deletes every song in the joined band's songbook, returning what happened.</param>
+		/// <param name="bandName">The joined band's name, for the Songbook section. None (no band joined): no Songbook section.</param>
+		public SettingsView(Func<Control, bool, Task<string?>>? importSongbookPro = null, Func<Task<string>>? clearSongbook = null, string? bandName = null)
 		{
 			var nextOnStop = new ToggleSwitch
 			{
@@ -118,10 +126,170 @@ namespace Lyrious.UILib.Setlists
 				},
 			};
 
+			// The joined band's songbook: importing into it, and clearing it.
+			if (bandName != null && (importSongbookPro != null || clearSongbook != null))
+			{
+				form.Children.Add(Section($"Songbook · {bandName}"));
+				if (importSongbookPro != null)
+				{
+					form.Children.Add(ImportSetting(importSongbookPro));
+				}
+
+				if (clearSongbook != null)
+				{
+					form.Children.Add(ClearSetting(clearSongbook, bandName));
+				}
+			}
+
 			// Scrolls when the settings don't fit (a short window or a large interface size).
 			form.Margin = new Thickness(0, 0, 0, 16);
 			var scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
 			Content = PageLayout.Page("Settings", scroller, subtitle: "Kept on this device", closable: true);
+		}
+
+		/// <summary>
+		/// "Import SongbookPro backup…": a button that first asks whether to convert the songs to
+		/// Lyrious' format (Convert, Keep as is, or Cancel), then picks the backup and imports it; what
+		/// happened (or why it couldn't) shows below it.
+		/// </summary>
+		private static Control ImportSetting(Func<Control, bool, Task<string?>> import)
+		{
+			var button = new Button { Content = "Import SongbookPro backup…" };
+			var status = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Opacity = 0.85 };
+
+			async Task ImportAsync(bool convert)
+			{
+				button.IsEnabled = false;
+				status.IsVisible = true;
+				status.Text = "Importing…";
+				try
+				{
+					var result = await import(button, convert);
+					status.Text = result ?? "";
+					status.IsVisible = result != null;
+				}
+				catch (InvalidOperationException ex)
+				{
+					status.Text = ex.Message;
+				}
+				finally
+				{
+					button.IsEnabled = true;
+				}
+			}
+
+			var convertButton = new Button { Content = "Convert", Classes = { "accent" } };
+			var keepButton = new Button { Content = "Keep as is" };
+			var cancelButton = new Button { Content = "Cancel" };
+			var question = new Flyout
+			{
+				Content = new StackPanel
+				{
+					Spacing = 12,
+					MaxWidth = 340,
+					Children =
+					{
+						new TextBlock { Text = "Convert the songs to Lyrious format?", FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
+						new TextBlock
+						{
+							Text = "Each song then starts with a heading of its key and name (\"# [D] Amazing Grace\"), and comments such as {c: Verse 1} become headings (\"## Verse 1\").",
+							TextWrapping = TextWrapping.Wrap,
+							Opacity = 0.8,
+						},
+						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { convertButton, keepButton, cancelButton } },
+					},
+				},
+			};
+			convertButton.Click += (_, _) =>
+			{
+				question.Hide();
+				_ = ImportAsync(convert: true);
+			};
+			keepButton.Click += (_, _) =>
+			{
+				question.Hide();
+				_ = ImportAsync(convert: false);
+			};
+			cancelButton.Click += (_, _) => question.Hide();
+			button.Flyout = question;
+
+			return new StackPanel
+			{
+				Spacing = 8,
+				Children =
+				{
+					new TextBlock
+					{
+						Text = "Adds the songs and sets of a SongbookPro backup (\"SongbookPro Backup.zip\" or .sbpbackup) to your band's songbook and setlists. PDF songs are left out.",
+						TextWrapping = TextWrapping.Wrap,
+						Opacity = 0.7,
+					},
+					button,
+					status,
+				},
+			};
+		}
+
+		/// <summary>
+		/// "Clear songbook…": a button that asks first (in a popup, with a red Delete), then deletes every
+		/// song in the band's songbook; what happened shows below it.
+		/// </summary>
+		private static Control ClearSetting(Func<Task<string>> clear, string bandName)
+		{
+			var button = new Button { Content = "Clear songbook…" };
+			var status = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Opacity = 0.85 };
+			var confirm = PageLayout.DangerButton("Delete all songs");
+			var cancel = new Button { Content = "Cancel" };
+			var question = new Flyout
+			{
+				Content = new StackPanel
+				{
+					Spacing = 12,
+					MaxWidth = 320,
+					Children =
+					{
+						new TextBlock
+						{
+							Text = $"Delete every song in {bandName}'s songbook? They're removed from every setlist too (the setlists stay, empty). This can't be undone.",
+							TextWrapping = TextWrapping.Wrap,
+						},
+						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { confirm, cancel } },
+					},
+				},
+			};
+			cancel.Click += (_, _) => question.Hide();
+			confirm.Click += async (_, _) =>
+			{
+				question.Hide();
+				button.IsEnabled = false;
+				status.IsVisible = true;
+				status.Text = "Deleting…";
+				try
+				{
+					status.Text = await clear();
+				}
+				catch (Exception ex)
+				{
+					status.Text = $"Couldn't clear the songbook. {ex.Message}";
+				}
+				finally
+				{
+					button.IsEnabled = true;
+				}
+			};
+			button.Flyout = question;
+
+			return new StackPanel
+			{
+				Spacing = 8,
+				Margin = new Thickness(0, 8, 0, 0),
+				Children =
+				{
+					new TextBlock { Text = "Deletes all the songs in the songbook, for everyone in the band.", TextWrapping = TextWrapping.Wrap, Opacity = 0.7 },
+					button,
+					status,
+				},
+			};
 		}
 
 		/// <summary>The colours offered: bright enough for a dark background, deep enough for a light one.</summary>
@@ -141,92 +309,61 @@ namespace Lyrious.UILib.Setlists
 		};
 
 		/// <summary>
-		/// A colour setting: the theme's own ("Default"), a row of colours to pick from, and a box for
-		/// any other ("#RRGGBB"). The chosen one is outlined; a change shows at once.
+		/// A colour setting: a button showing the colour (or the theme's own, "Default") that opens a
+		/// popup to pick another: hue, saturation and lightness (see <see cref="HslColorPicker"/>), a
+		/// box for "#RRGGBB", a row of ready colours, and Default. A change shows at once.
 		/// </summary>
 		private static Control ColorSetting(string name, string explanation, Func<Color?> get, Action<Color?> set, string defaultName)
 		{
-			var outlines = new System.Collections.Generic.List<(Color? Color, Border Outline)>();
-			// The chosen one's outline follows the theme's text colour; only it is bound, so the others
-			// stay plain when the colours (resources) change.
-			IDisposable? chosenOutline = null;
-			var custom = new TextBox { Width = 110, PlaceholderText = "#RRGGBB", VerticalAlignment = VerticalAlignment.Center };
+			var swatch = new Border { Width = 28, Height = 28, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.Gray, 0.6) };
+			var label = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 4, 0), TextTrimming = TextTrimming.CharacterEllipsis };
+			var button = new Button
+			{
+				Padding = new Thickness(6),
+				// Always as wide, whatever it says, so the popup under it stays put while a colour is picked.
+				Width = 190,
+				HorizontalContentAlignment = HorizontalAlignment.Stretch,
+				Content = new DockPanel { Children = { swatch, label } },
+			};
+
+			var picker = new HslColorPicker();
+			var preview = new Border { Width = 40, Height = 32, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.Gray, 0.6) };
+			var hex = new TextBox { Width = 110, PlaceholderText = "#RRGGBB", VerticalAlignment = VerticalAlignment.Center };
 			var problem = new TextBlock { Text = "Not a colour; write it as #RRGGBB.", IsVisible = false, TextWrapping = TextWrapping.Wrap };
 			problem.Bind(TextBlock.ForegroundProperty, problem.GetResourceObservable(LyriousTheme.ErrorBrush));
 
-			void ShowChosen()
+			// The button, preview and box show the setting; the picker shows it too unless it's being dragged.
+			void Show(bool updatePicker = true)
 			{
 				var chosen = get();
-				chosenOutline?.Dispose();
-				chosenOutline = null;
-				foreach (var (color, outline) in outlines)
-				{
-					if (color == chosen)
-					{
-						chosenOutline = outline.Bind(Border.BorderBrushProperty, outline.GetResourceObservable(LyriousTheme.ForegroundBrush));
-					}
-					else
-					{
-						outline.BorderBrush = Brushes.Transparent;
-					}
-				}
-
-				custom.Text = chosen is { } value ? ColorSettings.ToHex(value) : "";
+				swatch.Background = chosen is { } color ? new SolidColorBrush(color) : null;
+				swatch.IsVisible = chosen != null;
+				label.Text = chosen is { } value ? ColorSettings.ToHex(value) : defaultName;
+				preview.Background = swatch.Background;
+				hex.Text = chosen is { } c ? ColorSettings.ToHex(c) : "";
 				problem.IsVisible = false;
+				if (updatePicker && chosen is { } shown)
+				{
+					picker.SetColor(shown);
+				}
 			}
 
-			void Choose(Color? color)
+			void Choose(Color? color, bool fromPicker = false)
 			{
 				set(color);
-				ShowChosen();
+				Show(updatePicker: !fromPicker);
 			}
 
-			Border Choice(Color? color, Control content, string tip)
-			{
-				var button = new Button
-				{
-					Content = content,
-					Padding = new Thickness(0),
-					MinWidth = 0,
-					MinHeight = 0,
-					HorizontalContentAlignment = HorizontalAlignment.Center,
-					VerticalContentAlignment = VerticalAlignment.Center,
-				};
-				ToolTip.SetTip(button, tip);
-				button.Click += (_, _) => Choose(color);
-				var outline = new Border
-				{
-					BorderThickness = new Thickness(2),
-					BorderBrush = Brushes.Transparent,
-					CornerRadius = new CornerRadius(8),
-					Padding = new Thickness(2),
-					Child = button,
-				};
-				outlines.Add((color, outline));
-				return outline;
-			}
+			picker.ColorChanged += color => Choose(color, fromPicker: true);
 
-			var choices = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 4, LineSpacing = 4 };
-			choices.Children.Add(Choice(null, new TextBlock { Text = "Default", Margin = new Thickness(10, 0) , VerticalAlignment = VerticalAlignment.Center}, defaultName));
-			((Button)outlines[0].Outline.Child!).Height = 32;
-			foreach (var hex in Swatches)
+			void UseHex()
 			{
-				var color = Color.Parse(hex);
-				choices.Children.Add(Choice(
-					color,
-					new Border { Width = 32, Height = 32, CornerRadius = new CornerRadius(4), Background = new SolidColorBrush(color) },
-					hex));
-			}
-
-			void UseCustom()
-			{
-				var text = custom.Text?.Trim();
+				var text = hex.Text?.Trim();
 				var current = get();
 				if (string.IsNullOrEmpty(text) ? current == null : ColorSettings.TryParse(text) is { } same && same == current)
 				{
-					// Unchanged (e.g. just leaving the box): nothing to do.
 					problem.IsVisible = false;
-					return;
+					return; // Unchanged (e.g. just leaving the box).
 				}
 
 				if (string.IsNullOrEmpty(text))
@@ -243,29 +380,79 @@ namespace Lyrious.UILib.Setlists
 				}
 			}
 
-			custom.KeyDown += (_, e) =>
+			hex.KeyDown += (_, e) =>
 			{
 				if (e.Key == Avalonia.Input.Key.Enter)
 				{
 					e.Handled = true;
-					UseCustom();
+					UseHex();
 				}
 			};
-			custom.LostFocus += (_, _) => UseCustom();
-			choices.Children.Add(new Border { Padding = new Thickness(6, 2, 0, 2), Child = custom });
+			hex.LostFocus += (_, _) => UseHex();
 
-			ShowChosen();
-			return new StackPanel
+			// Ready colours, and the theme's own.
+			var ready = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 4, LineSpacing = 4, MaxWidth = 260 };
+			foreach (var code in Swatches)
 			{
-				Spacing = 6,
-				Children =
+				var color = Color.Parse(code);
+				var pick = new Button
 				{
-					new TextBlock { Text = name, FontSize = 16, TextWrapping = TextWrapping.Wrap },
-					new TextBlock { Text = explanation, Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
-					choices,
-					problem,
+					Padding = new Thickness(0),
+					MinWidth = 0,
+					MinHeight = 0,
+					Content = new Border { Width = 24, Height = 24, CornerRadius = new CornerRadius(4), Background = new SolidColorBrush(color) },
+				};
+				ToolTip.SetTip(pick, code);
+				pick.Click += (_, _) => Choose(color);
+				ready.Children.Add(pick);
+			}
+
+			var useDefault = new Button { Content = $"Default ({defaultName})" };
+			useDefault.Click += (_, _) => Choose(null);
+
+			button.Flyout = new Flyout
+			{
+				Placement = PlacementMode.BottomEdgeAlignedLeft,
+				Content = new StackPanel
+				{
+					Spacing = 12,
+					Children =
+					{
+						picker,
+						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { preview, hex } },
+						problem,
+						ready,
+						useDefault,
+					},
 				},
 			};
+
+			Show();
+			return new DockPanel
+			{
+				Children =
+				{
+					// The colour's button at the right, as the other settings have their control.
+					Dock(button),
+					new StackPanel
+					{
+						Spacing = 4,
+						Children =
+						{
+							new TextBlock { Text = name, FontSize = 16, TextWrapping = TextWrapping.Wrap },
+							new TextBlock { Text = explanation, Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
+						},
+					},
+				},
+			};
+
+			static Control Dock(Control control)
+			{
+				control.VerticalAlignment = VerticalAlignment.Center;
+				control.Margin = new Thickness(16, 0, 0, 0);
+				DockPanel.SetDock(control, Avalonia.Controls.Dock.Right);
+				return control;
+			}
 		}
 
 		/// <summary>One setting: its name and an explanation, with its control at the right.</summary>
