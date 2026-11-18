@@ -98,31 +98,36 @@ namespace Lyrious.UILib.Setlists
 						"The current song, setlist and band, the selected row's outline, and the main buttons.",
 						() => ColorSettings.Highlight,
 						color => ColorSettings.Highlight = color,
-						"System accent"),
+						"Theme purple",
+						"SystemAccentColor"),
 					ColorSetting(
 						"Chords",
 						"Chords above the lyrics, and the bar beside a chorus.",
 						() => ColorSettings.Chord,
 						color => ColorSettings.Chord = color,
-						"Theme blue"),
+						"Theme colour",
+						LyriousTheme.ChordBrush),
 					ColorSetting(
 						"Heading 1",
 						"The largest headings in the lyrics (\"# \"), such as the song's title.",
 						() => ColorSettings.Heading1,
 						color => ColorSettings.Heading1 = color,
-						"Text colour"),
+						"Text colour",
+						LyriousTheme.Heading1Brush),
 					ColorSetting(
 						"Heading 2",
 						"Headings in the lyrics written \"## \", such as Verse and Chorus.",
 						() => ColorSettings.Heading2,
 						color => ColorSettings.Heading2 = color,
-						"Text colour"),
+						"Theme colour",
+						LyriousTheme.Heading2Brush),
 					ColorSetting(
 						"Other headings",
 						"Smaller headings in the lyrics (\"### \" and more).",
 						() => ColorSettings.Heading,
 						color => ColorSettings.Heading = color,
-						"Text colour"),
+						"Theme colour",
+						LyriousTheme.HeadingBrush),
 				},
 			};
 
@@ -309,11 +314,12 @@ namespace Lyrious.UILib.Setlists
 		};
 
 		/// <summary>
-		/// A colour setting: a button showing the colour (or the theme's own, "Default") that opens a
+		/// A colour setting: a button showing the colour and its code (for the theme's own, the colour
+		/// <paramref name="defaultResource"/> holds, with <paramref name="defaultName"/>) that opens a
 		/// popup to pick another: hue, saturation and lightness (see <see cref="HslColorPicker"/>), a
 		/// box for "#RRGGBB", a row of ready colours, and Default. A change shows at once.
 		/// </summary>
-		private static Control ColorSetting(string name, string explanation, Func<Color?> get, Action<Color?> set, string defaultName)
+		private static Control ColorSetting(string name, string explanation, Func<Color?> get, Action<Color?> set, string defaultName, string defaultResource)
 		{
 			var swatch = new Border { Width = 28, Height = 28, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.Gray, 0.6) };
 			var label = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 4, 0), TextTrimming = TextTrimming.CharacterEllipsis };
@@ -332,21 +338,43 @@ namespace Lyrious.UILib.Setlists
 			var problem = new TextBlock { Text = "Not a colour; write it as #RRGGBB.", IsVisible = false, TextWrapping = TextWrapping.Wrap };
 			problem.Bind(TextBlock.ForegroundProperty, problem.GetResourceObservable(LyriousTheme.ErrorBrush));
 
-			// The button, preview and box show the setting; the picker shows it too unless it's being dragged.
+			// The theme's own colour for this setting, followed as the theme changes (null until known).
+			Color? themeColor = null;
+
+			// The button, preview and box show the setting (or the theme's colour); the picker shows it
+			// too unless it's being dragged.
 			void Show(bool updatePicker = true)
 			{
 				var chosen = get();
-				swatch.Background = chosen is { } color ? new SolidColorBrush(color) : null;
-				swatch.IsVisible = chosen != null;
-				label.Text = chosen is { } value ? ColorSettings.ToHex(value) : defaultName;
+				var shown = chosen ?? themeColor;
+				swatch.Background = shown is { } color ? new SolidColorBrush(color) : null;
+				swatch.IsVisible = shown != null;
+				label.Text = (chosen, themeColor) switch
+				{
+					({ } value, _) => ColorSettings.ToHex(value),
+					(null, { } theme) => $"{ColorSettings.ToHex(theme)} · {defaultName}",
+					_ => defaultName,
+				};
 				preview.Background = swatch.Background;
 				hex.Text = chosen is { } c ? ColorSettings.ToHex(c) : "";
+				hex.PlaceholderText = themeColor is { } t ? ColorSettings.ToHex(t) : "#RRGGBB";
 				problem.IsVisible = false;
-				if (updatePicker && chosen is { } shown)
+				if (updatePicker && shown is { } pick)
 				{
-					picker.SetColor(shown);
+					picker.SetColor(pick);
 				}
 			}
+
+			button.GetResourceObservable(defaultResource).Subscribe(new Avalonia.Reactive.AnonymousObserver<object?>(value =>
+			{
+				themeColor = value switch
+				{
+					Color color => color,
+					ISolidColorBrush brush => Color.FromRgb(brush.Color.R, brush.Color.G, brush.Color.B),
+					_ => null,
+				};
+				Show();
+			}));
 
 			void Choose(Color? color, bool fromPicker = false)
 			{
@@ -502,14 +530,14 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// Whether the whole app is sized to the window (see <see cref="UiScale"/>): the smaller of its width and height,
-		/// where <see cref="DynamicZoomSize"/> is 100 %. Off unless turned on.
+		/// where <see cref="DynamicZoomSize"/> is 100 %. On unless turned off.
 		/// </summary>
 		public static bool DynamicZoom
 		{
-			get => App.Settings.Get(SettingKeys.DynamicZoom) == "true";
+			get => App.Settings.Get(SettingKeys.DynamicZoom) != "false";
 			set
 			{
-				App.Settings.Set(SettingKeys.DynamicZoom, value ? "true" : null);
+				App.Settings.Set(SettingKeys.DynamicZoom, value ? "true" : "false");
 				DynamicZoomChanged?.Invoke();
 			}
 		}

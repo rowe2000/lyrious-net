@@ -53,7 +53,7 @@ namespace Lyrious.UILib
 		/// <summary>The lyrics' zoom in the scroll view (pinch), e.g. "1.4"; none for normal size.</summary>
 		public const string LyricsZoom = "lyrics-zoom";
 
-		/// <summary>"true" sizes the whole app to the window (see <see cref="Setlists.DisplaySettings.DynamicZoom"/>); off unless set.</summary>
+		/// <summary>"false" stops sizing the whole app to the window (see <see cref="Setlists.DisplaySettings.DynamicZoom"/>); on unless set so.</summary>
 		public const string DynamicZoom = "dynamic-zoom";
 
 		/// <summary>"true" shares the app on the local network (see <see cref="ILanSharing"/>); off unless set.</summary>

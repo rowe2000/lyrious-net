@@ -13,7 +13,7 @@ namespace Lyrious.UILib
 	{
 		/// <summary>
 		/// The highlight: the current song, setlist and band (and other accent-coloured buttons), and
-		/// the outline of a selected row. Null for the system's accent colour.
+		/// the outline of a selected row. Null for <see cref="DefaultHighlight"/>.
 		/// </summary>
 		public static Color? Highlight
 		{
@@ -21,33 +21,36 @@ namespace Lyrious.UILib
 			set => Write(SettingKeys.HighlightColor, value);
 		}
 
-		/// <summary>Chords above the lyrics, and the bar beside a chorus. Null for the theme's (blue).</summary>
+		/// <summary>Chords above the lyrics, and the bar beside a chorus. Null for the theme's (yellow in the dark theme, blue in the light one).</summary>
 		public static Color? Chord
 		{
 			get => Read(SettingKeys.ChordColor);
 			set => Write(SettingKeys.ChordColor, value);
 		}
 
-		/// <summary>Level 1 headings in the lyrics ("# Title"). Null for the text colour.</summary>
+		/// <summary>Level 1 headings in the lyrics ("# Title"). Null for the theme's (white in the dark theme, the text colour in the light one).</summary>
 		public static Color? Heading1
 		{
 			get => Read(SettingKeys.Heading1Color);
 			set => Write(SettingKeys.Heading1Color, value);
 		}
 
-		/// <summary>Level 2 headings in the lyrics ("## Verse"). Null for the text colour.</summary>
+		/// <summary>Level 2 headings in the lyrics ("## Verse"). Null for the theme's (dark gold in the dark theme, the text colour in the light one).</summary>
 		public static Color? Heading2
 		{
 			get => Read(SettingKeys.Heading2Color);
 			set => Write(SettingKeys.Heading2Color, value);
 		}
 
-		/// <summary>The other headings in the lyrics (levels 3 to 6). Null for the text colour.</summary>
+		/// <summary>The other headings in the lyrics (levels 3 to 6). Null for the theme's (amber in the dark theme, the text colour in the light one).</summary>
 		public static Color? Heading
 		{
 			get => Read(SettingKeys.HeadingColor);
 			set => Write(SettingKeys.HeadingColor, value);
 		}
+
+		/// <summary>The highlight unless the user picks one (purple, in both themes, instead of the system's accent colour).</summary>
+		public static readonly Color DefaultHighlight = Color.Parse("#A23BFF");
 
 		// Fluent's accent shades: the light theme fills with Dark1, the dark theme with Light2, and so on.
 		private static readonly (string Key, double Amount)[] AccentShades =
@@ -66,21 +69,15 @@ namespace Lyrious.UILib
 			}
 
 			var resources = app.Resources;
-			var highlight = Highlight;
+			// The accent is always set: the user's highlight, or ours rather than the system's.
+			var highlight = Highlight ?? DefaultHighlight;
 			foreach (var (key, amount) in AccentShades)
 			{
-				if (highlight is { } color)
-				{
-					resources[key] = Shade(color, amount);
-				}
-				else
-				{
-					resources.Remove(key);
-				}
+				resources[key] = Shade(highlight, amount);
 			}
 
 			// Top-level entries win over the light/dark ones in LyriousTheme.
-			SetBrush(resources, LyriousTheme.SelectionBrush, highlight);
+			SetBrush(resources, LyriousTheme.SelectionBrush, Highlight);
 			SetBrush(resources, LyriousTheme.ChordBrush, Chord);
 			SetBrush(resources, LyriousTheme.Heading1Brush, Heading1);
 			SetBrush(resources, LyriousTheme.Heading2Brush, Heading2);

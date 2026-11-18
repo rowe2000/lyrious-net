@@ -17,11 +17,11 @@ namespace Lyrious.UILib
 		public const string WarningBrush = "LyriousWarningBrush";
 		/// <summary>Chords shown above the lyrics (ChordPro), and the bar beside a chorus.</summary>
 		public const string ChordBrush = "LyriousChordBrush";
-		/// <summary>Level 1 headings in the lyrics ("# Title"); the text colour unless the user picks one.</summary>
+		/// <summary>Level 1 headings in the lyrics ("# Title"); white in the dark theme, the text colour in the light one, unless the user picks one.</summary>
 		public const string Heading1Brush = "LyriousHeading1Brush";
-		/// <summary>Level 2 headings in the lyrics ("## Verse"); the text colour unless the user picks one.</summary>
+		/// <summary>Level 2 headings in the lyrics ("## Verse"); dark gold in the dark theme, the text colour in the light one, unless the user picks one.</summary>
 		public const string Heading2Brush = "LyriousHeading2Brush";
-		/// <summary>The other headings in the lyrics (levels 3 to 6); the text colour unless the user picks one.</summary>
+		/// <summary>The other headings in the lyrics (levels 3 to 6); amber in the dark theme, the text colour in the light one, unless the user picks one.</summary>
 		public const string HeadingBrush = "LyriousHeadingBrush";
 		public const string ForegroundBrush = "LyriousForegroundBrush";
 		/// <summary>The outline of a selected list row (the current item is filled with the accent colour instead).</summary>
@@ -41,7 +41,7 @@ namespace Lyrious.UILib
 				[Heading2Brush] = new SolidColorBrush(Color.Parse("#1B1B1B")),
 				[HeadingBrush] = new SolidColorBrush(Color.Parse("#1B1B1B")),
 				[ForegroundBrush] = new SolidColorBrush(Color.Parse("#1B1B1B")),
-				[SelectionBrush] = new SolidColorBrush(Color.Parse("#0067C0")),
+				[SelectionBrush] = new SolidColorBrush(Color.Parse("#A23BFF")),
 			};
 			resources.ThemeDictionaries[ThemeVariant.Dark] = new ResourceDictionary
 			{
@@ -49,12 +49,12 @@ namespace Lyrious.UILib
 				[CardBrush] = new SolidColorBrush(Color.Parse("#2B2B2B")),
 				[SuccessBrush] = new SolidColorBrush(Color.Parse("#6CCB5F")),
 				[WarningBrush] = new SolidColorBrush(Color.Parse("#FCE100")),
-				[ChordBrush] = new SolidColorBrush(Color.Parse("#60CDFF")),
+				[ChordBrush] = new SolidColorBrush(Color.Parse("#FDBD00")),
 				[Heading1Brush] = new SolidColorBrush(Color.Parse("#FFFFFF")),
-				[Heading2Brush] = new SolidColorBrush(Color.Parse("#FFFFFF")),
-				[HeadingBrush] = new SolidColorBrush(Color.Parse("#FFFFFF")),
+				[Heading2Brush] = new SolidColorBrush(Color.Parse("#967209")),
+				[HeadingBrush] = new SolidColorBrush(Color.Parse("#D6A308")),
 				[ForegroundBrush] = new SolidColorBrush(Color.Parse("#FFFFFF")),
-				[SelectionBrush] = new SolidColorBrush(Color.Parse("#60CDFF")),
+				[SelectionBrush] = new SolidColorBrush(Color.Parse("#A23BFF")),
 			};
 		}
 	}
