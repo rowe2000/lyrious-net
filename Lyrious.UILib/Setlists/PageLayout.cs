@@ -404,9 +404,9 @@ namespace Lyrious.UILib.Setlists
 		public static Button DeleteButton(string description, string question, Action delete)
 		{
 			var button = HomeView.IconButton(TrashIcon, description);
+			RedOnHover(button);
 
-			var confirm = new Button { Content = "Delete", Foreground = Brushes.White };
-			confirm.Bind(Button.BackgroundProperty, confirm.GetResourceObservable(LyriousTheme.ErrorBrush));
+			var confirm = DangerButton("Delete");
 			var cancel = new Button { Content = "Cancel" };
 			var flyout = new Flyout
 			{
@@ -428,6 +428,40 @@ namespace Lyrious.UILib.Setlists
 			};
 			cancel.Click += (_, _) => flyout.Hide();
 			button.Flyout = flyout;
+			return button;
+		}
+
+		/// <summary>
+		/// Gives an icon button (e.g. the trash) a red background with a white icon while the
+		/// pointer is over it or it's pressed.
+		/// </summary>
+		public static void RedOnHover(Button button)
+		{
+			button.Resources["ButtonBackgroundPointerOver"] = new SolidColorBrush(Color.Parse("#D13438"));
+			button.Resources["ButtonBackgroundPressed"] = new SolidColorBrush(Color.Parse("#A4262C"));
+			button.Resources["ButtonForegroundPointerOver"] = Brushes.White;
+			button.Resources["ButtonForegroundPressed"] = Brushes.White;
+			// The icon follows the button's text colour (white over the red), instead of the theme's.
+			if (button.Content is Avalonia.Controls.Shapes.Shape icon)
+			{
+				icon.Bind(Avalonia.Controls.Shapes.Shape.StrokeProperty, icon.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
+			}
+		}
+
+		/// <summary>A strong red button with bold white text, for confirming a delete or remove.</summary>
+		public static Button DangerButton(string text)
+		{
+			var button = new Button
+			{
+				Content = text,
+				FontWeight = FontWeight.Bold,
+				Foreground = Brushes.White,
+				Background = new SolidColorBrush(Color.Parse("#E81123")),
+			};
+			button.Resources["ButtonBackgroundPointerOver"] = new SolidColorBrush(Color.Parse("#FF2A2A"));
+			button.Resources["ButtonBackgroundPressed"] = new SolidColorBrush(Color.Parse("#B0000D"));
+			button.Resources["ButtonForegroundPointerOver"] = Brushes.White;
+			button.Resources["ButtonForegroundPressed"] = Brushes.White;
 			return button;
 		}
 

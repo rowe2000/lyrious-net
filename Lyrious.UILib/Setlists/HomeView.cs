@@ -45,7 +45,7 @@ namespace Lyrious.UILib.Setlists
 		private readonly TextBlock setlistTitle = new() { Text = "Setlist", FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
 		private readonly ContentControl setlistDrawerBody = new();
 		private readonly TextBlock currentSetlistName = new() { Text = "Choose a setlist", FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
-		private readonly TextBlock currentSongName = new() { Text = NoSong, FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+		private readonly TextBlock currentSongName = new() { Text = NoSong, FontSize = 18, FontWeight = FontWeight.Normal, FontStyle = FontStyle.Italic, TextTrimming = TextTrimming.CharacterEllipsis };
 		private readonly Button chooseSetlistButton;
 		private readonly Button chooseSongButton;
 		private readonly Button findSongButton;
@@ -1020,6 +1020,9 @@ namespace Lyrious.UILib.Setlists
 			currentSongId = song?.Id;
 			currentEntryId = entryId;
 			currentSongName.Text = song?.Name ?? NoSong;
+			// "Choose a song" (no song) in italics; a song's name in bold.
+			currentSongName.FontWeight = song == null ? FontWeight.Normal : FontWeight.SemiBold;
+			currentSongName.FontStyle = song == null ? FontStyle.Italic : FontStyle.Normal;
 		}
 
 		/// <summary>The left drawer: member, band, setlist and song at the top, account actions at the bottom.</summary>
@@ -1115,19 +1118,46 @@ namespace Lyrious.UILib.Setlists
 			return scroller;
 		}
 
-		/// <summary>An item of the right drawer's "+" menu, run for the current band and setlist.</summary>
-		private MenuItem DrawerAddItem(string header, Func<GroupSummary, SetlistSummary, Task> add)
+		/// <summary>
+		/// The "+" menu of ways to add a song to a setlist (the right drawer's, and the setlist
+		/// page's); each puts the song at the end of the setlist <paramref name="target"/> gives
+		/// when the item is clicked, after <paramref name="before"/> (e.g. closing the drawer).
+		/// </summary>
+		private MenuFlyout AddSongsMenu(Func<(GroupSummary Group, SetlistSummary Setlist)?> target, Action? before = null)
 		{
-			var item = new MenuItem { Header = header };
-			item.Click += (_, _) =>
+			MenuItem Item(string header, Func<GroupSummary, SetlistSummary, Task> add)
 			{
-				if (currentGroup is { } group && currentSetlist is { } setlist)
+				var item = new MenuItem { Header = header };
+				item.Click += (_, _) =>
 				{
-					CloseUnlessPinned(setlistDrawer);
-					_ = add(group, setlist);
-				}
+					if (target() is { } chosen)
+					{
+						before?.Invoke();
+						_ = add(chosen.Group, chosen.Setlist);
+					}
+				};
+				return item;
+			}
+
+			return new MenuFlyout
+			{
+				Items =
+				{
+					Item("From the songbook…", (group, setlist) => RunAsync(async () =>
+					{
+						var entries = await service.GetEntriesAsync(setlist.Id);
+						ShowAddSongs(group, setlist, await service.GetSongbookSongsAsync(group.Id), entries.Select(entry => entry.Song.Id).ToHashSet());
+					})),
+					Item("New empty song…", (group, setlist) =>
+					{
+						ShowNewSongEditor(group, setlist);
+						return Task.CompletedTask;
+					}),
+					Item("Import from file…", ImportSongToSetlistAsync),
+					Item("Find on the internet…", (group, setlist) => RunAsync(async () =>
+						ShowInternetSearch(group, await service.GetSongbookSongsAsync(group.Id), setlist))),
+				},
 			};
-			return item;
 		}
 
 		/// <summary>Fills in a new song (name, key, tempo, beat, lyrics); saving adds it to the songbook and the setlist.</summary>
@@ -1185,26 +1215,10 @@ namespace Lyrious.UILib.Setlists
 
 			// "+" in front of pin and ✕: add songs from the songbook, as on the setlist page.
 			addSongsButton.IsEnabled = false;
-			// "+" opens a menu of ways to add a song; each puts the song at the end of the setlist.
-			addSongsButton.Flyout = new MenuFlyout
-			{
-				Items =
-				{
-					DrawerAddItem("From the songbook…", (group, setlist) => RunAsync(async () =>
-					{
-						var entries = await service.GetEntriesAsync(setlist.Id);
-						ShowAddSongs(group, setlist, await service.GetSongbookSongsAsync(group.Id), entries.Select(entry => entry.Song.Id).ToHashSet());
-					})),
-					DrawerAddItem("New empty song…", (group, setlist) =>
-					{
-						ShowNewSongEditor(group, setlist);
-						return Task.CompletedTask;
-					}),
-					DrawerAddItem("Import from file…", ImportSongToSetlistAsync),
-					DrawerAddItem("Find on the internet…", (group, setlist) => RunAsync(async () =>
-						ShowInternetSearch(group, await service.GetSongbookSongsAsync(group.Id), setlist))),
-				},
-			};
+			// "+" opens a menu of ways to add a song to the current setlist.
+			addSongsButton.Flyout = AddSongsMenu(
+				() => currentGroup is { } group && currentSetlist is { } setlist ? (group, setlist) : null,
+				() => CloseUnlessPinned(setlistDrawer));
 			buttons.Children.Insert(0, addSongsButton);
 
 			// The magnifying glass, in front of the other tools: the search box takes the place of the
@@ -1753,12 +1767,15 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <param name="replace">The page shown now isn't kept to go back to (e.g. going back to this one).</param>
-		private void ShowSetlists(GroupSummary group, IReadOnlyList<SetlistSummary> setlists, bool replace = false)
+		/// <param name="selectedSetlistId">The setlist to show; else the current one.</param>
+		private void ShowSetlists(GroupSummary group, IReadOnlyList<SetlistSummary> setlists, bool replace = false, Guid? selectedSetlistId = null)
 		{
-			var view = new SetlistsView(group, setlists, currentSetlist?.Id);
-			// Opened to look at: the current setlist stays as it is.
-			view.SetlistSelected += setlist => _ = RunAsync(() => ShowSetlistAsync(group, setlist));
-			// Made the current one: the list shows it so, and the drawer and the band follow.
+			var view = new SetlistsView(group, setlists, currentSetlist?.Id, setlist => service.GetEntriesAsync(setlist.Id), selectedSetlistId);
+			// A song picked in a setlist opens it (and makes that setlist the current one).
+			view.SongSelected += (setlist, entry) => SelectSong(group, setlist, entry);
+			// "+" on the shown setlist: the same menu as the right drawer's, for that setlist.
+			view.AddSongsRequested += (setlist, button) => AddSongsMenu(() => (group, setlist)).ShowAt(button);
+			// Made the current one: the page shows it so, and the drawer and the band follow.
 			view.SetlistMadeCurrent += setlist => _ = RunAsync(async () =>
 			{
 				if (bandSync)
@@ -1787,12 +1804,13 @@ namespace Lyrious.UILib.Setlists
 					RefreshSetlistDrawer(reload: true);
 				}
 
-				ShowSetlists(group, await service.GetSetlistsAsync(group.Id));
+				ShowSetlists(group, await service.GetSetlistsAsync(group.Id), replace: true);
 			});
+			// A new setlist is shown straight away, to add songs to.
 			view.SetlistCreateRequested += name => _ = RunAsync(async () =>
 			{
-				await service.CreateSetlistAsync(group.Id, name);
-				ShowSetlists(group, await service.GetSetlistsAsync(group.Id));
+				var created = await service.CreateSetlistAsync(group.Id, name);
+				ShowSetlists(group, await service.GetSetlistsAsync(group.Id), replace: true, selectedSetlistId: created.Id);
 			});
 			ShowPage(view, replace);
 		}

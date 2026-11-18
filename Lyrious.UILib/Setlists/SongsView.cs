@@ -85,9 +85,9 @@ namespace Lyrious.UILib.Setlists
 			addButton.Flyout = new MenuFlyout { Items = { empty, import, internet } };
 
 			Content = PageLayout.Page(
-				"Songbook",
+				group.Name,
 				new DockPanel { Children = { nameRow, status, search, list } },
-				subtitle: $"{group.Name} · choose a song",
+				subtitle: "Songbook · choose a song",
 				titleAction: addButton,
 				closable: true);
 		}

@@ -13,11 +13,11 @@ using Avalonia.Media;
 namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
-	/// The member's bands (groups) with their members, to pick the one to work with or start a new
-	/// one. A click selects a band and shows its toolbar (✓ joins it; the joined band has none); a
-	/// double click joins it too. Above the list, the selected band's details: who's in it (role,
-	/// invited or not, last login), Join, and for the band's admins tools to invite, set roles,
-	/// remove members and delete the band. A member of just one band sees its details only.
+	/// One band's details (at first the joined one), and all the member's other bands as buttons
+	/// above them, flowing left to right; clicking one shows its details instead (the joined band is
+	/// highlighted and has a ✓).
+	/// The details: who's in it (role, invited or not, last login), Join, and for the band's admins
+	/// tools to invite, set roles, remove members and delete the band.
 	/// </summary>
 	public sealed class GroupsView : UserControl
 	{
@@ -27,15 +27,17 @@ namespace Lyrious.UILib.Setlists
 		private readonly IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>> members;
 		private readonly Guid? currentGroupId;
 		private readonly ContentControl details = new();
-		private readonly SelectableList<GroupSummary> list;
+		private readonly IReadOnlyList<GroupSummary> groups;
+		private readonly WrapPanel otherBands = new() { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
+		private GroupSummary? shownGroup;
 
 		/// <summary>The band whose details are shown.</summary>
-		public Guid? SelectedGroupId => list.Selected?.Id;
+		public Guid? SelectedGroupId => shownGroup?.Id;
 
 		/// <summary>The band shown as the joined one (when the page was made).</summary>
 		public Guid? CurrentGroupId => currentGroupId;
 
-		/// <summary>Raised when the user joins a band (double click, the ✓ button, or Join).</summary>
+		/// <summary>Raised when the user joins a band (Join).</summary>
 		public event Action<GroupSummary>? GroupSelected;
 
 		/// <summary>Raised with the name when the user adds a band.</summary>
@@ -65,56 +67,54 @@ namespace Lyrious.UILib.Setlists
 		{
 			this.members = members;
 			this.currentGroupId = currentGroupId;
-			var list = new SelectableList<GroupSummary>(
-				groups,
-				group => GroupContent(group, joined: group.Id == currentGroupId),
-				group => group.Id == currentGroupId,
-				group => group.Id == currentGroupId ? [] : [JoinButton(group)],
-				group => GroupSelected?.Invoke(group),
-				"You're not a member of a band yet. Add one with +, or ask a band admin to invite you.");
-			list.SelectionChanged += ShowDetails;
-			this.list = list;
-			if (groups.FirstOrDefault(group => group.Id == selectedGroupId) is { } selected)
-			{
-				list.Select(selected);
-			}
+			this.groups = groups;
+			var current = groups.FirstOrDefault(group => group.Id == currentGroupId);
+			var shown = groups.FirstOrDefault(group => group.Id == selectedGroupId) ?? current ?? groups.FirstOrDefault();
 
-			ShowDetails(list.Selected ?? groups.FirstOrDefault());
+			// The other bands above the details, flowing left to right.
+			otherBands.IsVisible = groups.Count > 1;
+			ShowBand(shown);
 
 			// "+" reveals a name box above the list; Add (or Enter) creates the band.
 			var (addButton, nameRow) = PageLayout.AddByName("Add band", "Name of the new band", name => GroupCreateRequested?.Invoke(name));
 
-			// The details and the list scroll together (the details can be long in a big band).
-			// With one band there's nothing to choose between: its details only, no list.
-			var onlyBand = groups.Count == 1;
-			var column = new StackPanel { Spacing = 16, Children = { nameRow, details } };
-			if (!onlyBand)
-			{
-				column.Children.Add(list);
-			}
+			// The other bands and the details scroll together (the details can be long in a big band).
+			var column = new StackPanel { Spacing = 16, Children = { nameRow, otherBands, details } };
 
 			Content = PageLayout.Page(
-				onlyBand ? "Band" : "Bands",
+				"Band",
 				new ScrollViewer { Content = column, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
-				subtitle: onlyBand ? null : "Choose a band",
+				subtitle: current == null ? "Choose a band" : null,
 				titleAction: addButton,
 				closable: true);
 		}
 
 		private IReadOnlyList<GroupMember> MembersOf(GroupSummary group) => members.GetValueOrDefault(group.Id) ?? [];
 
-		/// <summary>✓: join the band (make it the current one).</summary>
-		private Button JoinButton(GroupSummary group)
+		/// <summary>
+		/// Shows the band's details (nothing when there's no band), and all the other bands in the
+		/// list above; clicking one of them shows that one instead.
+		/// </summary>
+		private void ShowBand(GroupSummary? group)
 		{
-			var button = HomeView.IconButton(CheckIcon, $"Join {group.Name}");
-			button.Click += (_, _) => GroupSelected?.Invoke(group);
-			return button;
-		}
-
-		/// <summary>The selected band's details (nothing when there's no band).</summary>
-		private void ShowDetails(GroupSummary? group)
-		{
+			shownGroup = group;
 			details.Content = group == null ? null : Details(group);
+
+			var others = groups.Where(other => other.Id != group?.Id).ToArray();
+			otherBands.Children.Clear();
+			foreach (var other in others)
+			{
+				// As wide as the name (and the joined band's ✓).
+				var button = new Button { Content = GroupContent(other, joined: other.Id == currentGroupId), Padding = new Thickness(12, 6) };
+				if (other.Id == currentGroupId)
+				{
+					// The joined band is highlighted.
+					button.Classes.Add("accent");
+				}
+
+				button.Click += (_, _) => ShowBand(other);
+				otherBands.Children.Add(button);
+			}
 		}
 
 		private Control Details(GroupSummary group)
@@ -135,7 +135,7 @@ namespace Lyrious.UILib.Setlists
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
 			if (!joined)
 			{
-				var join = new Button { Content = me is { Approved: false } ? "Accept and join" : "Join", Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center };
+				var join = new Button { Content = me is { Approved: false } ? "Accept and join" : "Join", Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center, Height = 40, VerticalContentAlignment = VerticalAlignment.Center };
 				join.Click += (_, _) => GroupSelected?.Invoke(group);
 				actions.Children.Add(join);
 			}
@@ -190,6 +190,13 @@ namespace Lyrious.UILib.Setlists
 
 			var card = new Border { Padding = new Thickness(16), CornerRadius = new CornerRadius(8), Child = panel };
 			card.Bind(Border.BackgroundProperty, card.GetResourceObservable(LyriousTheme.CardBrush));
+			if (joined)
+			{
+				// The joined band's card is outlined in the accent colour, like its button.
+				card.BorderThickness = new Thickness(2);
+				card.Bind(Border.BorderBrushProperty, card.GetResourceObservable("AccentButtonBackground"));
+			}
+
 			return card;
 		}
 
@@ -321,8 +328,7 @@ namespace Lyrious.UILib.Setlists
 		private Button RemoveButton(GroupSummary group, GroupMember member)
 		{
 			var button = HomeView.IconButton(RemoveIcon, $"Remove {member.Name}");
-			var confirm = new Button { Content = "Remove", Foreground = Brushes.White };
-			confirm.Bind(Button.BackgroundProperty, confirm.GetResourceObservable(LyriousTheme.ErrorBrush));
+			var confirm = PageLayout.DangerButton("Remove");
 			var cancel = new Button { Content = "Cancel" };
 			var flyout = new Flyout
 			{
@@ -406,21 +412,27 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>
 		/// Where the member stands: invited (not accepted yet), accepted (in the band, but working in
 		/// another one), or joined (this is their current band); connected (in green) while their app
-		/// is open and online; then their last login.
+		/// is open and online (then "joined" or "accepted" isn't shown); then their last login.
 		/// </summary>
 		private static Control StatusLine(GroupMember member)
 		{
-			var status = !member.Approved ? "Invited" : member.Joined ? "Joined" : "Accepted";
 			var line = new TextBlock { FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis };
-			line.Inlines!.Add(new Avalonia.Controls.Documents.Run(status) { FontWeight = FontWeight.SemiBold });
-			if (member.Connected)
+			// A connected member in the band is just "● Connected" (no "Joined" or "Accepted").
+			var showStatus = !(member.Connected && member.Approved);
+			if (showStatus)
 			{
-				var connected = new Avalonia.Controls.Documents.Run(" · ● Connected");
-				connected.Bind(Avalonia.Controls.Documents.TextElement.ForegroundProperty, line.GetResourceObservable(LyriousTheme.SuccessBrush));
-				line.Inlines.Add(connected);
+				var status = !member.Approved ? "Invited" : member.Joined ? "Joined" : "Accepted";
+				line.Inlines!.Add(new Avalonia.Controls.Documents.Run(status) { FontWeight = FontWeight.SemiBold });
 			}
 
-			line.Inlines.Add(new Avalonia.Controls.Documents.Run($" · {LastLoginText(member.LastLogin)}"));
+			if (member.Connected)
+			{
+				var connected = new Avalonia.Controls.Documents.Run(showStatus ? " · ● Connected" : "● Connected");
+				connected.Bind(Avalonia.Controls.Documents.TextElement.ForegroundProperty, line.GetResourceObservable(LyriousTheme.SuccessBrush));
+				line.Inlines!.Add(connected);
+			}
+
+			line.Inlines!.Add(new Avalonia.Controls.Documents.Run($" · {LastLoginText(member.LastLogin)}"));
 			line.Opacity = 0.85;
 			return line;
 		}

@@ -44,7 +44,7 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			var list = new StackPanel { Spacing = 8 };
+			var list = new StackPanel { Spacing = 4 };
 			foreach (var item in items)
 			{
 				list.Children.Add(Row(item, content(item), isCurrent(item), tools(item), activate));

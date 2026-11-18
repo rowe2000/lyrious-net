@@ -172,8 +172,7 @@ namespace Lyrious.UILib.Setlists
 		private Button DeleteUnusedButton(List<Row> unused)
 		{
 			var button = new Button { Content = $"Delete the {unused.Count} files no song uses ({Size(unused.Sum(row => row.Sound.Size))})", Margin = new Thickness(0, 0, 0, 4) };
-			var confirm = new Button { Content = "Delete", Foreground = Brushes.White };
-			confirm.Bind(Button.BackgroundProperty, confirm.GetResourceObservable(LyriousTheme.ErrorBrush));
+			var confirm = PageLayout.DangerButton("Delete");
 			var cancel = new Button { Content = "Cancel" };
 			var flyout = new Flyout
 			{
