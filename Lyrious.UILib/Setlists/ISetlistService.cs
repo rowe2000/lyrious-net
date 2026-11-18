@@ -182,7 +182,7 @@ namespace Lyrious.UILib.Setlists
 	/// <param name="Problem">The last sync problem worth telling the member (e.g. a change the server refused).</param>
 	public sealed record SyncStatus(bool Online, int PendingChanges, DateTime? LastSynced, string? Problem);
 
-	public sealed record GroupSummary(Guid Id, string Name, Guid? CurrentSetlistId, Guid? CurrentSetlistItemId);
+	public sealed record GroupSummary(Guid Id, string Name, Guid? CurrentSetlistId, Guid? CurrentSetlistItemId, bool IsPrivate = false);
 
 	public enum GroupRole { Member, Conductor, Admin }
 

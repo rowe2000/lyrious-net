@@ -17,6 +17,15 @@ public sealed class Group : Entity, IName
 	//[JsonIgnore]
 	//public GroupState? GroupState { get; set; }
 
+	/// <summary>
+	/// The member's own band, with only them in it (made by the server for every member, named
+	/// <see cref="PrivateName"/>): it can't be renamed, deleted, left or shared.
+	/// </summary>
+	[DataMember] public bool IsPrivate { get; set; }
+
+	/// <summary>The name of every member's private band.</summary>
+	public const string PrivateName = "Private";
+
 	[DataMember] public Guid? CurrentSetlistId { get; set; }
 	[DataMember] public Guid? CurrentPlayId { get; set; }
 	[DataMember] public Guid? CurrentSetlistItemId { get; set; }

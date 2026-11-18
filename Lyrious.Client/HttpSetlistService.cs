@@ -1015,7 +1015,7 @@ public sealed class HttpSetlistService : ISetlistService
 
     private static string Limit(string value, int max) => value.Length > max ? value[..max] : value;
 
-    private static GroupSummary ToSummary(GroupDto group) => new(group.Id, group.Name, group.CurrentSetlistId, group.CurrentSetlistItemId);
+    private static GroupSummary ToSummary(GroupDto group) => new(group.Id, group.Name, group.CurrentSetlistId, group.CurrentSetlistItemId, group.IsPrivate);
 
     private static SetlistSummary ToSummary(SetlistDto setlist) => new(setlist.Id, setlist.Name, setlist.GroupId);
 

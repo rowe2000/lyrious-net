@@ -121,13 +121,18 @@ namespace Lyrious.UILib.Setlists
 		{
 			var bandMembers = MembersOf(group);
 			var me = bandMembers.FirstOrDefault(member => member.IsMe);
-			var isAdmin = me?.Role == GroupRole.Admin;
+			// The private band has only its member in it, and nothing to manage: no invites, roles or delete.
+			var isAdmin = me?.Role == GroupRole.Admin && !group.IsPrivate;
 			var joined = group.Id == currentGroupId;
 			var admins = bandMembers.Count(member => member.Role == GroupRole.Admin);
 
 			// The band's name and the member's place in it; Join and (admins) delete at the right.
 			var status = new List<string> { joined ? "Joined" : "Not joined" };
-			if (me != null)
+			if (group.IsPrivate)
+			{
+				status.Add("Private · only you");
+			}
+			else if (me != null)
 			{
 				status.Add(me.Approved ? $"You're {Article(me.Role)} {RoleName(me.Role)}" : "You're invited");
 			}
@@ -172,16 +177,12 @@ namespace Lyrious.UILib.Setlists
 				memberRows.Children.Add(MemberRow(group, member, isAdmin, lastAdmin: member.Role == GroupRole.Admin && admins <= 1));
 			}
 
-			var panel = new StackPanel
+			var panel = new StackPanel { Spacing = 12, Children = { header } };
+			if (!group.IsPrivate)
 			{
-				Spacing = 12,
-				Children =
-				{
-					header,
-					new TextBlock { Text = $"Members ({bandMembers.Count})", FontWeight = FontWeight.SemiBold },
-					memberRows,
-				},
-			};
+				panel.Children.Add(new TextBlock { Text = $"Members ({bandMembers.Count})", FontWeight = FontWeight.SemiBold });
+				panel.Children.Add(memberRows);
+			}
 
 			if (isAdmin)
 			{

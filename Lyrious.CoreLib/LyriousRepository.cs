@@ -51,6 +51,44 @@ public class LyriousRepository(LyriousContext context)
 		return group;
 	}
 
+	/// <summary>
+	/// Makes sure the current member has their private band (named <see cref="Group.PrivateName"/>,
+	/// with only them in it, a songbook and a first setlist), so they can keep songs and setlists
+	/// without ever joining a band; a member who hasn't joined a band joins it. Made here on the
+	/// server, once per member, so devices that are offline can't each make one.
+	/// </summary>
+	/// <returns>The private band.</returns>
+	public Group? EnsurePrivateGroup()
+	{
+		if (Me == null)
+			return null;
+
+		var meId = Me.Id;
+		var myGroupIds = context.Memberships.Where(m => m.MemberId == meId && !m.Removed).Select(m => m.GroupId);
+		var group = context.Groups.FirstOrDefault(g => g.IsPrivate && !g.Removed && myGroupIds.Contains(g.Id));
+		if (group == null)
+		{
+			// In this order: the setlist can only be the band's current one once both exist.
+			group = Update(new Group { Name = Group.PrivateName, IsPrivate = true })!;
+			Update(new Membership { GroupId = group.Id, MemberId = meId, RoleEnum = RoleEnum.Admin, MembershipStatusEnum = MembershipStatusEnum.Approved });
+			Update(new Songbook { Name = "Default", GroupId = group.Id });
+			var setlist = Update(new Setlist { Name = "Setlist 1", GroupId = group.Id })!;
+			group.CurrentSetlistId = setlist.Id;
+			group = Update(group) ?? group;
+		}
+
+		if (Me.JoinedGroupId == null)
+		{
+			Me.JoinedGroupId = group.Id;
+			context.SaveChanges();
+		}
+
+		return group;
+	}
+
+	/// <summary>Whether the group is someone's private band (which only the server makes and changes).</summary>
+	private bool IsPrivateGroup(Guid? groupId) => groupId != null && context.Groups.Any(g => g.Id == groupId && g.IsPrivate);
+
 	public async Task<Song?> CreateSongAsync(string songName, string key, float tempo = 120, TimeSpan? length = null)
 	{
 		return await CreateSongAsync(null, songName, key, tempo, length);
@@ -273,6 +311,9 @@ public class LyriousRepository(LyriousContext context)
 			// not be any more, e.g. after being removed from it). Someone else's: their name, by an
 			// admin of a band they're in.
 			Member stored when entity is Member changed => stored.Id == Me.Id ? CanModify(changed) : CanRenameBandMember(stored, changed),
+			// Whether a band is private never changes; a private band keeps its name and isn't deleted.
+			Group stored when entity is Group changed && (changed.IsPrivate != stored.IsPrivate
+				|| stored.IsPrivate && (changed.Name != stored.Name || changed.Removed)) => false,
 			// Any member may change the band (its name, current setlist and song); only an admin may delete it.
 			Group stored when entity is Group changed && changed.Removed && !stored.Removed => IsAdminOf(stored.Id),
 			_ => CanModify(existing) && CanModify(entity),
@@ -302,6 +343,10 @@ public class LyriousRepository(LyriousContext context)
 	private bool CanChangeMembership(Membership stored, Membership changed)
 	{
 		if (changed.GroupId != stored.GroupId || changed.MemberId != stored.MemberId || !IsMemberOf(stored.GroupId))
+			return false;
+
+		// A private band's only member stays as they are (no leaving, no other role).
+		if (IsPrivateGroup(stored.GroupId))
 			return false;
 
 		var loses = stored.RoleEnum == RoleEnum.Admin && !stored.Removed && (changed.Removed || changed.RoleEnum != RoleEnum.Admin);
@@ -360,8 +405,8 @@ public class LyriousRepository(LyriousContext context)
 			null => false,
 			// Removing a member: as for marking the membership removed.
 			Membership membership => CanChangeMembership(membership, new Membership { Id = membership.Id, GroupId = membership.GroupId, MemberId = membership.MemberId, RoleEnum = membership.RoleEnum, Removed = true }),
-			// Deleting a band: its admins only.
-			Group group => IsAdminOf(group.Id),
+			// Deleting a band: its admins only; a private band isn't deleted.
+			Group group => !group.IsPrivate && IsAdminOf(group.Id),
 			_ => CanModify(existing),
 		};
 	}
@@ -370,8 +415,10 @@ public class LyriousRepository(LyriousContext context)
 	{
 		return entity switch
 		{
-			// Anyone signed in may start a new group.
-			Group => true,
+			// Anyone signed in may start a new group; private bands are made by the server only.
+			Group group => !group.IsPrivate,
+			// No one else can be added to a private band.
+			Membership m when IsPrivateGroup(m.GroupId) => false,
 			// The first membership of a freshly created group bootstraps its creator.
 			Membership m when m.MemberId == Me!.Id
 			                  && context.Groups.Any(g => g.Id == m.GroupId)

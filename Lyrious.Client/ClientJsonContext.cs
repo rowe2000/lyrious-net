@@ -32,7 +32,9 @@ internal sealed record GroupDto(
     System.DateTime CreatedAt,
     System.DateTime ChangedAt,
     bool Removed,
-    long Checksum);
+    long Checksum,
+    // The member's own band (only them in it), made by the server.
+    bool IsPrivate = false);
 
 internal sealed record SetlistDto(System.Guid Id, string Name, System.Guid GroupId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum);
 

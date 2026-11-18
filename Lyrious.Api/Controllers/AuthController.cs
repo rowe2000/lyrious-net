@@ -1,5 +1,6 @@
 ﻿using Lyrious.Api.Services;
 using Microsoft.AspNetCore.Authorization;
+using Lyrious.CoreLib;
 using Lyrious.CoreLib.ApiModels;
 using Lyrious.CoreLib.Models;
 using Microsoft.AspNetCore.Identity;
@@ -14,6 +15,7 @@ public class AuthController(
 	UserManager<Member> userManager,
 	JwtSettings jwtSettings,
 	IEmailSender emailSender,
+	LyriousRepository repo,
 	ILogger<AuthController> logger) : ControllerBase
 {
 	[HttpPost("register")]
@@ -45,6 +47,14 @@ public class AuthController(
 		if (!result.Succeeded)
 		{
 			return Unauthorized("Invalid username or password.");
+		}
+
+		// Every member has a private band, joined if they haven't joined another, so a new member
+		// can add songs and setlists straight away.
+		repo.SetIdentity(new System.Security.Principal.GenericIdentity(member.UserName ?? ""));
+		if (repo.EnsurePrivateGroup() is { } privateGroup && member.JoinedGroupId == null)
+		{
+			member.JoinedGroupId = privateGroup.Id;
 		}
 
 		member.LastLoginAt = DateTime.Now;
