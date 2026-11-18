@@ -15,7 +15,7 @@ internal sealed record PendingChange(string Type, Guid Id, string Kind, JsonObje
 /// The member's data on this device, so the app works without the server. It's the last copy from
 /// the server (the snapshot) plus the changes made here since (the outbox, in order). What the app
 /// shows (the view) is the snapshot with the outbox applied on top. Kept per member in an
-/// <see cref="ISettingsStore"/> (a file on desktop, local storage in the browser).
+/// <see cref="ISettingsStore"/> (a file on desktop, IndexedDB in the browser).
 /// <para>
 /// Entities are kept as the API's JSON (camelCase), so fields this client doesn't know survive.
 /// Members are kept as public profiles only (no password hashes). Thread-safe: the view is replaced

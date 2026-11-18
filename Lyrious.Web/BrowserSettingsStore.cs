@@ -4,7 +4,11 @@ using Lyrious.UILib;
 
 namespace Lyrious.Web;
 
-/// <summary>Settings in the browser's local storage (functions in wwwroot/main.js), so they last between visits.</summary>
+/// <summary>
+/// Settings in the browser's IndexedDB (functions in wwwroot/main.js), so they last between visits.
+/// They're loaded into memory before the app starts, so reading them doesn't wait; changes are
+/// written in the background.
+/// </summary>
 /// <param name="prefix">Keeps different stores apart, e.g. settings and the offline cache.</param>
 [SupportedOSPlatform("browser")]
 internal sealed partial class BrowserSettingsStore(string prefix = "lyrious.") : ISettingsStore

@@ -177,8 +177,8 @@ namespace Lyrious.UILib.Setlists
 			// The drawer buttons float over the top corners instead of taking a row of their own, so
 			// pages start at the same height with or without them (as in focus mode). The page keeps
 			// clear of the corners at the sides, so narrow windows don't put text under the buttons.
-			topRow = new Grid { Margin = new Thickness(8), VerticalAlignment = VerticalAlignment.Top, Children = { menuButton, setlistButton } };
-			page.Margin = new Thickness(48, 0);
+			topRow = new Grid { Margin = new Thickness(4), VerticalAlignment = VerticalAlignment.Top, Children = { menuButton, setlistButton } };
+			page.Margin = new Thickness(44, 0); // Clear of the drawer buttons: 4 of margin plus 40 wide.
 
 			setlistDrawer = Drawer(SplitViewPanePlacement.Right, 320);
 			// The playback toolbar sits under the lyrics page, also in focus mode.
@@ -1069,8 +1069,8 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					// The name sits in a little from the edge, in line with the items' text below,
-					// and 8px above the first item (4 of margin plus the panel's 4 of spacing).
-					new DockPanel { Margin = new Thickness(0, 0, 0, 4), Children = { buttons, new TextBlock { Text = user.DisplayName, FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) } } },
+					// and 4px above the first item (the panel's spacing).
+					new DockPanel { Children = { buttons, new TextBlock { Text = user.DisplayName, FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) } } },
 					chooseGroupButton,
 					chooseSetlistButton,
 					chooseSongButton,
@@ -1101,7 +1101,7 @@ namespace Lyrious.UILib.Setlists
 
 			var panel = new DockPanel
 			{
-				Margin = new Thickness(8, 8, 8, 16),
+				Margin = new Thickness(4),
 				LastChildFill = false,
 				Children = { header, account },
 			};
@@ -1272,15 +1272,15 @@ namespace Lyrious.UILib.Setlists
 				ColumnDefinitions = new ColumnDefinitions("*,Auto"),
 				Children = { setlistTitle, setlistSearchBox, buttons, endSearchButton },
 			};
-			titleRow.Margin = new Thickness(8, 0, 0, 8);
+			titleRow.Margin = new Thickness(8, 0, 0, 4);
 			DockPanel.SetDock(titleRow, Dock.Top);
 
 			// As wide as the open drawer whatever room it has, so it slides in and out as it is instead
 			// of being squeezed while the drawer opens or closes.
 			return new DockPanel
 			{
-				Margin = new Thickness(8, 8, 8, 0),
-				Width = setlistDrawer.OpenPaneLength - 16,
+				Margin = new Thickness(4, 4, 4, 0),
+				Width = setlistDrawer.OpenPaneLength - 8,
 				HorizontalAlignment = HorizontalAlignment.Left,
 				Children = { titleRow, setlistDrawerBody },
 			};
@@ -1328,7 +1328,7 @@ namespace Lyrious.UILib.Setlists
 					return;
 				}
 
-				var list = new StackPanel { Spacing = 6 };
+				var list = new StackPanel { Spacing = 4 };
 				foreach (var entry in entries)
 				{
 					var row = RoundedHighlight(SongRow(group, setlist, entry));

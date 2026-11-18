@@ -4,7 +4,7 @@ namespace Lyrious.Client;
 
 /// <summary>
 /// The other instances of the app that share this one's store: in the browser, the tabs and
-/// windows open on the same address (they share its local storage). Through this they pass each
+/// windows open on the same address (they share its stored settings and cache). Through this they pass each
 /// other the changes made in them, so they show the same data without the server, and agree on
 /// the one that sends the changes to the server (the owner), so no change is sent twice. Hosts
 /// where instances share a store supply one to <see cref="HttpSetlistService"/>; without one the

@@ -33,21 +33,109 @@ globalThis.lyriousCrypto = {
     },
 };
 
-// Settings kept between visits (BrowserSettingsStore.cs). Storage can be blocked (e.g. private
-// browsing), in which case settings simply aren't kept.
-globalThis.lyriousSettings = {
-    get: (key) => {
-        try { return localStorage.getItem(key); } catch { return null; }
-    },
-    set: (key, value) => {
-        try {
-            if (value == null) localStorage.removeItem(key); else localStorage.setItem(key, value);
-        } catch { /* not kept */ }
-    },
-};
+// Settings and the offline cache, kept between visits (BrowserSettingsStore.cs) in IndexedDB, which
+// has far more room than local storage. The app reads them without waiting, so they're all loaded
+// into memory before it starts (load) and each change is written to the database in the background;
+// the other tabs on this address are told of it, to keep their copies the same. Storage can be
+// blocked (e.g. private browsing), in which case settings last only while the page is open.
+globalThis.lyriousSettings = (() => {
+    const values = new Map();
+    const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel("lyrious.settings") : null;
+    let database = null;
 
-// The app's other tabs and windows on this address (BrowserInstanceLink.cs). They share the local
-// storage, so they pass each other their changes over a BroadcastChannel to stay the same without
+    if (channel) {
+        channel.onmessage = event => {
+            const { key, value } = event.data ?? {};
+            if (typeof key !== "string") return;
+            if (value == null) values.delete(key); else values.set(key, value);
+        };
+    }
+
+    function open() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open("lyrious.settings", 1);
+            request.onupgradeneeded = () => request.result.createObjectStore("settings");
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    function completed(transaction) {
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error ?? new Error("The settings couldn't be stored (the browser may be out of room)."));
+        });
+    }
+
+    function write(key, value) {
+        if (!database) return;
+        try {
+            // Written in the order they're made: transactions on the same store run one after another.
+            const transaction = database.transaction("settings", "readwrite");
+            const store = transaction.objectStore("settings");
+            if (value == null) store.delete(key); else store.put(value, key);
+            completed(transaction).catch(error => console.warn(`The setting ${key} wasn't kept:`, error));
+            transaction.commit?.();
+        } catch (error) {
+            console.warn(`The setting ${key} wasn't kept:`, error);
+        }
+    }
+
+    // What earlier versions kept in local storage moves to the database (the database's own value
+    // wins), and is removed from local storage once it's stored.
+    async function moveFromLocalStorage() {
+        let keys;
+        try {
+            keys = Object.keys(localStorage).filter(key => key.startsWith("lyrious."));
+        } catch {
+            return; // Blocked: nothing to move.
+        }
+        if (keys.length === 0) return;
+
+        const transaction = database.transaction("settings", "readwrite");
+        const store = transaction.objectStore("settings");
+        for (const key of keys) {
+            const value = localStorage.getItem(key);
+            if (value != null && !values.has(key)) {
+                values.set(key, value);
+                store.put(value, key);
+            }
+        }
+        await completed(transaction);
+        for (const key of keys) localStorage.removeItem(key);
+    }
+
+    return {
+        // Before the app starts (see the end of this file).
+        load: async () => {
+            try {
+                database = await open();
+                const transaction = database.transaction("settings", "readonly");
+                const store = transaction.objectStore("settings");
+                const keys = store.getAllKeys();
+                const all = store.getAll();
+                await completed(transaction);
+                keys.result.forEach((key, i) => values.set(key, all.result[i]));
+                await moveFromLocalStorage();
+            } catch (error) {
+                console.warn("Settings can't be kept here:", error);
+                database = null;
+            }
+        },
+        get: key => values.get(key) ?? null,
+        set: (key, value) => {
+            if (value == null) values.delete(key); else values.set(key, value);
+            channel?.postMessage({ key, value });
+            write(key, value);
+        },
+    };
+})();
+// Loads while the runtime downloads.
+const settingsLoaded = globalThis.lyriousSettings.load();
+
+// The app's other tabs and windows on this address (BrowserInstanceLink.cs). They share the stored
+// settings and cache, so they pass each other their changes over a BroadcastChannel to stay the same without
 // the server, and the one holding the Web Lock (the owner) sends the changes to the server: the
 // browser gives the lock to the next one waiting when the owner's tab is closed. Both are needed
 // (Web Locks only on https or localhost); without them the app is alone and its own owner.
@@ -275,5 +363,7 @@ serviceWorker?.then(registered => registered && navigator.serviceWorker.ready).t
 }).catch(() => { /* no worker: the app still runs */ });
 
 const config = dotnetRuntime.getConfig();
+
+await settingsLoaded;
 
 await dotnetRuntime.runMain(config.mainAssemblyName, [globalThis.location.href]);

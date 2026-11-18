@@ -6,7 +6,7 @@ using Lyrious.Client;
 namespace Lyrious.Web;
 
 /// <summary>
-/// The app's other tabs and windows on the same address, which share its local storage (functions
+/// The app's other tabs and windows on the same address, which share its stored settings and cache (functions
 /// in wwwroot/main.js): messages go over a BroadcastChannel, and the owner is the one holding a
 /// Web Lock, which the browser hands to the next when its tab is closed. Where the browser lacks
 /// either (Web Locks need https or localhost), the app is alone and its own owner, as before.

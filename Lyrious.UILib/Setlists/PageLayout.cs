@@ -53,16 +53,16 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// The page's first row holds its actions (✕ and the like) at the right, top aligned and 8 from
-		/// the top: they line up with the drawer buttons in the top corners (all 40 high, centred 28
+		/// The page's first row holds its actions (✕ and the like) at the right, top aligned and 4 from
+		/// the top: they line up with the drawer buttons in the top corners (all 40 high, centred 24
 		/// from the top). The title shares that row; with a back link, the link does and the title
 		/// comes under it.
 		/// </summary>
 		private static Control Page(string title, Control content, Control? backLink, string? subtitle = null, Control? titleAction = null)
 		{
-			var column = new DockPanel { MaxWidth = 640, Margin = new Thickness(16, 8, 16, 16), HorizontalAlignment = HorizontalAlignment.Stretch };
+			var column = new DockPanel { MaxWidth = 640, Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Stretch };
 
-			var header = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 16) };
+			var header = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 4) };
 			var titleText = new TextBlock { Text = title, FontSize = 28, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
 
 			// As tall as the drawer buttons even without actions, so titles sit at the same height on every page.
@@ -102,7 +102,7 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>
 		/// A song's page: the name with its details (key, tempo, beat) after it on the same line, and
 		/// the action at the right. It sits a little higher than other pages, so the action lines up
-		/// with the drawer buttons in the top corners (both 40 high, centred 28 from the top).
+		/// with the drawer buttons in the top corners (both 40 high, centred 24 from the top).
 		/// </summary>
 		public static Control SongPage(string title, Control content, string? details, Control titleAction)
 		{
@@ -116,12 +116,12 @@ namespace Lyrious.UILib.Setlists
 
 			titleAction.VerticalAlignment = VerticalAlignment.Top;
 			DockPanel.SetDock(titleAction, Dock.Right);
-			var header = new DockPanel { Margin = new Thickness(0, 0, 0, 16), Children = { titleAction, titleRow }, ZIndex = 1 };
+			var header = new DockPanel { Margin = new Thickness(0, 0, 0, 4), Children = { titleAction, titleRow }, ZIndex = 1 };
 			Grid.SetRow(content, 1);
 			var page = new Grid
 			{
 				MaxWidth = 640,
-				Margin = new Thickness(16, 8, 16, 16),
+				Margin = new Thickness(4),
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				RowDefinitions = new RowDefinitions("Auto,*"),
 				Children = { header, content },
@@ -205,7 +205,7 @@ namespace Lyrious.UILib.Setlists
 				header.Children[i].IsVisible = shown;
 			}
 
-			header.Margin = new Thickness(0, 0, 0, shown ? 16 : 0);
+			header.Margin = new Thickness(0, 0, 0, shown ? 4 : 0);
 			// Hidden: the content starts at the top, under the action, so the header takes no room.
 			header.HorizontalAlignment = shown ? HorizontalAlignment.Stretch : HorizontalAlignment.Right;
 			header.VerticalAlignment = VerticalAlignment.Top;

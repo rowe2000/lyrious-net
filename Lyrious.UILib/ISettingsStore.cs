@@ -4,7 +4,7 @@ namespace Lyrious.UILib
 {
 	/// <summary>
 	/// Small settings kept on this device between runs (e.g. the API host). Each host app supplies one
-	/// through <see cref="App.Settings"/>: a file on desktop, the browser's local storage on the web.
+	/// through <see cref="App.Settings"/>: a file on desktop, the browser's IndexedDB on the web.
 	/// </summary>
 	public interface ISettingsStore
 	{

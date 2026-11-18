@@ -124,7 +124,7 @@ namespace Lyrious.UILib.Setlists
 			restart.Margin = new Thickness(4, 0);
 			var row = new DockPanel { Children = { playPause, restart, bandSync, members, new Panel { Children = { next, noMoreSongs } } } };
 
-			var bar = new Border { Padding = new Thickness(8, 4), Child = row };
+			var bar = new Border { Padding = new Thickness(4), Child = row };
 			bar.Bind(Border.BackgroundProperty, bar.GetResourceObservable(LyriousTheme.CardBrush));
 			Content = bar;
 		}

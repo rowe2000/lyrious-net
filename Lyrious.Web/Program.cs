@@ -20,7 +20,7 @@ internal sealed partial class Program
 
     /// <param name="args">
     /// [0] is the page URL (see wwwroot/main.js); <c>?api=...</c> sets the API address. Else the
-    /// host chosen on the Sync page last time (in the browser's local storage), else where the page
+    /// host chosen on the Sync page last time (in the browser's IndexedDB), else where the page
     /// itself comes from: the API serves the web app, on the same address.
     /// </param>
     private static Task Main(string[] args)
