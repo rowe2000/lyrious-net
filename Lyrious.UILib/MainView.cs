@@ -221,7 +221,14 @@ namespace Lyrious.UILib
 		{
 			var store = App.CredentialStore;
 			var home = new HomeView(user, App.SetlistService, offerForgetSavedPassword: store.CanForget && IsSavedFor(credential.UserName));
-			home.ChangePasswordRequested += () => ShowChangePassword(home, credential.UserName);
+			// Keep a saved password working: replace it with the new one.
+			home.PasswordChanged += newPassword =>
+			{
+				if (IsSavedFor(credential.UserName))
+				{
+					_ = SaveCredentialAsync(new SavedCredential(savedCredential!.UserName, newPassword));
+				}
+			};
 			home.ForgetSavedPasswordRequested += () => _ = ForgetSavedPasswordAsync();
 			home.SyncRequested += () => ShowSync(home);
 			home.LogOutRequested += () =>
@@ -311,24 +318,6 @@ namespace Lyrious.UILib
 		{
 			var text = address.Trim().TrimEnd('/');
 			return text.Contains("://") ? text : "http://" + text;
-		}
-
-		// Back returns to the same home view, so the page the user was on is kept.
-		private void ShowChangePassword(HomeView home, string userName)
-		{
-			var changePassword = new ChangePasswordViewModel(App.AuthService);
-			// Keep a saved password working: replace it with the new one.
-			changePassword.PasswordChanged += newPassword =>
-			{
-				if (IsSavedFor(userName))
-				{
-					_ = SaveCredentialAsync(new SavedCredential(savedCredential!.UserName, newPassword));
-				}
-			};
-
-			var view = new ChangePasswordView(changePassword);
-			view.BackRequested += () => Content = home;
-			Content = view;
 		}
 	}
 }

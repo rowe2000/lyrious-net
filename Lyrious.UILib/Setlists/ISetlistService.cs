@@ -100,6 +100,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Changes a bandmate's name (everywhere, not just in one band). Admins of a band they're in only; the server refuses others.</summary>
 		Task RenameMemberAsync(Guid memberId, string name, CancellationToken cancellationToken = default);
 
+		/// <summary>Changes the logged-in member's own name (everywhere), saved here and sent to the server like other changes.</summary>
+		Task RenameMeAsync(string name, CancellationToken cancellationToken = default);
+
 		/// <summary>Removes a member from a band. Admins only, and not the last admin.</summary>
 		Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default);
 
@@ -161,6 +164,16 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Makes the entry the group's current song (and its setlist the current setlist).</summary>
 		Task SelectSongAsync(Guid groupId, SetlistEntry entry, CancellationToken cancellationToken = default);
+
+		/// <summary>
+		/// Sends a sound file kept on this device to the server, for the song's band (see
+		/// <see cref="SoundSync"/>). Throws when the server can't be reached or doesn't take it yet
+		/// (e.g. the song hasn't been sent to it).
+		/// </summary>
+		Task UploadSoundAsync(Guid songId, string soundId, System.IO.Stream content, CancellationToken cancellationToken = default);
+
+		/// <summary>A sound file from the server; null when it doesn't have it. Throws when it can't be reached.</summary>
+		Task<System.IO.Stream?> DownloadSoundAsync(string soundId, CancellationToken cancellationToken = default);
 	}
 
 	/// <param name="Online">Whether the server could be reached last time it was tried.</param>
@@ -227,6 +240,7 @@ namespace Lyrious.UILib.Setlists
 		public Task InviteByEmailAsync(Guid groupId, string email, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RenameMemberAsync(Guid memberId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task RenameMeAsync(string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteGroupAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
@@ -247,5 +261,7 @@ namespace Lyrious.UILib.Setlists
 		public Task AddSongsAsync(Guid setlistId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SelectSetlistAsync(Guid groupId, Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SelectSongAsync(Guid groupId, SetlistEntry entry, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task UploadSoundAsync(Guid songId, string soundId, System.IO.Stream content, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<System.IO.Stream?> DownloadSoundAsync(string soundId, CancellationToken cancellationToken = default) => throw NotConnected();
 	}
 }

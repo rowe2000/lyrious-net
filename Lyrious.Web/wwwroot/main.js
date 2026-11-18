@@ -308,6 +308,33 @@ globalThis.lyriousSounds = (() => {
             const blob = new Blob([bytes.slice()], { type });
             return run("readwrite", store => store.put(blob, id));
         },
+        // The sound's bytes (to send to the server), or null when it isn't here; copyTo hands them over.
+        load: async id => {
+            const blob = await run("readonly", store => store.get(id));
+            return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+        },
+        length: bytes => bytes.length,
+        copyTo: (bytes, view) => view.set(bytes),
+        // [{ id, size }] as JSON.
+        list: async () => {
+            const sounds = [];
+            const db = await open();
+            await new Promise((resolve, reject) => {
+                const request = db.transaction("sounds", "readonly").objectStore("sounds").openCursor();
+                request.onsuccess = () => {
+                    const cursor = request.result;
+                    if (!cursor) return resolve();
+                    sounds.push({ id: String(cursor.key), size: cursor.value?.size ?? 0 });
+                    cursor.continue();
+                };
+                request.onerror = () => reject(request.error);
+            });
+            return JSON.stringify(sounds);
+        },
+        remove: async id => {
+            if (playingId === id) { stop(); changed(); }
+            await run("readwrite", store => store.delete(id));
+        },
         play: async id => {
             const blob = await run("readonly", store => store.get(id));
             if (!blob) return false;

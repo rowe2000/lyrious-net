@@ -457,6 +457,7 @@ $RECYCLE.BIN/
 Lyrious.Api/*.db
 Lyrious.Api/*.db-shm
 Lyrious.Api/*.db-wal
+Lyrious.Api/media/
 
 # Logs of locally started services
 .claude-run/

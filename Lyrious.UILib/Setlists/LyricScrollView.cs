@@ -180,7 +180,9 @@ namespace Lyrious.UILib.Setlists
 				() => this.song.MediaLink,
 				async link =>
 				{
+					var before = this.song.MediaLink;
 					this.song = await this.saveSong(this.song with { MediaLink = link });
+					UploadNewSound(before, this.song);
 					SongSaved?.Invoke(this.song);
 				},
 				() => this.song.Name,
@@ -1104,6 +1106,19 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
+		/// Once the song is saved with a sound file kept here as its new media link, the file goes to
+		/// the server too, for the band's other devices (see <see cref="SoundSync"/>). Done after the
+		/// save, as a new song only gets its id then.
+		/// </summary>
+		private static void UploadNewSound(string previousLink, SongDetails saved)
+		{
+			if (MediaLinks.SoundOf(saved.MediaLink) is { } sound && MediaLinks.SoundOf(previousLink)?.Id != sound.Id)
+			{
+				SoundSync.Upload(saved.Id, sound.Id);
+			}
+		}
+
+		/// <summary>
 		/// A song's media button (beside the pencil, and in the editor beside Save): it plays the media
 		/// link, a recording to listen to or watch, or a sound file kept on this device (see
 		/// <see cref="ISoundStore"/>; pressed again while it plays, it stops). It shows Spotify's or
@@ -1191,10 +1206,35 @@ namespace Lyrious.UILib.Setlists
 					if (await sounds.PlayAsync(sound.Id))
 					{
 						startedSound = true;
+						return;
+					}
+
+					// Added on another device: fetched from the server and kept here, then played.
+					bool fetched;
+					ToolTip.SetTip(button, $"Fetching {sound.Name}…");
+					button.IsEnabled = false;
+					try
+					{
+						fetched = await SoundSync.FetchAsync(sound.Id);
+					}
+					catch (Exception ex)
+					{
+						showProblem(button, $"{sound.Name} isn't on this device, and couldn't be fetched from the server. {ex.Message}");
+						return;
+					}
+					finally
+					{
+						button.IsEnabled = true;
+						ShowLink();
+					}
+
+					if (fetched && await sounds.PlayAsync(sound.Id))
+					{
+						startedSound = true;
 					}
 					else
 					{
-						showProblem(button, $"{sound.Name} was added on another device, so it isn't on this one. Drop the file on the song, or pick it from the media menu, to keep it here too.");
+						showProblem(button, $"{sound.Name} was added on another device and hasn't reached the server (yet). Drop the file on the song, or pick it from the media menu, to keep it here too.");
 					}
 				}
 				catch (Exception ex)
@@ -1608,7 +1648,9 @@ namespace Lyrious.UILib.Setlists
 				error.IsVisible = false;
 				try
 				{
+					var before = song.MediaLink;
 					song = await saveSong(edited);
+					UploadNewSound(before, song);
 					ShowSongHeader();
 					ShowLyrics();
 					SongSaved?.Invoke(song);

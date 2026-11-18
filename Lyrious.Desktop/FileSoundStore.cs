@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Lyrious.UILib;
 using NAudio.Wave;
@@ -97,6 +99,34 @@ internal sealed class FileSoundStore : ISoundStore
             File.Delete(partial);
             throw new IOException($"It couldn't be written to {folder}. {ex.Message}", ex);
         }
+    }
+
+    public Task<Stream?> OpenAsync(string id)
+    {
+        var path = PathOf(id);
+        return Task.FromResult<Stream?>(File.Exists(path) ? File.OpenRead(path) : null);
+    }
+
+    public Task<IReadOnlyList<StoredSound>> ListAsync()
+    {
+        IReadOnlyList<StoredSound> sounds = Directory.Exists(folder)
+            ? new DirectoryInfo(folder).EnumerateFiles()
+                .Where(file => !file.Name.EndsWith(".part", StringComparison.OrdinalIgnoreCase))
+                .Select(file => new StoredSound(file.Name, file.Length))
+                .ToList()
+            : [];
+        return Task.FromResult(sounds);
+    }
+
+    public Task DeleteAsync(string id)
+    {
+        if (Playing == id)
+        {
+            Stop();
+        }
+
+        File.Delete(PathOf(id));
+        return Task.CompletedTask;
     }
 
     public Task<bool> PlayAsync(string id)

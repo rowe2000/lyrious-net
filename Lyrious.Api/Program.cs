@@ -64,6 +64,12 @@ internal class Program
 		// which people can type, rather than the default long token.
 		builder.Services.Configure<IdentityOptions>(options => options.Tokens.PasswordResetTokenProvider = TokenOptions.DefaultEmailProvider);
 
+		// Songs' sound files (see SoundController): a folder per band, next to the project unless
+		// Media:Folder says where (e.g. a volume that outlives the container).
+		var mediaFolder = builder.Configuration["Media:Folder"];
+		builder.Services.AddSingleton(new Lyrious.Api.Controllers.SoundFolder(
+			Path.Combine(builder.Environment.ContentRootPath, string.IsNullOrWhiteSpace(mediaFolder) ? "media" : mediaFolder)));
+
 		builder.Services.AddSingleton<Cache>();
 		builder.Services.AddScoped<LyriousRepository>();
 

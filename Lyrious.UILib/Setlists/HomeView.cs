@@ -121,8 +121,8 @@ namespace Lyrious.UILib.Setlists
 		private readonly Dictionary<Guid, Button> drawerRows = new();
 		private int drawerLoad;
 
-		/// <summary>Raised when the user wants to change their password.</summary>
-		public event Action? ChangePasswordRequested;
+		/// <summary>Raised with the new password once the user has changed it on the profile page.</summary>
+		public event Action<string>? PasswordChanged;
 
 		/// <summary>Raised when the user wants to see or change the server (host) the app syncs with.</summary>
 		public event Action? SyncRequested;
@@ -133,10 +133,21 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when the user wants the password saved on this device removed.</summary>
 		public event Action? ForgetSavedPasswordRequested;
 
-		/// <param name="offerForgetSavedPassword">Shows "Forget saved password" in the menu (when a password is saved and the app can remove it).</param>
+		private readonly AuthenticatedUser user;
+		// Offered on the profile page until used.
+		private bool offerForgetSavedPassword;
+		// At the top of the left drawer; follows a change of name on the profile page.
+		private readonly TextBlock memberName = new() { FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+
+		/// <param name="offerForgetSavedPassword">Shows "Forget saved password" on the profile page (when a password is saved and the app can remove it).</param>
 		public HomeView(AuthenticatedUser user, ISetlistService service, bool offerForgetSavedPassword = false)
 		{
 			this.service = service;
+			this.user = user;
+			this.offerForgetSavedPassword = offerForgetSavedPassword;
+			memberName.Text = user.DisplayName;
+			// Sound files added here while offline go to the server once it can be reached.
+			SoundSync.Watch(service);
 			chooseSetlistButton = DrawerPicker("Setlist", currentSetlistName, "Choose a setlist", () =>
 			{
 				if (currentGroup is { } group)
@@ -1048,19 +1059,12 @@ namespace Lyrious.UILib.Setlists
 				SyncRequested?.Invoke();
 			};
 
-			var changePassword = DrawerItem("Change password");
-			changePassword.Click += (_, _) =>
+			// The member's name, password, saved password and logging out.
+			var profile = DrawerItem("Profile");
+			profile.Click += (_, _) =>
 			{
 				CloseUnlessPinned(menuDrawer);
-				ChangePasswordRequested?.Invoke();
-			};
-
-			var logOut = DrawerItem("Log out");
-			logOut.Click += (_, _) =>
-			{
-				menuDrawer.IsPaneOpen = false;
-				StopLiveUpdates();
-				LogOutRequested?.Invoke();
+				ShowProfile();
 			};
 
 			var header = new StackPanel
@@ -1070,7 +1074,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					// The name sits in a little from the edge, in line with the items' text below,
 					// and 4px above the first item (the panel's spacing).
-					new DockPanel { Children = { buttons, new TextBlock { Text = user.DisplayName, FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) } } },
+					new DockPanel { Children = { buttons, memberName } },
 					chooseGroupButton,
 					chooseSetlistButton,
 					chooseSongButton,
@@ -1082,22 +1086,20 @@ namespace Lyrious.UILib.Setlists
 
 			// The account actions sit at the bottom of the drawer.
 			// Its top margin is the gap between items, kept when the two groups meet (a short drawer).
-			var account = new StackPanel { Spacing = 4, Margin = new Thickness(0, 4, 0, 0), Children = { settings, sync, changePassword } };
+			var account = new StackPanel { Spacing = 4, Margin = new Thickness(0, 4, 0, 0), Children = { profile, settings, sync } };
 			DockPanel.SetDock(account, Dock.Bottom);
 
-			if (offerForgetSavedPassword)
+			// The songs' sound files kept on this device, after Settings (both about this device).
+			if (App.SoundStore is { } sounds)
 			{
-				var forget = DrawerItem("Forget saved password");
-				forget.Click += (_, _) =>
+				var soundFiles = DrawerItem("Sound files");
+				soundFiles.Click += (_, _) =>
 				{
-					// Gone once used: there's nothing saved any more.
-					account.Children.Remove(forget);
-					ForgetSavedPasswordRequested?.Invoke();
+					CloseUnlessPinned(menuDrawer);
+					page.Content = new SoundFilesView(sounds, service);
 				};
-				account.Children.Add(forget);
+				account.Children.Insert(2, soundFiles);
 			}
-
-			account.Children.Add(logOut);
 
 			var panel = new DockPanel
 			{
@@ -2208,6 +2210,25 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>The settings page; its ✕ goes back to the page before.</summary>
 		private void ShowSettings() => page.Content = new SettingsView();
+
+		private void ShowProfile()
+		{
+			var view = new ProfileView(user with { DisplayName = memberName.Text ?? user.DisplayName }, service, App.AuthService, offerForgetSavedPassword);
+			view.Renamed += name => memberName.Text = name;
+			view.PasswordChanged += password => PasswordChanged?.Invoke(password);
+			view.ForgetSavedPasswordRequested += () =>
+			{
+				offerForgetSavedPassword = false;
+				ForgetSavedPasswordRequested?.Invoke();
+			};
+			view.LogOutRequested += () =>
+			{
+				menuDrawer.IsPaneOpen = false;
+				StopLiveUpdates();
+				LogOutRequested?.Invoke();
+			};
+			page.Content = view;
+		}
 
 		/// <summary>Shows a page; with <paramref name="replace"/>, the current one isn't kept to go back to.</summary>
 		private void ShowPage(Control view, bool replace)

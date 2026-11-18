@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -691,6 +692,79 @@ public sealed class HttpSetlistService : ISetlistService
         }
     }
 
+    public async Task UploadSoundAsync(Guid songId, string soundId, Stream content, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(auth.AccessToken))
+        {
+            throw new InvalidOperationException("Sending a sound file needs a connection to the server.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/sound/{Uri.EscapeDataString(soundId)}?songId={songId}");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", auth.AccessToken);
+        request.Content = new StreamContent(content);
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        using var response = await auth.Http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(await HttpAuthService.ReadErrorAsync(response, cancellationToken));
+        }
+    }
+
+    public async Task<Stream?> DownloadSoundAsync(string soundId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(auth.AccessToken))
+        {
+            throw new InvalidOperationException("Fetching a sound file needs a connection to the server.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/sound/{Uri.EscapeDataString(soundId)}");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", auth.AccessToken);
+        var response = await auth.Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            response.Dispose();
+            return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            using (response)
+            {
+                throw new InvalidOperationException(await HttpAuthService.ReadErrorAsync(response, cancellationToken));
+            }
+        }
+
+        return new ResponseStream(response, await response.Content.ReadAsStreamAsync(cancellationToken));
+    }
+
+    /// <summary>A response's content as it comes in; disposing it lets go of the response.</summary>
+    private sealed class ResponseStream(HttpResponseMessage response, Stream content) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => response.Content.Headers.ContentLength ?? throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => content.Read(buffer, offset, count);
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) => content.ReadAsync(buffer, offset, count, cancellationToken);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) => content.ReadAsync(buffer, cancellationToken);
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                content.Dispose();
+                response.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+    }
+
     public async Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default)
     {
         var current = await CacheAsync();
@@ -711,6 +785,9 @@ public sealed class HttpSetlistService : ISetlistService
         current.Update("member", memberId, new JsonObject { ["name"] = name });
         Queued(current);
     }
+
+    public Task RenameMeAsync(string name, CancellationToken cancellationToken = default)
+        => RenameMemberAsync(auth.MemberId ?? throw new InvalidOperationException("You're not logged in."), name, cancellationToken);
 
     public async Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default)
     {

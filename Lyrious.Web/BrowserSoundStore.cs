@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text.Json;
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
@@ -62,6 +65,35 @@ internal sealed partial class BrowserSoundStore : ISoundStore
         await SaveNow(id, new ArraySegment<byte>(copy.GetBuffer(), 0, (int)copy.Length), MimeTypeOf(id));
     }
 
+    public async Task<Stream?> OpenAsync(string id)
+    {
+        using var bytes = await LoadNow(id);
+        if (bytes == null)
+        {
+            return null;
+        }
+
+        var content = new byte[GetLength(bytes)];
+        CopyTo(bytes, content);
+        return new MemoryStream(content, writable: false);
+    }
+
+    public async Task<IReadOnlyList<StoredSound>> ListAsync()
+    {
+        var json = await ListNow();
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.EnumerateArray()
+            .Select(sound => new StoredSound(sound.GetProperty("id").GetString() ?? "", sound.GetProperty("size").GetInt64()))
+            .Where(sound => sound.Id.Length > 0)
+            .ToList();
+    }
+
+    public async Task DeleteAsync(string id)
+    {
+        await RemoveNow(id);
+        PlayingChanged?.Invoke();
+    }
+
     public async Task<bool> PlayAsync(string id)
     {
         var played = await PlayNow(id);
@@ -89,6 +121,21 @@ internal sealed partial class BrowserSoundStore : ISoundStore
 
     [JSImport("globalThis.lyriousSounds.save")]
     private static partial Task SaveNow(string id, [JSMarshalAs<JSType.MemoryView>] ArraySegment<byte> bytes, string type);
+
+    [JSImport("globalThis.lyriousSounds.load")]
+    private static partial Task<JSObject?> LoadNow(string id);
+
+    [JSImport("globalThis.lyriousSounds.length")]
+    private static partial int GetLength(JSObject bytes);
+
+    [JSImport("globalThis.lyriousSounds.copyTo")]
+    private static partial void CopyTo(JSObject bytes, [JSMarshalAs<JSType.MemoryView>] Span<byte> view);
+
+    [JSImport("globalThis.lyriousSounds.list")]
+    private static partial Task<string> ListNow();
+
+    [JSImport("globalThis.lyriousSounds.remove")]
+    private static partial Task RemoveNow(string id);
 
     [JSImport("globalThis.lyriousSounds.play")]
     private static partial Task<bool> PlayNow(string id);
