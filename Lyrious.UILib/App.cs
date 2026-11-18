@@ -39,6 +39,12 @@ namespace Lyrious.UILib
 		/// </summary>
 		public static ILanSharing? LanSharing { get; set; }
 
+		/// <summary>
+		/// Where sound files for songs' media links are kept on this device. Hosts set this before
+		/// starting the app; by default sound files aren't offered.
+		/// </summary>
+		public static ISoundStore? SoundStore { get; set; }
+
 		public override void Initialize()
 		{
 			// Default follows the system theme; ThemeVariant.Dark or ThemeVariant.Light force one.

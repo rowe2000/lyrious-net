@@ -93,6 +93,67 @@ globalThis.lyriousInstances = (() => {
     };
 })();
 
+// Sound files for songs' media links (BrowserSoundStore.cs): kept in IndexedDB (local storage is
+// far too small for them), played in the page with an <audio> element.
+globalThis.lyriousSounds = (() => {
+    let database = null;
+    function open() {
+        database ??= new Promise((resolve, reject) => {
+            const request = indexedDB.open("lyrious.sounds", 1);
+            request.onupgradeneeded = () => request.result.createObjectStore("sounds");
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+        return database;
+    }
+
+    async function run(mode, action) {
+        const db = await open();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction("sounds", mode);
+            const request = action(transaction.objectStore("sounds"));
+            transaction.oncomplete = () => resolve(request.result);
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error ?? new Error("The sound couldn't be stored (the browser may be out of room)."));
+        });
+    }
+
+    let audio = null;
+    let playingId = null;
+    let url = null;
+    let changed = () => { };
+
+    function stop() {
+        audio?.pause();
+        audio = null;
+        playingId = null;
+        if (url) URL.revokeObjectURL(url);
+        url = null;
+    }
+
+    return {
+        // The bytes are only valid during this call: copied first, stored after.
+        save: (id, bytes, type) => {
+            const blob = new Blob([bytes.slice()], { type });
+            return run("readwrite", store => store.put(blob, id));
+        },
+        play: async id => {
+            const blob = await run("readonly", store => store.get(id));
+            if (!blob) return false;
+            stop();
+            url = URL.createObjectURL(blob);
+            audio = new Audio(url);
+            playingId = id;
+            audio.onended = () => { stop(); changed(); };
+            await audio.play();
+            return true;
+        },
+        stop,
+        playing: () => playingId,
+        onChanged: callback => { changed = callback; },
+    };
+})();
+
 // The installed web app (PWA, see manifest.webmanifest): the service worker keeps a copy of the
 // app's files, so it starts without a connection. Service workers need a secure context (https,
 // or http://localhost); elsewhere the app simply isn't installable.

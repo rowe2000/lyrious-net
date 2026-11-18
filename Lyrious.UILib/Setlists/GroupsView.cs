@@ -32,6 +32,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The band whose details are shown.</summary>
 		public Guid? SelectedGroupId => list.Selected?.Id;
 
+		/// <summary>The band shown as the joined one (when the page was made).</summary>
+		public Guid? CurrentGroupId => currentGroupId;
+
 		/// <summary>Raised when the user joins a band (double click, the ✓ button, or Join).</summary>
 		public event Action<GroupSummary>? GroupSelected;
 

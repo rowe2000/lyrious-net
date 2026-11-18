@@ -578,6 +578,20 @@ namespace Lyrious.UILib.Setlists
 		[GeneratedRegex(@"\[([^\]\n]*)\]")]
 		private static partial Regex BracketTag();
 
+		/// <summary>The value of the first of these directives in the text (e.g. "artist" for "{artist: The Beatles}"); null if none.</summary>
+		public static string? DirectiveValue(string text, params string[] names)
+		{
+			foreach (Match match in DirectiveLine().Matches(text))
+			{
+				if (names.Contains(match.Groups[1].Value, StringComparer.OrdinalIgnoreCase) && match.Groups[2].Value.Trim() is { Length: > 0 } value)
+				{
+					return value;
+				}
+			}
+
+			return null;
+		}
+
 		/// <summary>A directive on a line of its own: {name} or {name: value}.</summary>
 		[GeneratedRegex(@"^\s*\{([A-Za-z_]+)(?:[:\s]\s*(.*?))?\}\s*$", RegexOptions.Multiline)]
 		private static partial Regex DirectiveLine();

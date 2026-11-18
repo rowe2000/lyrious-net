@@ -45,8 +45,16 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when the user wants to find a song on the internet.</summary>
 		public event Action? InternetSearchRequested;
 
+		/// <summary>The band whose songbook this is.</summary>
+		public GroupSummary Group { get; }
+
+		/// <summary>The song shown as the current one (when the page was made).</summary>
+		public Guid? CurrentSongId { get; }
+
 		public SongsView(GroupSummary group, IReadOnlyList<SongDetails> songs, Guid? currentSongId)
 		{
+			Group = group;
+			CurrentSongId = currentSongId;
 			// The list, rebuilt as the search text changes.
 			var list = new ContentControl();
 			var search = new TextBox { PlaceholderText = "Search songs and lyrics", Margin = new Avalonia.Thickness(0, 0, 0, 16) };

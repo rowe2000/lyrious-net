@@ -35,6 +35,7 @@ internal sealed partial class Program
         // The other tabs on this address share the offline cache: they keep each other up to date.
         App.SetlistService = new HttpSetlistService(auth, offline, new BrowserInstanceLink());
         App.CredentialStore = new BrowserCredentialStore();
+        App.SoundStore = new BrowserSoundStore();
 
         return BuildAvaloniaApp()
             .WithInterFont()

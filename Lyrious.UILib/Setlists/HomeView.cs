@@ -847,7 +847,7 @@ namespace Lyrious.UILib.Setlists
 			if (catchUp && group.CurrentSetlistId == null)
 			{
 				// The band has no current setlist: its start page (or, while busy here, just the drawers).
-				var replace = page.Content is SetlistView or SetlistsView or LyricScrollView { IsEditing: false };
+				var replace = page.Content is SetlistsView or LyricScrollView { IsEditing: false };
 				await RunAsync(() => OpenStartPageAsync(showPage: replace));
 				return;
 			}
@@ -871,7 +871,8 @@ namespace Lyrious.UILib.Setlists
 					return; // The new current song is gone already, or not in this setlist.
 				}
 
-				var canReplacePage = page.Content is SetlistView or SetlistsView or LyricScrollView { IsEditing: false };
+				// Not a setlist being looked at: it stays on that setlist (the drawers follow the band).
+				var canReplacePage = page.Content is SetlistsView or LyricScrollView { IsEditing: false };
 				if (!canReplacePage)
 				{
 					SetCurrentSetlist(setlist);
@@ -892,7 +893,7 @@ namespace Lyrious.UILib.Setlists
 				else
 				{
 					SetCurrentSong(null, null);
-					await RunAsync(() => ShowSetlistAsync(group, setlist));
+					await RunAsync(() => ShowSetlistAsync(group, setlist, makeCurrent: true));
 				}
 			}
 			catch (Exception ex)
@@ -985,7 +986,7 @@ namespace Lyrious.UILib.Setlists
 				},
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				HorizontalContentAlignment = HorizontalAlignment.Left,
-				Padding = new Thickness(12, 8),
+				Padding = new Thickness(10, 5),
 			};
 			RoundedHighlight(button);
 			ToolTip.SetTip(button, description);
@@ -1257,6 +1258,8 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 			drawerStayTimer.Tick += (_, _) => SlideSetlistDrawerAway();
+			// Tunnelling, so it's seen before the drawer's own closing (when the press is let go).
+			AddHandler(PointerPressedEvent, OnPressWhileDrawerLingers, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 			setlistDrawer.PaneOpening += (_, _) => EndSlowDrawerSlide();
 			// Closed some other way while it waited to slide away: nothing left to do.
 			setlistDrawer.PaneClosed += (_, _) => drawerStayTimer.Stop();
@@ -1471,7 +1474,7 @@ namespace Lyrious.UILib.Setlists
 				Content = content,
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				HorizontalContentAlignment = HorizontalAlignment.Left,
-				Padding = new Thickness(12, 8),
+				Padding = new Thickness(10, 5),
 			};
 			if (entry.Id == currentEntryId)
 			{
@@ -1531,6 +1534,9 @@ namespace Lyrious.UILib.Setlists
 				];
 				// Back to the theme's speed once it's away (or when it's opened again before that).
 				DispatcherTimer.RunOnce(EndSlowDrawerSlide, DrawerSlide + TimeSpan.FromMilliseconds(100));
+				// It's going away: clicks go through it to what's underneath, e.g. the play button
+				// (at the far right, the last to come out), instead of being lost on the drawer.
+				slowPaneRoot.IsHitTestVisible = false;
 			}
 
 			setlistDrawer.IsPaneOpen = false;
@@ -1539,7 +1545,25 @@ namespace Lyrious.UILib.Setlists
 		private void EndSlowDrawerSlide()
 		{
 			slowPaneRoot?.ClearValue(TransitionsProperty);
+			slowPaneRoot?.ClearValue(IsHitTestVisibleProperty);
 			slowPaneRoot = null;
+		}
+
+		/// <summary>
+		/// A press outside the setlist drawer while it lingers after a song was picked sends it away
+		/// at once. Otherwise the drawer would close only when the press is let go, and swallow it
+		/// doing so (as a drawer that slides over the page does), so a button pressed then (play,
+		/// say) would need pressing again.
+		/// </summary>
+		private void OnPressWhileDrawerLingers(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+		{
+			if (!drawerStayTimer.IsEnabled || setlistDrawer.Pane is not Visual pane
+			    || (e.Source is Visual pressed && (pressed == pane || pane.IsVisualAncestorOf(pressed))))
+			{
+				return;
+			}
+
+			SlideSetlistDrawerAway();
 		}
 
 		private static TextBlock DrawerMessage(string text) => new() { Text = text, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
@@ -1552,7 +1576,7 @@ namespace Lyrious.UILib.Setlists
 				FontSize = 17,
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				HorizontalContentAlignment = HorizontalAlignment.Left,
-				Padding = new Thickness(12, 10),
+				Padding = new Thickness(10, 7),
 			});
 		}
 
@@ -1640,7 +1664,7 @@ namespace Lyrious.UILib.Setlists
 					ShowLyrics(start.Group!, start.Setlist!, start.Entry!);
 					break;
 				case StartPageKind.Setlist:
-					await ShowSetlistAsync(start.Group!, start.Setlist!);
+					await ShowSetlistAsync(start.Group!, start.Setlist!, makeCurrent: true);
 					break;
 				case StartPageKind.Setlists:
 					ShowSetlists(start.Group!, start.Setlists!);
@@ -1739,10 +1763,14 @@ namespace Lyrious.UILib.Setlists
 			ShowPage(view, replace);
 		}
 
-		private void ShowSetlists(GroupSummary group, IReadOnlyList<SetlistSummary> setlists)
+		/// <param name="replace">The page shown now isn't kept to go back to (e.g. going back to this one).</param>
+		private void ShowSetlists(GroupSummary group, IReadOnlyList<SetlistSummary> setlists, bool replace = false)
 		{
 			var view = new SetlistsView(group, setlists, currentSetlist?.Id);
-			view.SetlistSelected += setlist => _ = RunAsync(async () =>
+			// Opened to look at: the current setlist stays as it is.
+			view.SetlistSelected += setlist => _ = RunAsync(() => ShowSetlistAsync(group, setlist));
+			// Made the current one: the list shows it so, and the drawer and the band follow.
+			view.SetlistMadeCurrent += setlist => _ = RunAsync(async () =>
 			{
 				if (bandSync)
 				{
@@ -1750,7 +1778,11 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				SetCurrentSong(null, null);
-				await ShowSetlistAsync(group, setlist);
+				SetCurrentSetlist(setlist);
+				playbackEntries = [];
+				RefreshSetlistDrawer(reload: true);
+				_ = UpdatePlaybackNavigationAsync();
+				ShowSetlists(group, setlists, replace: true);
 			});
 			view.SetlistDeleteRequested += setlist => _ = RunAsync(async () =>
 			{
@@ -1773,21 +1805,38 @@ namespace Lyrious.UILib.Setlists
 				await service.CreateSetlistAsync(group.Id, name);
 				ShowSetlists(group, await service.GetSetlistsAsync(group.Id));
 			});
-			page.Content = view;
+			ShowPage(view, replace);
 		}
 
-		private async Task ShowSetlistAsync(GroupSummary group, SetlistSummary setlist)
+		/// <summary>
+		/// The songs of a setlist. It's just shown: it becomes the current one only with
+		/// <paramref name="makeCurrent"/> (the band's setlist, the start page's), or when a song in it
+		/// is picked. The page stays on this setlist when the current one changes meanwhile.
+		/// </summary>
+		private async Task ShowSetlistAsync(GroupSummary group, SetlistSummary setlist, bool makeCurrent = false)
 		{
 			var entries = await service.GetEntriesAsync(setlist.Id);
-			SetCurrentSetlist(setlist);
-			playbackEntries = entries;
+			if (makeCurrent)
+			{
+				SetCurrentSetlist(setlist);
+			}
+
+			// The current setlist's songs may have changed (songs added): the drawer and next song follow.
+			var isCurrent = setlist.Id == currentSetlist?.Id;
+			if (isCurrent)
+			{
+				playbackEntries = entries;
+			}
 
 			var view = new SetlistView(setlist, entries);
 			view.SongSelected += entry => SelectSong(group, setlist, entry);
 			view.AddSongsRequested += () => _ = RunAsync(async () =>
 				ShowAddSongs(group, setlist, await service.GetSongbookSongsAsync(group.Id), entries.Select(entry => entry.Song.Id).ToHashSet()));
 			page.Content = view;
-			RefreshSetlistDrawer(reload: true);
+			if (isCurrent)
+			{
+				RefreshSetlistDrawer(reload: true);
+			}
 		}
 
 		/// <summary>The songbook, to pick songs to add to the setlist; the setlist is shown again after adding.</summary>
@@ -1805,12 +1854,18 @@ namespace Lyrious.UILib.Setlists
 
 		private void ShowLyrics(GroupSummary group, SetlistSummary setlist, SetlistEntry entry)
 		{
+			// A song from a setlist that wasn't the current one (one only being looked at) makes it current.
+			var setlistChanged = setlist.Id != currentSetlist?.Id;
 			SetCurrentSetlist(setlist);
 			SetCurrentSong(entry.Song, entry.Id);
+			if (setlistChanged)
+			{
+				playbackEntries = [];
+			}
 
 			var view = new LyricScrollView(entry.Song, edited => service.UpdateSongAsync(edited));
 			ShowLyricsPage(view);
-			RefreshSetlistDrawer();
+			RefreshSetlistDrawer(reload: setlistChanged);
 		}
 
 		/// <summary>
@@ -2216,6 +2271,26 @@ namespace Lyrious.UILib.Setlists
 				if (previous is LyricScrollView lyrics && lyrics.SongId != currentSongId)
 				{
 					break; // Out of date: open the current song instead (below).
+				}
+
+				// A list page as it was, with something else current then (another setlist, band or song
+				// was chosen since): made anew, so what's current now is shown as current.
+				if (previous is SetlistsView setlists && setlists.CurrentSetlistId != currentSetlist?.Id)
+				{
+					_ = RunAsync(async () => ShowSetlists(setlists.Group, await service.GetSetlistsAsync(setlists.Group.Id), replace: true));
+					return;
+				}
+
+				if (previous is GroupsView bands && bands.CurrentGroupId != currentGroup?.Id)
+				{
+					_ = RunAsync(() => ShowGroupsAsync(bands.SelectedGroupId, replace: true));
+					return;
+				}
+
+				if (previous is SongsView songbook && songbook.CurrentSongId != currentSongId)
+				{
+					_ = RunAsync(async () => ShowSongs(songbook.Group, await service.GetSongbookSongsAsync(songbook.Group.Id), replace: true));
+					return;
 				}
 
 				goingBack = true;

@@ -10,6 +10,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
 using Avalonia.Threading;
 
@@ -35,6 +36,8 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The most the server stores for a song's name and lyrics.</summary>
 		private const int MaxNameLength = 100;
 		private const int MaxLyricsLength = 5000;
+		// As the API keeps it.
+		private const int MaxMediaLinkLength = 500;
 
 		private static readonly string[] Keys =
 		[
@@ -51,12 +54,19 @@ namespace Lyrious.UILib.Setlists
 
 		private readonly ContentControl body = new();
 		private readonly Button editButton;
-		// At the right of the title: the pencil, or Save and Cancel while editing. All three are icon
-		// buttons of the same size and this area has a fixed size, so the title doesn't move or
-		// rewrap when editing starts or stops. (40 = a 24-pixel icon plus 8 padding on each side.)
+		// Beside the pencil: the song's media link (see MediaButton); a change to it is saved at once.
+		private readonly LongClickButton mediaButton;
+		private readonly Action showMediaLink;
+		private readonly Func<IStorageFile, Task> addSoundBesidePencil;
+		// The media button and the pencil, shown at the right of the title while not editing.
+		private readonly StackPanel lyricsActions;
+		// At the right of the title: the media button and the pencil, or while editing the media
+		// button, Save and Cancel. All are icon buttons of the same size and this area has a fixed
+		// size, so the title doesn't move or rewrap when editing starts or stops. (40 = a 24-pixel
+		// icon plus 8 padding on each side; three of them, 4 apart.)
 		private readonly ContentControl titleActions = new()
 		{
-			Width = 84,
+			Width = 128,
 			Height = 40,
 			VerticalAlignment = VerticalAlignment.Center,
 			HorizontalContentAlignment = HorizontalAlignment.Right,
@@ -133,7 +143,7 @@ namespace Lyrious.UILib.Setlists
 		public Guid SongId => song.Id;
 
 		/// <summary>Whether the editor is open (so the page shouldn't be replaced under the user).</summary>
-		public bool IsEditing => titleActions.Content != editButton;
+		public bool IsEditing => titleActions.Content != lyricsActions;
 
 		/// <summary>Whether the lyrics are scrolling by themselves.</summary>
 		public bool IsAutoScrolling => scrollTimer.IsEnabled;
@@ -166,6 +176,28 @@ namespace Lyrious.UILib.Setlists
 
 			editButton = HomeView.IconButton(EditIcon, "Edit song");
 			editButton.Click += (_, _) => ShowEditor();
+			(mediaButton, showMediaLink, addSoundBesidePencil) = MediaButton(
+				() => this.song.MediaLink,
+				async link =>
+				{
+					this.song = await this.saveSong(this.song with { MediaLink = link });
+					SongSaved?.Invoke(this.song);
+				},
+				() => this.song.Name,
+				() => this.song.Lyrics,
+				ShowProblemAt);
+			lyricsActions = new StackPanel
+			{
+				Orientation = Orientation.Horizontal,
+				Spacing = 4,
+				HorizontalAlignment = HorizontalAlignment.Right,
+				Children = { mediaButton, editButton },
+			};
+			// A sound file dropped anywhere on the view becomes the song's media link (handled ones too:
+			// the editor's text box takes drops of its own).
+			DragDrop.SetAllowDrop(this, true);
+			AddHandler(DragDrop.DragOverEvent, OnSoundDraggedOver, RoutingStrategies.Bubble, handledEventsToo: true);
+			AddHandler(DragDrop.DropEvent, OnSoundDropped, RoutingStrategies.Bubble, handledEventsToo: true);
 			scrollTimer.Tick += (_, _) => ScrollStep();
 			nudgeTimer.Tick += (_, _) => NudgeStep();
 
@@ -214,13 +246,14 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// Shows or hides everything but the song's name, details and lyrics (that is, the pencil).
-		/// The pencil is made invisible rather than removed, so the title and lyrics don't move.
+		/// Shows or hides everything but the song's name, details and lyrics (that is, the media
+		/// button and the pencil). They're made invisible rather than removed, so the title and lyrics
+		/// don't move.
 		/// </summary>
 		public void SetFocusMode(bool focused)
 		{
-			editButton.Opacity = focused ? 0 : 1;
-			editButton.IsHitTestVisible = !focused;
+			lyricsActions.Opacity = focused ? 0 : 1;
+			lyricsActions.IsHitTestVisible = !focused;
 		}
 
 		/// <summary>Scrolls the lyrics back to the start; if they're scrolling by themselves, they go on from there.</summary>
@@ -899,6 +932,12 @@ namespace Lyrious.UILib.Setlists
 			DisplaySettings.ShowSongHeaderChanged -= ShowTitle;
 			scrollTimer.Stop();
 			StopNudge();
+			// A sound started here stops with the song (going to the next one, say).
+			if (startedSound)
+			{
+				startedSound = false;
+				App.SoundStore?.Stop();
+			}
 		}
 
 		private void ShowLyrics()
@@ -961,7 +1000,10 @@ namespace Lyrious.UILib.Setlists
 			};
 			body.Content = scroller;
 			this.scroller = scroller;
-			titleActions.Content = editButton;
+			titleActions.Content = lyricsActions;
+			// The link may have been changed in the editor.
+			showMediaLink();
+			addDroppedSound = addSoundBesidePencil;
 			editHeader = null;
 			ShowTitle();
 		}
@@ -1062,6 +1104,279 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
+		/// A song's media button (beside the pencil, and in the editor beside Save): it plays the media
+		/// link, a recording to listen to or watch, or a sound file kept on this device (see
+		/// <see cref="ISoundStore"/>; pressed again while it plays, it stops). It shows Spotify's or
+		/// YouTube's icon when the link is to one of them, a speaker for a sound file, else a note. A
+		/// longclick (or right-click) shows a menu: search Spotify or YouTube for the song (its name,
+		/// and the artist if the lyrics name one), paste a link from the clipboard, pick a sound file
+		/// from the disk, or remove the link. Without a link, a click shows the menu too. A sound file
+		/// can also be dropped anywhere on the view (see <see cref="OnSoundDropped"/>).
+		/// </summary>
+		/// <param name="getLink">The media link now.</param>
+		/// <param name="setLink">Sets the media link (in the editor until Save; beside the pencil, saved at once).</param>
+		/// <param name="showProblem">Says what went wrong (e.g. the browser couldn't be opened).</param>
+		/// <returns>
+		/// The button; what to call when the link was changed elsewhere (to show its icon); and what
+		/// keeps a sound file on the device and makes it the link (for one dropped on the view).
+		/// </returns>
+		private (LongClickButton Button, Action ShowLink, Func<IStorageFile, Task> AddSound) MediaButton(
+			Func<string> getLink, Func<string, Task> setLink, Func<string> name, Func<string> lyrics, Action<LongClickButton, string> showProblem)
+		{
+			var button = new LongClickButton { Padding = new Thickness(8), Background = Brushes.Transparent, BorderThickness = new Thickness(0) };
+			var sounds = App.SoundStore;
+
+			void ShowLink()
+			{
+				var link = getLink();
+				var sound = MediaLinks.SoundOf(link);
+				var uri = MediaLinks.Parse(link);
+				var site = sound != null ? MediaSite.Sound : MediaLinks.SiteOf(uri);
+				var playing = sound != null && sounds?.Playing == sound.Id;
+				button.Content = MediaLinks.Icon(site, playing);
+				var tip = sound != null
+					? playing ? $"Stop {sound.Name}" : $"Play {sound.Name} (hold for more)"
+					: uri == null
+						? "Media: hold for a search on Spotify or YouTube, to paste a link or to pick a sound file"
+						: site switch
+						{
+							MediaSite.Spotify => "Play on Spotify (hold for more)",
+							MediaSite.YouTube => "Play on YouTube (hold for more)",
+							_ => "Play the media link (hold for more)",
+						};
+				ToolTip.SetTip(button, tip);
+				Avalonia.Automation.AutomationProperties.SetName(button, tip);
+			}
+
+			// The speaker turns into a stop sign while its sound plays, whoever started it.
+			void OnPlayingChanged() => Dispatcher.UIThread.Post(ShowLink);
+			if (sounds != null)
+			{
+				button.AttachedToVisualTree += (_, _) =>
+				{
+					sounds.PlayingChanged += OnPlayingChanged;
+					ShowLink();
+				};
+				button.DetachedFromVisualTree += (_, _) => sounds.PlayingChanged -= OnPlayingChanged;
+			}
+
+			async Task OpenAsync(Uri uri)
+			{
+				if (TopLevel.GetTopLevel(this) is not { } topLevel || !await topLevel.Launcher.LaunchUriAsync(uri))
+				{
+					showProblem(button, $"Couldn't open {uri}.");
+				}
+			}
+
+			async Task PlaySoundAsync(SoundFile sound)
+			{
+				if (sounds == null)
+				{
+					showProblem(button, $"{sound.Name} is a sound file, which this app can't play.");
+					return;
+				}
+
+				if (sounds.Playing == sound.Id)
+				{
+					sounds.Stop();
+					return;
+				}
+
+				try
+				{
+					if (await sounds.PlayAsync(sound.Id))
+					{
+						startedSound = true;
+					}
+					else
+					{
+						showProblem(button, $"{sound.Name} was added on another device, so it isn't on this one. Drop the file on the song, or pick it from the media menu, to keep it here too.");
+					}
+				}
+				catch (Exception ex)
+				{
+					showProblem(button, $"Couldn't play {sound.Name}. {ex.Message}");
+				}
+			}
+
+			async Task ChangeAsync(string link)
+			{
+				try
+				{
+					await setLink(link);
+				}
+				catch (Exception ex)
+				{
+					showProblem(button, $"Couldn't save the media link. {ex.Message}");
+				}
+
+				ShowLink();
+			}
+
+			async Task PasteAsync()
+			{
+				var text = TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard
+					? await Avalonia.Input.Platform.ClipboardExtensions.TryGetTextAsync(clipboard)
+					: null;
+				if (string.IsNullOrWhiteSpace(text))
+				{
+					showProblem(button, "There's no text on the clipboard to paste as the media link.");
+					return;
+				}
+
+				var pasted = text.Trim();
+				await ChangeAsync(pasted.Length > MaxMediaLinkLength ? pasted[..MaxMediaLinkLength] : pasted);
+			}
+
+			async Task AddSoundAsync(IStorageFile file)
+			{
+				if (sounds == null)
+				{
+					return;
+				}
+
+				if (!MediaLinks.IsSoundFile(file.Name))
+				{
+					showProblem(button, $"{file.Name} isn't a sound file this app keeps ({string.Join(", ", MediaLinks.SoundExtensions)}).");
+					return;
+				}
+
+				try
+				{
+					var sound = new SoundFile(MediaLinks.NewSoundId(file.Name), file.Name);
+					await using (var content = await file.OpenReadAsync())
+					{
+						if (content.CanSeek && content.Length > MediaLinks.MaxSoundSize)
+						{
+							showProblem(button, $"{file.Name} is too big: a sound file can be at most {MediaLinks.MaxSoundSize / (1024 * 1024)} MB.");
+							return;
+						}
+
+						await sounds.SaveAsync(sound.Id, content);
+					}
+
+					await ChangeAsync(MediaLinks.SoundLink(sound, MaxMediaLinkLength));
+				}
+				catch (Exception ex)
+				{
+					showProblem(button, $"Couldn't keep {file.Name}. {ex.Message}");
+				}
+			}
+
+			async Task PickSoundAsync()
+			{
+				if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage)
+				{
+					showProblem(button, "Files can't be picked here.");
+					return;
+				}
+
+				var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+				{
+					Title = "Pick a sound file for the song",
+					AllowMultiple = false,
+					FileTypeFilter =
+					[
+						new FilePickerFileType("Sound files")
+						{
+							Patterns = MediaLinks.SoundExtensions.Select(extension => "*" + extension).ToArray(),
+							MimeTypes = ["audio/*"],
+						},
+					],
+				});
+				if (files.Count > 0)
+				{
+					await AddSoundAsync(files[0]);
+				}
+			}
+
+			MenuItem Item(string header, Func<Task> action)
+			{
+				var item = new MenuItem { Header = header };
+				item.Click += (_, _) => _ = action();
+				return item;
+			}
+
+			// The link isn't shown anywhere else, so this is the way to clear it.
+			var remove = Item("Remove media link", () => ChangeAsync(""));
+			var menu = new MenuFlyout
+			{
+				Items =
+				{
+					Item("Search on Spotify", () => OpenAsync(MediaLinks.Search(MediaSite.Spotify, MediaLinks.Query(name(), lyrics())))),
+					Item("Search on YouTube", () => OpenAsync(MediaLinks.Search(MediaSite.YouTube, MediaLinks.Query(name(), lyrics())))),
+					new Separator(),
+					Item("Paste link from clipboard", PasteAsync),
+				},
+			};
+			if (sounds != null)
+			{
+				menu.Items.Add(Item("Pick a sound file…", PickSoundAsync));
+			}
+
+			menu.Items.Add(remove);
+			menu.Opening += (_, _) => remove.IsVisible = !string.IsNullOrWhiteSpace(getLink());
+
+			button.LongClick += () => menu.ShowAt(button);
+			button.Click += (_, _) =>
+			{
+				var link = getLink();
+				if (MediaLinks.SoundOf(link) is { } sound)
+				{
+					_ = PlaySoundAsync(sound);
+				}
+				else if (MediaLinks.Parse(link) is { } uri)
+				{
+					_ = OpenAsync(uri);
+				}
+				else
+				{
+					menu.ShowAt(button);
+				}
+			};
+			ShowLink();
+			return (button, ShowLink, AddSoundAsync);
+		}
+
+		// This view started a sound playing (in the app): it's stopped when the view goes away.
+		private bool startedSound;
+
+		// Keeps a dropped sound file and makes it the song's media link: the editor's while editing
+		// (until Save), else the media button beside the pencil's (saved at once).
+		private Func<IStorageFile, Task>? addDroppedSound;
+
+		/// <summary>A sound file dragged over the view: it can be dropped (anywhere) to become the song's media link.</summary>
+		private void OnSoundDraggedOver(object? sender, DragEventArgs e)
+		{
+			if (addDroppedSound != null && DroppedSound(e) != null)
+			{
+				e.DragEffects = DragDropEffects.Copy;
+				e.Handled = true;
+			}
+		}
+
+		private void OnSoundDropped(object? sender, DragEventArgs e)
+		{
+			if (addDroppedSound is { } add && DroppedSound(e) is { } file)
+			{
+				e.Handled = true;
+				_ = add(file);
+			}
+		}
+
+		/// <summary>The (first) sound file among what's dragged; null if there's none.</summary>
+		private static IStorageFile? DroppedSound(DragEventArgs e)
+			=> e.DataTransfer.TryGetFiles()?.OfType<IStorageFile>().FirstOrDefault(file => MediaLinks.IsSoundFile(file.Name));
+
+		/// <summary>A problem beside the lyrics' media button, where there's no room for an error line.</summary>
+		private static void ShowProblemAt(Control button, string message)
+		{
+			var text = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 280 };
+			text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(LyriousTheme.ErrorBrush));
+			new Flyout { Content = text }.ShowAt(button);
+		}
+
+		/// <summary>
 		/// The song's name, key, tempo and beat, and its lyrics in a text box (with the error above, if
 		/// saving fails); Save and Cancel go beside the title. This is the one place a song is edited.
 		/// </summary>
@@ -1090,6 +1405,24 @@ namespace Lyrious.UILib.Setlists
 			var cancel = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, "Cancel editing"), first: true);
 			var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Margin = new Thickness(0, 0, 0, 12) };
 			error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable(LyriousTheme.ErrorBrush));
+			// Changed from the media button's menu, kept until Save like the rest.
+			var mediaLink = song.MediaLink;
+			var (media, _, addSound) = MediaButton(
+				() => mediaLink,
+				link =>
+				{
+					mediaLink = link;
+					return Task.CompletedTask;
+				},
+				() => string.IsNullOrWhiteSpace(name.Text) ? song.Name : name.Text,
+				() => editor.Text ?? "",
+				(_, message) =>
+				{
+					error.Text = message;
+					error.IsVisible = true;
+				});
+			// A sound file dropped while editing becomes the link here, until Save.
+			addDroppedSound = addSound;
 
 			// The name is plain text, as in the title; clicking it puts the text box in its place, and
 			// leaving the box (or Enter) brings the text back.
@@ -1218,8 +1551,8 @@ namespace Lyrious.UILib.Setlists
 
 			editHeader = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { nameSlot, detailsSlot } };
 
-			// Save and Cancel take the pencil's place at the right of the title.
-			titleActions.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { save, cancel } };
+			// The media button, Save and Cancel take the pencil's place at the right of the title.
+			titleActions.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { media, save, cancel } };
 			ShowTitle();
 
 			// A song needs a name.
@@ -1237,9 +1570,10 @@ namespace Lyrious.UILib.Setlists
 				{
 					Name = name.Text!.Trim(),
 					Lyrics = editor.Text ?? string.Empty,
+					MediaLink = mediaLink.Trim(),
 				};
 
-				var inputs = new Control[] { save, cancel, name, key, tempo, beat, editor };
+				var inputs = new Control[] { save, cancel, media, name, key, tempo, beat, editor };
 				foreach (var input in inputs)
 				{
 					input.IsEnabled = false;
