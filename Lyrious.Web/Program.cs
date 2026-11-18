@@ -32,7 +32,8 @@ internal sealed partial class Program
         var offline = new BrowserSettingsStore("lyrious.offline.");
         var auth = new HttpAuthService(new HttpClient { BaseAddress = apiBaseUrl }, offline, new BrowserPasswordHasher());
         App.AuthService = auth;
-        App.SetlistService = new HttpSetlistService(auth, offline);
+        // The other tabs on this address share the offline cache: they keep each other up to date.
+        App.SetlistService = new HttpSetlistService(auth, offline, new BrowserInstanceLink());
         App.CredentialStore = new BrowserCredentialStore();
 
         return BuildAvaloniaApp()

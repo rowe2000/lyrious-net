@@ -31,12 +31,19 @@ public sealed class HttpSetlistService : ISetlistService
     private bool liveWanted;
 
     /// <param name="store">Where the cache is kept on this device; without one, it lasts only while the app runs.</param>
-    public HttpSetlistService(HttpAuthService auth, ISettingsStore? store = null)
+    /// <param name="instances">
+    /// The app's other instances sharing the store (browser tabs on the same address), to stay the
+    /// same as them without the server; none where the app is alone with its store.
+    /// </param>
+    public HttpSetlistService(HttpAuthService auth, ISettingsStore? store = null, IInstanceLink? instances = null)
     {
         this.auth = auth;
         this.store = store ?? new MemorySettingsStore();
+        this.instances = instances;
         live = new LiveUpdates(auth);
-        engine = new SyncEngine(auth, () => live.ConnectionId);
+        engine = new SyncEngine(auth, () => live.ConnectionId, () => this.instances?.IsOwner ?? true);
+        engine.Completed += (change, stored) => PostToInstances("complete", change, stored);
+        engine.Dropped += change => PostToInstances("drop", change);
 
         live.EntitiesChanged += OnServerChanged;
         live.PlaybackChanged += (groupId, playing) => PlaybackChanged?.Invoke(groupId, playing);
@@ -78,6 +85,8 @@ public sealed class HttpSetlistService : ISetlistService
     {
         liveWanted = false;
         engine.Stop();
+        // Logged out (or closing): another instance takes over sending the changes.
+        LeaveInstances();
         await live.StopAsync();
     }
 
@@ -124,6 +133,11 @@ public sealed class HttpSetlistService : ISetlistService
             readySession = auth.Session;
             ready = LoadAndSyncAsync(memberId);
         }
+        else
+        {
+            // Left on logout; the same session can go on (e.g. back from another page).
+            JoinInstances(memberId);
+        }
 
         return ready;
     }
@@ -132,9 +146,15 @@ public sealed class HttpSetlistService : ISetlistService
     {
         if (cache?.MemberId != memberId)
         {
+            LeaveInstances();
             cache = EntityCache.Load(store, memberId);
+            cache.Enqueued += OnChangeMadeHere;
+            madeHere.Clear();
             StatusChanged?.Invoke();
         }
+
+        // Before the sync: whether this instance sends the changes is known by then.
+        JoinInstances(memberId);
 
         var current = cache;
         try
@@ -154,6 +174,142 @@ public sealed class HttpSetlistService : ISetlistService
     private void Queued(EntityCache current)
     {
         _ = engine.PushAsync(current);
+    }
+
+    // ---- The app's other instances sharing the store (IInstanceLink) ----
+    // Each has the cache in memory. A change made in one is posted to the others, which queue it
+    // too, so all show it at once, with or without the server. Only the owner sends the queue to
+    // the server, and posts how each change went ("complete" with the server's copy, or "drop"),
+    // for the others to take it off their queues. An instance that starts asks the owner for its
+    // queue ("hello", answered with "state"): the copy it loaded may be a little behind.
+
+    private readonly IInstanceLink? instances;
+    private readonly string instanceId = Guid.NewGuid().ToString("N");
+    // The changes made in this instance (their keys), kept when taking over the owner's queue.
+    private readonly HashSet<string> madeHere = [];
+    private Guid? joinedInstancesOf;
+
+    private void JoinInstances(Guid memberId)
+    {
+        if (instances == null || joinedInstancesOf == memberId)
+        {
+            return;
+        }
+
+        joinedInstancesOf = memberId;
+        instances.Join($"cache.{memberId}", OnInstanceMessage, OnBecameOwner);
+        instances.Post(new JsonObject { ["t"] = "hello", ["from"] = instanceId }.ToJsonString());
+    }
+
+    private void LeaveInstances()
+    {
+        if (joinedInstancesOf != null)
+        {
+            joinedInstancesOf = null;
+            instances?.Leave();
+        }
+    }
+
+    private void OnChangeMadeHere(PendingChange change)
+    {
+        madeHere.Add(EntityCache.KeyOf(change));
+        PostToInstances("change", change);
+    }
+
+    private void PostToInstances(string what, PendingChange change, JsonObject? stored = null)
+    {
+        if (instances == null || joinedInstancesOf == null)
+        {
+            return;
+        }
+
+        var message = new JsonObject { ["t"] = what, ["change"] = EntityCache.ToJson(change) };
+        if (stored != null)
+        {
+            message["stored"] = stored.DeepClone();
+        }
+
+        instances.Post(message.ToJsonString());
+    }
+
+    /// <summary>The owner went away and this instance took over: send what's waiting.</summary>
+    private void OnBecameOwner()
+    {
+        if (cache is { } current)
+        {
+            _ = engine.PushAsync(current);
+        }
+    }
+
+    private void OnInstanceMessage(string json)
+    {
+        try
+        {
+            if (cache is not { } current || joinedInstancesOf != current.MemberId || JsonNode.Parse(json) is not JsonObject message)
+            {
+                return;
+            }
+
+            var change = message["change"] is JsonObject changeJson ? EntityCache.FromJson(changeJson) : null;
+            switch ((string?)message["t"])
+            {
+                case "hello" when instances!.IsOwner:
+                    var queue = new JsonArray();
+                    foreach (var pending in current.Pending)
+                    {
+                        queue.Add((JsonNode)EntityCache.ToJson(pending));
+                    }
+
+                    instances.Post(new JsonObject { ["t"] = "state", ["to"] = (string?)message["from"], ["queue"] = queue }.ToJsonString());
+                    break;
+                case "state" when (string?)message["to"] == instanceId && message["queue"] is JsonArray theirs:
+                    current.AdoptPending(theirs.OfType<JsonObject>().Select(EntityCache.FromJson).OfType<PendingChange>().ToList(), madeHere);
+                    StatusChanged?.Invoke();
+                    break;
+                case "change" when change != null:
+                    if (current.AddFromInstance(change))
+                    {
+                        ShowChangeFromInstance(current, change.Type, change.Id);
+                        // The owner sends it (now if online); the others just show it.
+                        _ = engine.PushAsync(current);
+                    }
+
+                    break;
+                case "complete" when change != null:
+                    current.CompleteFromInstance(EntityCache.KeyOf(change), change.Type, change.Id, message["stored"] as JsonObject);
+                    ShowChangeFromInstance(current, change.Type, change.Id);
+                    break;
+                case "drop" when change != null:
+                    current.DropFromInstance(EntityCache.KeyOf(change));
+                    ShowChangeFromInstance(current, change.Type, change.Id);
+                    break;
+            }
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or FormatException or InvalidOperationException or ArgumentException)
+        {
+            // Not a message this version understands (another version of the app in the other tab).
+            System.Diagnostics.Debug.WriteLine($"Ignoring a message from another instance: {ex.Message}");
+        }
+    }
+
+    /// <summary>Tells the app about an entity another instance changed, as for a live update from the server.</summary>
+    private void ShowChangeFromInstance(EntityCache current, string type, Guid id)
+    {
+        if (type == "group" && current.Find("group", id) is { } group)
+        {
+            GroupChanged?.Invoke(ToSummary(As(group, ClientJsonContext.Default.GroupDto)));
+        }
+        else if (type == "member")
+        {
+            FollowJoinedGroup(current);
+        }
+
+        if (type is "member" or "membership")
+        {
+            MembersChanged?.Invoke();
+        }
+
+        StatusChanged?.Invoke();
     }
 
     private void OnServerChanged(string type, JsonObject[] entities)

@@ -966,6 +966,12 @@ namespace Lyrious.UILib.Setlists
 			ShowTitle();
 		}
 
+		/// <summary>
+		/// How much of a pinch's change in size goes to the zoom: 1 follows the fingers exactly, which
+		/// is too touchy for lyrics; 0.6 needs a wider pinch for the same change.
+		/// </summary>
+		private const double PinchDamping = 0.6;
+
 		/// <summary>Pinch (touch screen or touchpad) and Ctrl/⌘ + mouse wheel zoom the lyrics.</summary>
 		private void AddZoomGestures(ScrollViewer viewer)
 		{
@@ -979,14 +985,14 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				e.Handled = true;
-				RequestZoom(pinchStartZoom * e.Scale, e.ScaleOrigin.Y);
+				RequestZoom(pinchStartZoom * Math.Pow(e.Scale, PinchDamping), e.ScaleOrigin.Y);
 			});
 			viewer.AddHandler(InputElement.PinchEndedEvent, (_, _) => pinching = false);
 			// macOS touchpads: a magnify gesture, its delta the change (0.1 = 10 % bigger).
 			viewer.AddHandler(InputElement.PointerTouchPadGestureMagnifyEvent, (_, e) =>
 			{
 				e.Handled = true;
-				RequestZoom((pendingZoom ?? zoom) * (1 + e.Delta.X), e.GetPosition(viewer).Y);
+				RequestZoom((pendingZoom ?? zoom) * Math.Pow(1 + e.Delta.X, PinchDamping), e.GetPosition(viewer).Y);
 			});
 			// Before the scroll viewer scrolls with it.
 			viewer.AddHandler(PointerWheelChangedEvent, (_, e) =>
@@ -997,7 +1003,15 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				e.Handled = true;
-				RequestZoom((pendingZoom ?? zoom) * Math.Pow(1.1, Math.Sign(e.Delta.Y)), e.GetPosition(viewer).Y);
+				// A mouse wheel's notch (1) is 10 %. A touchpad's pinch on Windows comes as many small
+				// wheel steps with Ctrl: each counts for its size (damped like a pinch), not a whole notch.
+				var notches = Math.Clamp(e.Delta.Y, -1, 1);
+				if (Math.Abs(notches) < 1)
+				{
+					notches *= PinchDamping;
+				}
+
+				RequestZoom((pendingZoom ?? zoom) * Math.Pow(1.1, notches), e.GetPosition(viewer).Y);
 			}, RoutingStrategies.Tunnel);
 		}
 

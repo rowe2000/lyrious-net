@@ -26,6 +26,11 @@ internal sealed record PendingChange(string Type, Guid Id, string Kind, JsonObje
 /// in the background right after, so a change made here goes to the server (and one from the server
 /// shows) without waiting for the whole cache to be copied and written.
 /// </para>
+/// <para>
+/// Several instances of the app can share the store (browser tabs): each has the cache in memory
+/// and saves the whole of it, so they pass their changes to each other to stay the same (see
+/// <see cref="IInstanceLink"/>).
+/// </para>
 /// </summary>
 internal sealed class EntityCache
 {
@@ -97,12 +102,29 @@ internal sealed class EntityCache
     public static Guid IdOf(JsonObject entity) => Guid.Parse((string)entity["id"]!);
 
     /// <summary>Records a new entity (the whole of it).</summary>
-    public void Create(string type, JsonObject entity) => Enqueue(new PendingChange(type, IdOf(entity), "create", (JsonObject)entity.DeepClone(), DateTime.Now));
+    public void Create(string type, JsonObject entity) => Enqueue(new PendingChange(type, IdOf(entity), "create", (JsonObject)entity.DeepClone(), Stamp()));
 
     /// <summary>Records a change to some fields of an entity.</summary>
-    public void Update(string type, Guid id, JsonObject fields) => Enqueue(new PendingChange(type, id, "update", (JsonObject)fields.DeepClone(), DateTime.Now));
+    public void Update(string type, Guid id, JsonObject fields) => Enqueue(new PendingChange(type, id, "update", (JsonObject)fields.DeepClone(), Stamp()));
 
-    public void Delete(string type, Guid id) => Enqueue(new PendingChange(type, id, "delete", null, DateTime.Now));
+    public void Delete(string type, Guid id) => Enqueue(new PendingChange(type, id, "delete", null, Stamp()));
+
+    // When a change was queued, never the same twice: with its entity and kind it names the
+    // change between instances (KeyOf), and the clock can stand still between two changes.
+    private static long lastStamp;
+
+    private static DateTime Stamp()
+    {
+        while (true)
+        {
+            var last = System.Threading.Interlocked.Read(ref lastStamp);
+            var next = Math.Max(DateTime.Now.Ticks, last + 1);
+            if (System.Threading.Interlocked.CompareExchange(ref lastStamp, next, last) == last)
+            {
+                return new DateTime(next, DateTimeKind.Local);
+            }
+        }
+    }
 
     /// <summary>The oldest change the server hasn't got, if any.</summary>
     public PendingChange? Peek()
@@ -215,6 +237,124 @@ internal sealed class EntityCache
             Rebuild(change.Type, [change.Id]);
             ScheduleSave();
         }
+
+        Enqueued?.Invoke(change);
+    }
+
+    // ---- Other instances of the app sharing this store (see IInstanceLink) ----
+    // They each hold the cache in memory, so a change made in one is passed to the others, which
+    // lay it on top of their copy the same way. One of them sends the changes to the server and
+    // tells the rest how each went.
+
+    /// <summary>Raised when a change is made here (not for one passed on by another instance).</summary>
+    public event Action<PendingChange>? Enqueued;
+
+    /// <summary>Names a change the same way in every instance.</summary>
+    public static string KeyOf(PendingChange change)
+        => $"{change.Type}/{change.Id:N}/{change.Kind}/{change.QueuedAt.ToUniversalTime().Ticks}";
+
+    /// <summary>The changes the server hasn't got yet, oldest first.</summary>
+    public IReadOnlyList<PendingChange> Pending
+    {
+        get
+        {
+            lock (gate)
+            {
+                return outbox.ToArray();
+            }
+        }
+    }
+
+    /// <summary>A change made in another instance: queued here too. False if it's here already.</summary>
+    public bool AddFromInstance(PendingChange change)
+    {
+        lock (gate)
+        {
+            var key = KeyOf(change);
+            if (outbox.Any(queued => KeyOf(queued) == key))
+            {
+                return false;
+            }
+
+            outbox.Add(change);
+            Rebuild(change.Type, [change.Id]);
+            ScheduleSave();
+            return true;
+        }
+    }
+
+    /// <summary>Another instance sent the change to the server: as <see cref="Complete"/>.</summary>
+    public void CompleteFromInstance(string key, string type, Guid id, JsonObject? stored)
+    {
+        lock (gate)
+        {
+            if (outbox.FirstOrDefault(queued => KeyOf(queued) == key) is { } change)
+            {
+                Complete(change, stored);
+            }
+            else if (stored != null)
+            {
+                // Not queued here (any more): the server's copy is news all the same.
+                Put(snapshot, type, stored);
+                Rebuild(type, [id]);
+                ScheduleSave();
+            }
+        }
+    }
+
+    /// <summary>The server refused the change another instance sent: as <see cref="Drop"/>.</summary>
+    public void DropFromInstance(string key)
+    {
+        lock (gate)
+        {
+            if (outbox.FirstOrDefault(queued => KeyOf(queued) == key) is { } change)
+            {
+                Drop(change);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Takes over the queue of the instance that sends the changes (when this one has just started:
+    /// the copy it loaded may be a little behind), keeping the changes made here that it hasn't
+    /// heard of yet.
+    /// </summary>
+    public void AdoptPending(IReadOnlyList<PendingChange> theirs, IReadOnlySet<string> madeHere)
+    {
+        lock (gate)
+        {
+            var known = theirs.Select(KeyOf).ToHashSet();
+            var mine = outbox.Where(change => madeHere.Contains(KeyOf(change)) && !known.Contains(KeyOf(change))).ToList();
+            outbox.Clear();
+            outbox.AddRange(theirs);
+            outbox.AddRange(mine);
+            Rebuild();
+            ScheduleSave();
+        }
+    }
+
+    /// <summary>A change as JSON, as it's saved and as it's passed between instances.</summary>
+    public static JsonObject ToJson(PendingChange change) => new()
+    {
+        ["type"] = change.Type,
+        ["id"] = change.Id.ToString(),
+        ["kind"] = change.Kind,
+        ["fields"] = change.Fields?.DeepClone(),
+        ["queuedAt"] = change.QueuedAt.ToString("O"),
+    };
+
+    /// <summary>The change in the JSON; null when it's of a type this app doesn't know.</summary>
+    public static PendingChange? FromJson(JsonObject change)
+    {
+        var type = (string)change["type"]!;
+        return Types.Contains(type)
+            ? new PendingChange(
+                type,
+                Guid.Parse((string)change["id"]!),
+                (string)change["kind"]!,
+                change["fields"]?.DeepClone() as JsonObject,
+                DateTime.Parse((string)change["queuedAt"]!, null, System.Globalization.DateTimeStyles.RoundtripKind))
+            : null;
     }
 
     private static void Put(Dictionary<string, Dictionary<Guid, JsonObject>> set, string type, JsonObject entity)
@@ -441,15 +581,9 @@ internal sealed class EntityCache
         {
             foreach (var change in outboxJson.OfType<JsonObject>())
             {
-                var type = (string)change["type"]!;
-                if (Types.Contains(type))
+                if (FromJson(change) is { } queued)
                 {
-                    outbox.Add(new PendingChange(
-                        type,
-                        Guid.Parse((string)change["id"]!),
-                        (string)change["kind"]!,
-                        change["fields"]?.DeepClone() as JsonObject,
-                        DateTime.Parse((string)change["queuedAt"]!, null, System.Globalization.DateTimeStyles.RoundtripKind)));
+                    outbox.Add(queued);
                 }
             }
         }

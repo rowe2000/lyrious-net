@@ -46,6 +46,53 @@ globalThis.lyriousSettings = {
     },
 };
 
+// The app's other tabs and windows on this address (BrowserInstanceLink.cs). They share the local
+// storage, so they pass each other their changes over a BroadcastChannel to stay the same without
+// the server, and the one holding the Web Lock (the owner) sends the changes to the server: the
+// browser gives the lock to the next one waiting when the owner's tab is closed. Both are needed
+// (Web Locks only on https or localhost); without them the app is alone and its own owner.
+globalThis.lyriousInstances = (() => {
+    const supported = typeof BroadcastChannel === "function" && !!navigator.locks;
+    let channel = null;
+    let release = null;
+    let owner = !supported;
+    let joins = 0;
+
+    function leave() {
+        joins++; // A lock still being waited for is given back when it comes.
+        channel?.close();
+        channel = null;
+        release?.();
+        release = null;
+        owner = !supported;
+    }
+
+    return {
+        join: (name, received, becameOwner) => {
+            leave();
+            if (!supported) return;
+            const mine = joins;
+            channel = new BroadcastChannel("lyrious." + name);
+            channel.onmessage = event => {
+                if (typeof event.data === "string") received(event.data);
+            };
+            // Held until leaving (or the tab is closed): the promise is what keeps the lock.
+            navigator.locks.request("lyrious." + name, () => new Promise(resolve => {
+                if (mine !== joins) {
+                    resolve();
+                    return;
+                }
+                release = resolve;
+                owner = true;
+                becameOwner();
+            }));
+        },
+        leave,
+        isOwner: () => owner,
+        post: message => channel?.postMessage(message),
+    };
+})();
+
 // The installed web app (PWA, see manifest.webmanifest): the service worker keeps a copy of the
 // app's files, so it starts without a connection. Service workers need a secure context (https,
 // or http://localhost); elsewhere the app simply isn't installable.

@@ -29,13 +29,20 @@ internal sealed class SyncEngine
 
     private readonly HttpAuthService auth;
     private readonly Func<string?> connectionId;
+    private readonly Func<bool> sends;
     private readonly SemaphoreSlim running = new(1, 1);
     private CancellationTokenSource? retry;
 
-    public SyncEngine(HttpAuthService auth, Func<string?> connectionId)
+    /// <param name="sends">
+    /// Whether this instance of the app is the one that sends the changes (see
+    /// <see cref="IInstanceLink"/>). When it isn't, the changes stay queued here until the one
+    /// that is tells how they went; fetching is done all the same.
+    /// </param>
+    public SyncEngine(HttpAuthService auth, Func<string?> connectionId, Func<bool> sends)
     {
         this.auth = auth;
         this.connectionId = connectionId;
+        this.sends = sends;
     }
 
     /// <summary>Whether the server could be reached last time it was tried.</summary>
@@ -49,6 +56,12 @@ internal sealed class SyncEngine
 
     /// <summary>Raised after a downstream sync replaced the cache's copy, with the cache's view of the groups before it.</summary>
     public event Action<IReadOnlyDictionary<Guid, JsonObject>>? Downloaded;
+
+    /// <summary>Raised when the server has a change, with its stored copy if there is one (for the app's other instances).</summary>
+    public event Action<PendingChange, JsonObject?>? Completed;
+
+    /// <summary>Raised when the server refused a change for good and it was dropped (for the app's other instances).</summary>
+    public event Action<PendingChange>? Dropped;
 
     /// <summary>Raised after coming back online (logged in again and synced): e.g. to reconnect live updates.</summary>
     public event Action? BackOnline;
@@ -111,7 +124,7 @@ internal sealed class SyncEngine
     public async Task PushAsync(EntityCache cache)
     {
         StatusChanged?.Invoke();
-        if (!Online)
+        if (!Online || !sends())
         {
             return;
         }
@@ -177,6 +190,12 @@ internal sealed class SyncEngine
     /// <summary>Sends the outbox in order; false when it had to stop (changes remain queued).</summary>
     private async Task<bool> PushAllAsync(EntityCache cache)
     {
+        // Another instance of the app sends them: nothing to do here, and nothing in the way.
+        if (!sends())
+        {
+            return true;
+        }
+
         while (cache.Peek() is { } change)
         {
             var outcome = await PushOneAsync(change);
@@ -188,10 +207,13 @@ internal sealed class SyncEngine
             switch (outcome)
             {
                 case Outcome.Ok ok:
-                    cache.Complete(change, ok.Stored ?? await TryGetAsync(change.Type, change.Id));
+                    var stored = ok.Stored ?? await TryGetAsync(change.Type, change.Id);
+                    cache.Complete(change, stored);
+                    Completed?.Invoke(change, stored);
                     break;
                 case Outcome.Rejected rejected:
                     cache.Drop(change);
+                    Dropped?.Invoke(change);
                     SetProblem(rejected.Message);
                     break;
                 case Outcome.NoLogin:
