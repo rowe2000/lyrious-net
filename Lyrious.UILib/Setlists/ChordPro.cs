@@ -168,8 +168,8 @@ namespace Lyrious.UILib.Setlists
 		/// Chords only, in a grid: each line with chords is a row of equal columns, as many as the line
 		/// with the most (so every row fills the width the same way). On a line starting with '|' the
 		/// bar marks decide the columns (a chord goes in the bar it's written in); on other lines each
-		/// chord has a column of its own (a bar line without chords is a row of empty bars). The words are
-		/// left out; headings, notes and tabs stay.
+		/// chord has a column of its own (a bar line without chords is a row of empty bars). Each row's
+		/// words are shown below it; lines without chords, headings, notes and tabs as usual.
 		/// </param>
 		public static RenderedLyrics Render(string text, double fontSize, double lineHeight, double tempo = 0, string beat = "4/4", bool chordGrid = false)
 		{
@@ -286,19 +286,17 @@ namespace Lyrious.UILib.Setlists
 				}
 				else if (chordGrid && (barLines[lineIndex] || BracketTag().Matches(line).Any(tag => IsChord(tag.Groups[1].Value))))
 				{
-					// The chords in their columns; the line's time tags mark the row.
+					// The chords in their columns, the line's words below them; the time tags mark the row.
 					var row = GridRow(GridCells(line, barLines[lineIndex]), gridColumns, fontSize);
 					Mark(TimesOn(line), row);
 					current.Children.Add(row);
-				}
-				else if (chordGrid)
-				{
-					// No chords: the words aren't shown in the grid, but time tags still mark their place.
-					if (TimesOn(line) is { Count: > 0 } times)
+					// Without its tags (and the spaces the bar marks leave doubled).
+					var words = Regex.Replace(BracketTag().Replace(line, ""), @"[ \t]{2,}", " ").Trim();
+					if (words.Length > 0)
 					{
-						var place = new Border { Height = 0 };
-						Mark(times, place);
-						current.Children.Add(place);
+						var block = new TextBlock { FontSize = fontSize, LineHeight = lineHeight, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
+						SetStyledText(block, words, Emphasis(words), 0, words.Length);
+						current.Children.Add(block);
 					}
 				}
 				else if (BracketTag().Matches(line).Any(tag => IsChord(tag.Groups[1].Value)))
@@ -346,7 +344,8 @@ namespace Lyrious.UILib.Setlists
 			var cells = new List<(List<string> Chords, bool HasText)>();
 			foreach (var (chord, text, timeTag) in Segments(line))
 			{
-				if (timeTag?.Trim() == "+1")
+				// A bar mark: "[+1]", or "[1]" for the song's first one.
+				if (timeTag?.Trim() is "+1" or "1")
 				{
 					cells.Add(([], false));
 					continue;
@@ -722,7 +721,8 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// The text with each bar mark '|' written as the time tag it stands for, "[+1]" (one bar after
-		/// the previous time tag), so it's handled (and hidden) like one. A '|' stays as it is in a tab
+		/// the previous time tag; "[1]", the start, when it's the song's first time mark), so it's handled
+		/// (and hidden) like one. A '|' stays as it is in a tab
 		/// block ({sot} … {eot}, where it's part of the tab), on a {directive} line, and inside a
 		/// bracket tag.
 		/// </summary>
@@ -735,6 +735,8 @@ namespace Lyrious.UILib.Setlists
 
 			var lines = text.Replace("\r\n", "\n").Split('\n');
 			var inTab = false;
+			// Whether a time tag (or bar mark) came before: until one does, a bar mark is the start.
+			var timed = false;
 			for (var i = 0; i < lines.Length; i++)
 			{
 				var line = lines[i];
@@ -753,8 +755,14 @@ namespace Lyrious.UILib.Setlists
 					continue;
 				}
 
-				if (inTab || !line.Contains('|'))
+				if (inTab)
 				{
+					continue;
+				}
+
+				if (!line.Contains('|'))
+				{
+					timed |= BracketTag().Matches(line).Any(tag => IsTimeTag(tag.Groups[1].Value));
 					continue;
 				}
 
@@ -765,16 +773,26 @@ namespace Lyrious.UILib.Setlists
 				{
 					var c = line[at];
 					// A "[" only opens a tag when a "]" closes it later on the line (else it's text).
-					if (c == '[' && !inTag && line.IndexOf(']', at) >= 0)
+					if (c == '[' && !inTag && line.IndexOf(']', at) is var close and >= 0)
 					{
 						inTag = true;
+						timed |= IsTimeTag(line[(at + 1)..close]);
 					}
 					else if (c == ']')
 					{
 						inTag = false;
 					}
 
-					expanded.Append(c == '|' && !inTag ? "[+1]" : c.ToString());
+					if (c == '|' && !inTag)
+					{
+						// The song's first time mark, if it's a bar mark, is where the song starts: bar 1.
+						expanded.Append(timed ? "[+1]" : "[1]");
+						timed = true;
+					}
+					else
+					{
+						expanded.Append(c);
+					}
 				}
 
 				lines[i] = expanded.ToString();

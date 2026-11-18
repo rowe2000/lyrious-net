@@ -33,6 +33,10 @@ namespace Lyrious.UILib.Setlists
 		// A list icon: three lines with a dot in front of each.
 		private const string ListIcon = "M9,7 H20 M9,12 H20 M9,17 H20 M4.5,7 H5 M4.5,12 H5 M4.5,17 H5";
 		private const string NoSong = "Choose a song";
+
+		/// <summary>A page's room at the sides, clear of the drawer buttons over the top corners (4 of margin plus 40 wide).</summary>
+		private static readonly Thickness PageMargin = new(44, 0);
+
 		private const string AddIcon = "M12,5 V19 M5,12 H19";
 		private const string CloseIcon = "M6,6 L18,18 M18,6 L6,18";
 		// A magnifying glass: the lens and its handle.
@@ -189,7 +193,7 @@ namespace Lyrious.UILib.Setlists
 			// pages start at the same height with or without them (as in focus mode). The page keeps
 			// clear of the corners at the sides, so narrow windows don't put text under the buttons.
 			topRow = new Grid { Margin = new Thickness(4), VerticalAlignment = VerticalAlignment.Top, Children = { menuButton, setlistButton } };
-			page.Margin = new Thickness(44, 0); // Clear of the drawer buttons: 4 of margin plus 40 wide.
+			page.Margin = PageMargin;
 
 			setlistDrawer = Drawer(SplitViewPanePlacement.Right, 320);
 			// The playback toolbar sits under the lyrics page, also in focus mode.
@@ -312,6 +316,8 @@ namespace Lyrious.UILib.Setlists
 
 				// (A song's editor opened by itself has nothing to play.)
 				var isLyrics = e.NewValue is LyricScrollView { EditorOnly: false };
+				// The lyrics (and their editor) use the whole width, under the drawer buttons; other pages keep clear of them.
+				page.Margin = e.NewValue is LyricScrollView ? new Thickness(0) : PageMargin;
 				playbackBar.IsVisible = isLyrics;
 
 				// The member joined another group in another session while busy here: switch now.

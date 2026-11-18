@@ -55,6 +55,15 @@ namespace Lyrious.UILib.Setlists
 		private const string NewSongTitle = "New song";
 
 		private readonly ContentControl body = new();
+		// A popup under the media button: a Spotify or YouTube song playing in its embed player, in the app (see ShowPlayer).
+		private readonly Avalonia.Controls.Primitives.Popup player = new()
+		{
+			Placement = PlacementMode.BottomEdgeAlignedRight,
+			// Closed by a click outside it, but not by Avalonia's light dismiss: clicks inside the
+			// embedded player go to the web view, which that would take for clicks outside.
+			IsLightDismissEnabled = false,
+			VerticalOffset = 4,
+		};
 		private readonly Button editButton;
 		private readonly Button chordGridButton;
 		// Beside the pencil: the song's media link (see MediaButton); a change to it is saved at once.
@@ -232,8 +241,118 @@ namespace Lyrious.UILib.Setlists
 				ShowLyrics();
 			}
 
-			Content = PageLayout.SongPage(TitleOf(song), body, PageLayout.SongInfo(song), titleActions);
+			// However the player popup closes (a click outside it), its web view goes, so the song stops.
+			player.Closed += (_, _) => player.Child = null;
+			// The player popup belongs to the page (it takes no room in it).
+			Content = PageLayout.SongPage(TitleOf(song), new Panel { Children = { body, player } }, PageLayout.SongInfo(song), titleActions);
 			ShowTitle();
+		}
+
+		/// <summary>
+		/// Plays a Spotify or YouTube song in its embed player (see <see cref="MediaLinks.PlayerFor"/>)
+		/// in a popup under the media button, here in the app: just the player, nothing around it.
+		/// Clicking outside it closes it and stops the song, as does leaving the song. Spotify's player
+		/// is a bar, YouTube's a small 16:9 video.
+		/// </summary>
+		private void ShowPlayer(Uri embed)
+		{
+			var isSpotify = MediaLinks.SiteOf(embed) == MediaSite.Spotify;
+			var web = new NativeWebView
+			{
+				Source = embed,
+				Width = isSpotify ? 360 : 384,
+				Height = isSpotify ? 152 : 216,
+			};
+			if (isSpotify)
+			{
+				// Spotify's player can be drawn shorter than the room it's given, leaving an empty
+				// (black) strip below: once it's shown, the view takes the player's own height.
+				web.NavigationCompleted += (_, e) =>
+				{
+					if (e.IsSuccess)
+					{
+						_ = FitToContentAsync(web);
+					}
+				};
+			}
+
+			player.PlacementTarget = mediaButton;
+			player.Child = web;
+			player.IsOpen = true;
+
+			// A press anywhere in the app's window outside the popup closes it. (On desktop the popup
+			// is a window of its own, so presses in it don't get here; in a browser they do, and are
+			// let through.)
+			if (TopLevel.GetTopLevel(this) is { } window && playerWindow != window)
+			{
+				playerWindow?.RemoveHandler(PointerPressedEvent, OnPressedWhilePlayerOpen);
+				playerWindow = window;
+				window.AddHandler(PointerPressedEvent, OnPressedWhilePlayerOpen, RoutingStrategies.Tunnel, handledEventsToo: true);
+			}
+		}
+
+		/// <summary>
+		/// Makes the web view as tall as what its page draws (the lowest edge of anything on it that's
+		/// shorter than the view), if that's less. The page draws itself after it's loaded, so this
+		/// looks a few times over the first seconds.
+		/// </summary>
+		private async Task FitToContentAsync(NativeWebView web)
+		{
+			const string MeasureScript =
+				"(() => { let bottom = 0; for (const el of document.querySelectorAll('body *')) {" +
+				" const r = el.getBoundingClientRect(); if (r.height > 0 && r.height < innerHeight - 1) bottom = Math.max(bottom, r.bottom); }" +
+				" return Math.ceil(bottom); })()";
+
+			foreach (var delay in new[] { 300, 1000, 2500 })
+			{
+				await Task.Delay(delay);
+				if (player.Child != web)
+				{
+					return; // Closed (or another song) meanwhile.
+				}
+
+				try
+				{
+					var result = (await web.InvokeScript(MeasureScript))?.Trim('"', ' ');
+					if (double.TryParse(result, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var height)
+					    && height >= 40 && height < web.Height)
+					{
+						web.Height = height;
+					}
+				}
+				catch (Exception ex)
+				{
+					// The page couldn't be measured: it keeps its size.
+					System.Diagnostics.Debug.WriteLine($"Couldn't measure the player: {ex.Message}");
+					return;
+				}
+			}
+		}
+
+		// The window whose presses close the player popup (see ShowPlayer).
+		private TopLevel? playerWindow;
+
+		private void OnPressedWhilePlayerOpen(object? sender, PointerPressedEventArgs e)
+		{
+			if (!player.IsOpen)
+			{
+				return;
+			}
+
+			bool In(Visual? area) => e.Source is Visual pressed && area != null && (pressed == area || area.IsVisualAncestorOf(pressed));
+
+			// The media button closes the player itself (its click), so a press on it is left to that.
+			if (!In(player.Child) && !In(mediaButton))
+			{
+				ClosePlayer();
+			}
+		}
+
+		/// <summary>Closes the player popup (its web view goes, so the song stops).</summary>
+		private void ClosePlayer()
+		{
+			player.IsOpen = false;
+			player.Child = null;
 		}
 
 		private static string TitleOf(SongDetails song) => string.IsNullOrWhiteSpace(song.Name) ? NewSongTitle : song.Name;
@@ -953,6 +1072,10 @@ namespace Lyrious.UILib.Setlists
 			base.OnDetachedFromVisualTree(e);
 			DisplaySettings.ShowSongHeaderChanged -= ShowTitle;
 			scrollTimer.Stop();
+			// A song playing in the player stops with the page.
+			ClosePlayer();
+			playerWindow?.RemoveHandler(PointerPressedEvent, OnPressedWhilePlayerOpen);
+			playerWindow = null;
 			StopNudge();
 			// A sound started here stops with the song (going to the next one, say).
 			if (startedSound)
@@ -1431,7 +1554,22 @@ namespace Lyrious.UILib.Setlists
 				}
 				else if (MediaLinks.Parse(link) is { } uri)
 				{
-					_ = OpenAsync(uri);
+					// A Spotify or YouTube song in its single-song player, in a popup here, which
+					// stops at the song's end; anything else (an album, another site) opens outside.
+					var embed = MediaLinks.PlayerFor(uri);
+					if (player.IsOpen)
+					{
+						// Pressed again while the song plays in the popup: that stops it.
+						ClosePlayer();
+					}
+					else if (embed != uri)
+					{
+						ShowPlayer(embed);
+					}
+					else
+					{
+						_ = OpenAsync(uri);
+					}
 				}
 				else
 				{

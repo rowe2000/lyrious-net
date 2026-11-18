@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -99,6 +100,103 @@ namespace Lyrious.UILib.Setlists
 
 		private static bool HostIs(Uri uri, string domain)
 			=> uri.Host.Equals(domain, StringComparison.OrdinalIgnoreCase) || uri.Host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase);
+
+		/// <summary>
+		/// Where to play the link so that only that song plays: a YouTube video or Spotify track (or
+		/// episode) in the site's embed player, which stops at the end instead of going on to another
+		/// song (a YouTube start time is kept). Anything else (an album, a playlist, a short
+		/// spotify.link, another site) is opened as it is.
+		/// <para>
+		/// The embed players have limits: a YouTube video whose owner doesn't allow embedding won't play
+		/// there, and Spotify's plays only a 30-second preview unless the browser is logged in to Spotify.
+		/// </para>
+		/// </summary>
+		public static Uri PlayerFor(Uri uri)
+		{
+			switch (SiteOf(uri))
+			{
+				case MediaSite.YouTube when YouTubeVideo(uri) is { } video:
+					var start = YouTubeStart(uri) is { } seconds ? $"&start={seconds}" : "";
+					return new Uri($"https://www.youtube.com/embed/{Uri.EscapeDataString(video)}?autoplay=1&rel=0{start}");
+				case MediaSite.Spotify when SpotifyItem(uri) is { } item:
+					return new Uri($"https://open.spotify.com/embed/{item.Kind}/{Uri.EscapeDataString(item.Id)}");
+				default:
+					return uri;
+			}
+		}
+
+		/// <summary>The video's id in a YouTube link (watch?v=, youtu.be/, shorts/, live/, embed/); null if none.</summary>
+		private static string? YouTubeVideo(Uri uri)
+		{
+			var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+			if (HostIs(uri, "youtu.be"))
+			{
+				return segments.Length > 0 ? segments[0] : null;
+			}
+
+			if (segments is ["shorts" or "live" or "embed" or "v", var id, ..])
+			{
+				return id;
+			}
+
+			var v = QueryValue(uri, "v");
+			return string.IsNullOrWhiteSpace(v) ? null : v;
+		}
+
+		/// <summary>A YouTube link's start time in seconds (t= or start=, e.g. "90", "90s" or "1m30s"); null if none.</summary>
+		private static int? YouTubeStart(Uri uri)
+		{
+			var t = QueryValue(uri, "t") ?? QueryValue(uri, "start");
+			if (string.IsNullOrWhiteSpace(t))
+			{
+				return null;
+			}
+
+			if (int.TryParse(t, out var plain))
+			{
+				return plain;
+			}
+
+			var match = System.Text.RegularExpressions.Regex.Match(t, @"^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$");
+			if (!match.Success || match.Length == 0)
+			{
+				return null;
+			}
+
+			int Part(int group) => match.Groups[group].Success ? int.Parse(match.Groups[group].Value) : 0;
+			return Part(1) * 3600 + Part(2) * 60 + Part(3);
+		}
+
+		/// <summary>
+		/// The track or episode in a Spotify link (open.spotify.com/track/…, also with an
+		/// "intl-xx" part, or spotify:track:…); null for anything else.
+		/// </summary>
+		private static (string Kind, string Id)? SpotifyItem(Uri uri)
+		{
+			var parts = uri.Scheme == "spotify"
+				? uri.OriginalString.Split(':', StringSplitOptions.RemoveEmptyEntries).Skip(1).ToArray()
+				: uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries)
+					.SkipWhile(part => part.StartsWith("intl-", StringComparison.OrdinalIgnoreCase)).ToArray();
+			return parts is [var kind, var id, ..] && kind.ToLowerInvariant() is "track" or "episode" && id.Length > 0
+				? (kind.ToLowerInvariant(), id)
+				: null;
+		}
+
+		/// <summary>A query parameter's value in the link (decoded); null if it isn't there.</summary>
+		private static string? QueryValue(Uri uri, string name)
+		{
+			foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+			{
+				var equals = pair.IndexOf('=');
+				var key = equals < 0 ? pair : pair[..equals];
+				if (key.Equals(name, StringComparison.OrdinalIgnoreCase))
+				{
+					return Uri.UnescapeDataString(equals < 0 ? "" : pair[(equals + 1)..]);
+				}
+			}
+
+			return null;
+		}
 
 		/// <summary>A search on the site for the song (its name, and the artist when it's known).</summary>
 		public static Uri Search(MediaSite site, string query) => site switch

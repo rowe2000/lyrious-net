@@ -100,6 +100,13 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
+		/// The room a song page's header (title and actions) keeps at the sides: the song page uses the
+		/// whole width, under the drawer buttons over the top corners (40 wide, 4 from the edge), so its
+		/// header keeps clear of them. The right side allows for the page's room for the scroll bar.
+		/// </summary>
+		private static Thickness SongHeaderMargin(double bottom) => new(40, 0, 40 - ScrollBarRoom, bottom);
+
+		/// <summary>
 		/// A song's page: the name with its details (key, tempo, beat) after it on the same line, and
 		/// the action at the right. It sits a little higher than other pages, so the action lines up
 		/// with the drawer buttons in the top corners (both 40 high, centred 24 from the top).
@@ -116,12 +123,13 @@ namespace Lyrious.UILib.Setlists
 
 			titleAction.VerticalAlignment = VerticalAlignment.Top;
 			DockPanel.SetDock(titleAction, Dock.Right);
-			var header = new DockPanel { Margin = new Thickness(0, 0, 0, 4), Children = { titleAction, titleRow }, ZIndex = 1 };
+			var header = new DockPanel { Margin = SongHeaderMargin(4), Children = { titleAction, titleRow }, ZIndex = 1 };
 			Grid.SetRow(content, 1);
 			var page = new Grid
 			{
-				MaxWidth = 640,
-				Margin = new Thickness(4),
+				// The whole width (the lyrics and chord grid use it all), with room at the right for
+				// the scroll bar, which sits beside the content (see KeepScrollBarsBeside).
+				Margin = new Thickness(4, 4, 4 + ScrollBarRoom, 4),
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				RowDefinitions = new RowDefinitions("Auto,*"),
 				Children = { header, content },
@@ -205,7 +213,7 @@ namespace Lyrious.UILib.Setlists
 				header.Children[i].IsVisible = shown;
 			}
 
-			header.Margin = new Thickness(0, 0, 0, shown ? 4 : 0);
+			header.Margin = SongHeaderMargin(shown ? 4 : 0);
 			// Hidden: the content starts at the top, under the action, so the header takes no room.
 			header.HorizontalAlignment = shown ? HorizontalAlignment.Stretch : HorizontalAlignment.Right;
 			header.VerticalAlignment = VerticalAlignment.Top;
