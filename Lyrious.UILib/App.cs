@@ -45,6 +45,12 @@ namespace Lyrious.UILib
 		/// </summary>
 		public static ISoundStore? SoundStore { get; set; }
 
+		/// <summary>
+		/// Sends the MIDI tags in songs' lyrics (see <see cref="Midi"/>) on every MIDI output of this
+		/// device. Hosts set this before starting the app; by default no MIDI is sent.
+		/// </summary>
+		public static IMidiOutput? Midi { get; set; }
+
 		public override void Initialize()
 		{
 			// Default follows the system theme; ThemeVariant.Dark or ThemeVariant.Light force one.

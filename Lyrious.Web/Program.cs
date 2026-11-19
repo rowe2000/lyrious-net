@@ -36,6 +36,8 @@ internal sealed partial class Program
         App.SetlistService = new HttpSetlistService(auth, offline, new BrowserInstanceLink());
         App.CredentialStore = new BrowserCredentialStore();
         App.SoundStore = new BrowserSoundStore();
+        // The MIDI tags in songs go to every MIDI output the browser offers.
+        App.Midi = new BrowserMidiOutput();
 
         return BuildAvaloniaApp()
             .WithInterFont()

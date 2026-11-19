@@ -40,6 +40,8 @@ public class LyriousContext : LocalContext<Member, Role>
 			AddColumnIfMissing(nameof(Songs), nameof(Song.MediaLink), sqlite ? "TEXT NOT NULL DEFAULT ''" : "nvarchar(500) NOT NULL DEFAULT ''");
 			AddColumnIfMissing(nameof(Members), nameof(Member.LastLoginAt), sqlite ? "TEXT NULL" : "datetime2 NULL");
 			AddColumnIfMissing(nameof(Groups), nameof(Group.IsPrivate), sqlite ? "INTEGER NOT NULL DEFAULT 0" : "bit NOT NULL DEFAULT 0");
+			AddColumnIfMissing(nameof(Groups), nameof(Group.MidiCommands), sqlite ? "TEXT NULL" : $"nvarchar({Group.MaxMidiCommandsLength}) NULL");
+			AddColumnIfMissing(nameof(Groups), nameof(Group.MidiExpressions), sqlite ? "TEXT NULL" : $"nvarchar({Group.MaxMidiExpressionsLength}) NULL");
 			AddColumnIfMissing(nameof(Members), nameof(Member.Settings), sqlite ? "TEXT NULL" : $"nvarchar({Member.MaxSettingsLength}) NULL");
 		}
 

@@ -1237,6 +1237,7 @@ namespace Lyrious.UILib.Setlists
 				var created = await service.CreateSongAsync(group.Id, filled.Name, filled.Lyrics, TimeSpan.Zero);
 				return await service.UpdateSongAsync(filled with { Id = created.Id });
 			}, startEditing: true) { EditorOnly = true };
+			ShowMidiProblems(view, group.Id);
 			view.EditCancelled += () => _ = RunAsync(() => ShowSetlistAsync(group, setlist));
 			view.SongSaved += song => _ = RunAsync(() => AddToSetlistAndShowAsync(group, setlist, song));
 			page.Content = view;
@@ -1343,6 +1344,8 @@ namespace Lyrious.UILib.Setlists
 			drawerStayTimer.Tick += (_, _) => SlideSetlistDrawerAway();
 			// Tunnelling, so it's seen before the drawer's own closing (when the press is let go).
 			AddHandler(PointerPressedEvent, OnPressWhileDrawerLingers, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+			// The page scrolls with the mouse wheel or touchpad also while a drawer slides over it.
+			AddHandler(PointerWheelChangedEvent, OnWheelBesideOpenDrawer, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 			setlistDrawer.PaneOpening += (_, _) => EndSlowDrawerSlide();
 			// Closed some other way while it waited to slide away: nothing left to do.
 			setlistDrawer.PaneClosed += (_, _) => drawerStayTimer.Stop();
@@ -1637,6 +1640,47 @@ namespace Lyrious.UILib.Setlists
 			SlideSetlistDrawerAway();
 		}
 
+		/// <summary>How far one step of the mouse wheel scrolls, as a scroll view does it.</summary>
+		private const double WheelStep = 50;
+
+		/// <summary>
+		/// An open drawer that slides over the page (not pinned) covers the page with a layer that
+		/// closes it when tapped, which also takes the mouse wheel. So scrolling beside such a drawer
+		/// scrolls the page's scroll view under the pointer instead (the lyrics, say), and the drawer
+		/// stays open. Ctrl/⌘ + wheel (zoom) is left alone.
+		/// </summary>
+		private void OnWheelBesideOpenDrawer(object? sender, Avalonia.Input.PointerWheelEventArgs e)
+		{
+			var overlaid = (menuDrawer.IsPaneOpen && !IsPinned(menuDrawer)) || (setlistDrawer.IsPaneOpen && !IsPinned(setlistDrawer));
+			if (!overlaid || e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control) || e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Meta)
+			    || e.Source is not Visual source || InPane(menuDrawer) || InPane(setlistDrawer))
+			{
+				return;
+			}
+
+			// The innermost scroll view on the page under the pointer that can scroll.
+			ScrollViewer? target = null;
+			foreach (var viewer in page.GetVisualDescendants().OfType<ScrollViewer>())
+			{
+				if (viewer.IsEffectivelyVisible && viewer.Extent.Height > viewer.Viewport.Height
+				    && e.GetPosition(viewer) is var point && point.X >= 0 && point.Y >= 0 && point.X < viewer.Bounds.Width && point.Y < viewer.Bounds.Height)
+				{
+					target = viewer;
+				}
+			}
+
+			if (target == null)
+			{
+				return;
+			}
+
+			var maxOffset = Math.Max(0, target.Extent.Height - target.Viewport.Height);
+			target.Offset = new Vector(target.Offset.X, Math.Clamp(target.Offset.Y - e.Delta.Y * WheelStep, 0, maxOffset));
+			e.Handled = true;
+
+			bool InPane(SplitView drawer) => drawer.IsPaneOpen && drawer.Pane is Visual pane && (pane == source || pane.IsVisualAncestorOf(source));
+		}
+
 		private static TextBlock DrawerMessage(string text) => new() { Text = text, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
 
 		private static Button DrawerItem(string text)
@@ -1826,6 +1870,11 @@ namespace Lyrious.UILib.Setlists
 				_ = ShowPresentMembersAsync();
 			});
 			// Renamed: the page (and, for the joined band, the menu) show the new name.
+			view.MidiExpressionsChangeRequested += (group, expressions) => _ = RunAsync(async () =>
+			{
+				await service.SetMidiExpressionsAsync(group.Id, expressions);
+				await ShowGroupsAsync(group.Id, replace: true);
+			});
 			view.GroupRenameRequested += (group, name) => _ = RunAsync(async () =>
 			{
 				await service.RenameGroupAsync(group.Id, name);
@@ -2009,7 +2058,10 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var view = new LyricScrollView(entry.Song, edited => service.UpdateSongAsync(edited));
-			ShowLyricsPage(view);
+			ShowMidiProblems(view, group.Id);
+			ShowLyricsPage(view, group.Id);
+			// The song's MIDI tags set the instruments, effects and lights for it.
+			SendSongSelectMidi(group.Id, entry.Song.Lyrics);
 			RefreshSetlistDrawer(reload: setlistChanged);
 		}
 
@@ -2119,6 +2171,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			// The same editor as the pencil on a song's lyrics.
 			var view = new LyricScrollView(song, edited => service.UpdateSongAsync(edited), startEditing: true) { EditorOnly = true };
+			ShowMidiProblems(view, group.Id);
 			// Back to the songbook it was opened from (nothing changed), which ✕ then leaves as usual.
 			view.EditCancelled += GoBack;
 			view.SongSaved += saved => _ = RunAsync(async () =>
@@ -2172,11 +2225,84 @@ namespace Lyrious.UILib.Setlists
 			SetCurrentSong(song, null);
 
 			var view = new LyricScrollView(song, edited => service.UpdateSongAsync(edited), startEditing);
-			ShowLyricsPage(view);
+			ShowMidiProblems(view, group.Id);
+			ShowLyricsPage(view, group.Id);
+			if (!startEditing)
+			{
+				SendSongSelectMidi(group.Id, song.Lyrics);
+			}
 			RefreshSetlistDrawer();
 		}
 
-		private void ShowLyricsPage(LyricScrollView view)
+		/// <summary>Gives the lyrics view the band's MIDI expressions, so its editor points out what in the MIDI tags can't be sent.</summary>
+		private async void ShowMidiProblems(LyricScrollView view, Guid groupId)
+		{
+			try
+			{
+				var band = (await service.GetGroupsAsync()).FirstOrDefault(g => g.Id == groupId);
+				view.MidiExpressions = Midi.ExpressionsFromJson(band?.MidiExpressions);
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't read the band's MIDI expressions: {ex.Message}");
+			}
+		}
+
+		// MIDI goes out in the order it's asked for (e.g. a song's stop before the next song's select),
+		// though the band's MIDI settings are read before each send.
+		private Task midiSends = Task.CompletedTask;
+
+		/// <summary>
+		/// A song is selected: sends the band's commands for that, then the MIDI tags at the start of
+		/// the song's lyrics.
+		/// </summary>
+		private void SendSongSelectMidi(Guid groupId, string lyrics)
+			=> SendMidi(groupId, (expressions, commands) => Midi.Parse(commands.Select, expressions).Concat(Midi.SongStart(lyrics, expressions)).ToList());
+
+		/// <summary>
+		/// Queues MIDI to send: <paramref name="build"/> makes it from the band's MIDI expressions and
+		/// commands as they are now (read from the band, so a change shows at once).
+		/// </summary>
+		private void SendMidi(Guid groupId, Func<IReadOnlyList<MidiExpression>, MidiSongCommands, IReadOnlyList<byte[]>> build)
+		{
+			if (App.Midi != null)
+			{
+				midiSends = SendMidiAfterAsync(midiSends, groupId, build);
+			}
+		}
+
+		private async Task SendMidiAfterAsync(Task before, Guid groupId, Func<IReadOnlyList<MidiExpression>, MidiSongCommands, IReadOnlyList<byte[]>> build)
+		{
+			await before;
+			IReadOnlyList<MidiExpression> expressions = [];
+			var commands = MidiSongCommands.None;
+			try
+			{
+				var band = (await service.GetGroupsAsync()).FirstOrDefault(g => g.Id == groupId);
+				expressions = Midi.ExpressionsFromJson(band?.MidiExpressions);
+				commands = Midi.SongCommandsFromJson(band?.MidiCommands);
+			}
+			catch (Exception ex)
+			{
+				// Without the band's settings, a song's plain commands are still sent.
+				System.Diagnostics.Debug.WriteLine($"Couldn't read the band's MIDI settings: {ex.Message}");
+			}
+
+			try
+			{
+				if (build(expressions, commands) is { Count: > 0 } messages)
+				{
+					App.Midi?.Send(messages);
+				}
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't send MIDI: {ex.Message}");
+			}
+		}
+
+		/// <param name="groupId">The band the song is shown from (its MIDI commands are sent when it starts and stops).</param>
+		private void ShowLyricsPage(LyricScrollView view, Guid groupId)
 		{
 			// A tap on the lyrics shows the toolbars when they're hidden; it hides them only while the
 			// lyrics scroll by themselves (when stopped, they stay, as a tap is then likely a mistake).
@@ -2202,6 +2328,10 @@ namespace Lyrious.UILib.Setlists
 			// A page that's been replaced (e.g. by the next song) no longer counts.
 			view.AutoScrollChanged += () =>
 			{
+				// The band's MIDI commands for starting and stopping a song; also when it stops by being left.
+				var started = view.IsAutoScrolling;
+				SendMidi(groupId, (expressions, commands) => Midi.Parse(started ? commands.Start : commands.Stop, expressions));
+
 				// Stopped (also by leaving the page): the time played goes into the playlog.
 				if (!view.IsAutoScrolling && timedPlay is { } timed && timed.View == view)
 				{
@@ -2395,9 +2525,42 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>The settings page; its ✕ goes back to the page before.</summary>
 		private void ShowSettings()
-			=> page.Content = currentGroup is { } group
-				? new SettingsView((anchor, convert) => ImportSongbookProAsync(anchor, group, convert), () => ClearSongbookAsync(group), group.Name)
-				: new SettingsView();
+		{
+			if (currentGroup is not { } group)
+			{
+				page.Content = new SettingsView();
+				return;
+			}
+
+			// The band settings are made once the band (and the member's role in it) is read: an empty
+			// place for them until then.
+			var bandSettings = new ContentControl();
+			page.Content = new SettingsView((anchor, convert) => ImportSongbookProAsync(anchor, group, convert), () => ClearSongbookAsync(group), group.Name, bandSettings);
+			_ = ShowBandSettingsAsync(group.Id, bandSettings);
+		}
+
+		/// <summary>
+		/// The band's settings (its MIDI for every song), saved with the band so they're the same for all
+		/// its members; its admins change them, the others see them.
+		/// </summary>
+		private async Task ShowBandSettingsAsync(Guid groupId, ContentControl place)
+		{
+			try
+			{
+				var band = (await service.GetGroupsAsync()).FirstOrDefault(g => g.Id == groupId);
+				var members = await service.GetGroupMembersAsync();
+				var me = members.TryGetValue(groupId, out var list) ? list.FirstOrDefault(member => member.IsMe) : null;
+				place.Content = new MidiSongCommandsSection(
+					Midi.SongCommandsFromJson(band?.MidiCommands),
+					Midi.ExpressionsFromJson(band?.MidiExpressions),
+					canEdit: me?.Role == GroupRole.Admin,
+					commands => service.SetMidiSongCommandsAsync(groupId, commands));
+			}
+			catch (Exception ex)
+			{
+				place.Content = new TextBlock { Text = $"Couldn't read the band settings. {ex.Message}", TextWrapping = TextWrapping.Wrap };
+			}
+		}
 
 		/// <summary>Deletes every song in the band's songbook (they leave its setlists too); returns how many.</summary>
 		private async Task<string> ClearSongbookAsync(GroupSummary group)

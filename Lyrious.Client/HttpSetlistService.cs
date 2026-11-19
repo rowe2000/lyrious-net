@@ -1008,6 +1008,20 @@ public sealed class HttpSetlistService : ISetlistService
         Queued(current);
     }
 
+    public async Task SetMidiExpressionsAsync(Guid groupId, IReadOnlyList<MidiExpression> expressions, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        current.Update("group", groupId, new JsonObject { ["midiExpressions"] = expressions.Count == 0 ? null : Midi.ExpressionsToJson(expressions) });
+        Queued(current);
+    }
+
+    public async Task SetMidiSongCommandsAsync(Guid groupId, MidiSongCommands commands, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        current.Update("group", groupId, new JsonObject { ["midiCommands"] = Midi.SongCommandsToJson(commands) });
+        Queued(current);
+    }
+
     /// <summary>Gives the setlist a new name (not empty).</summary>
     public async Task RenameSetlistAsync(Guid setlistId, string name, CancellationToken cancellationToken = default)
     {
@@ -1221,7 +1235,7 @@ public sealed class HttpSetlistService : ISetlistService
 
     private static string Limit(string value, int max) => value.Length > max ? value[..max] : value;
 
-    private static GroupSummary ToSummary(GroupDto group) => new(group.Id, group.Name, group.CurrentSetlistId, group.CurrentSetlistItemId, group.IsPrivate);
+    private static GroupSummary ToSummary(GroupDto group) => new(group.Id, group.Name, group.CurrentSetlistId, group.CurrentSetlistItemId, group.IsPrivate, group.MidiExpressions, group.MidiCommands);
 
     private static SetlistSummary ToSummary(SetlistDto setlist) => new(setlist.Id, setlist.Name, setlist.GroupId);
 

@@ -300,6 +300,10 @@ public class LyriousRepository(LyriousContext context)
 		if (Me == null)
 			return false;
 
+		// A band's MIDI settings are stored only in their form (see Group.MidiExpressions and Group.MidiCommands).
+		if (entity is Group midiBand && (!Group.IsValidMidiExpressions(midiBand.MidiExpressions) || !Group.IsValidMidiCommands(midiBand.MidiCommands)))
+			return false;
+
 		var existing = context.Find<TEntity>(entity.Id);
 		if (existing == null)
 			return CanCreate(entity);
@@ -316,6 +320,9 @@ public class LyriousRepository(LyriousContext context)
 				|| stored.IsPrivate && (changed.Name != stored.Name || changed.Removed)) => false,
 			// Any member may change the band (its name, current setlist and song); only an admin may delete it.
 			Group stored when entity is Group changed && changed.Removed && !stored.Removed => IsAdminOf(stored.Id),
+			// Only an admin changes the band's MIDI expressions and commands (every member uses them).
+			Group stored when entity is Group changed && (changed.MidiExpressions != stored.MidiExpressions || changed.MidiCommands != stored.MidiCommands)
+				=> IsAdminOf(stored.Id) && CanModify(existing) && CanModify(entity),
 			_ => CanModify(existing) && CanModify(entity),
 		};
 	}

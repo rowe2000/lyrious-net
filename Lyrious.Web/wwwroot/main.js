@@ -36,6 +36,31 @@ document.addEventListener("pointerup", e => { if (e.pointerType === "touch") foc
 document.addEventListener("touchend", focusTextInputOnTap, { passive: true });
 document.addEventListener("click", focusTextInputOnTap);
 
+// MIDI out (BrowserMidiOutput.cs): every output the Web MIDI API offers. Access is asked for at the
+// first send (the browser may ask the user), then kept; outputs plugged in later are included, as
+// they're listed at each send. Browsers without Web MIDI (Safari) send nothing.
+globalThis.lyriousMidi = (() => {
+    let access = null;
+    return {
+        // "C0 14;CF 01": messages split by ';', their bytes (hex) by spaces.
+        send: messages => {
+            if (!navigator.requestMIDIAccess) return;
+            const data = messages.split(";").filter(m => m.trim()).map(m => m.trim().split(/\s+/).map(b => parseInt(b, 16)));
+            access ??= navigator.requestMIDIAccess({ sysex: false });
+            access.then(midi => {
+                for (const output of midi.outputs.values()) {
+                    for (const message of data) {
+                        try { output.send(message); } catch (e) { console.warn(`Couldn't send MIDI to ${output.name}`, e); }
+                    }
+                }
+            }, e => {
+                console.warn("MIDI isn't allowed here", e);
+                access = null; // Asked again at the next send.
+            });
+        },
+    };
+})();
+
 // PBKDF2-SHA256 with the browser's Web Crypto (BrowserPasswordHasher.cs): native and asynchronous,
 // so the offline login's password hash doesn't freeze the page. Web Crypto needs a secure context
 // (https, or http://localhost); elsewhere this throws and the app falls back to a slower hash.

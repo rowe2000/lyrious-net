@@ -27,6 +27,8 @@ internal class Program
         App.SetlistService = new HttpSetlistService(auth, offline);
         App.CredentialStore = DesktopCredentialStore.Create();
         App.SoundStore = new FileSoundStore();
+        // The MIDI tags in songs go to every MIDI output of this computer.
+        App.Midi = new DesktopMidiOutput();
         // Sharing on the local network (the Sync page), on again if it was left on. A failure to
         // start (e.g. the port is taken) shows on the Sync page, where it's tried again.
         var sharing = new LanSharing(() => auth.ServerAddress);

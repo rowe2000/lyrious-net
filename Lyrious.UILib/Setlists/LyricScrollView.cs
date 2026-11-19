@@ -166,6 +166,23 @@ namespace Lyrious.UILib.Setlists
 		public event Action? AutoScrollChanged;
 		private SongDetails song;
 
+		/// <summary>
+		/// The band's MIDI expressions (see <see cref="Midi"/>), for the editor to point out what in the
+		/// lyrics' MIDI tags can't be sent; set once they're read.
+		/// </summary>
+		public IReadOnlyList<MidiExpression>? MidiExpressions
+		{
+			get => midiExpressions;
+			set
+			{
+				midiExpressions = value;
+				MidiExpressionsChanged?.Invoke();
+			}
+		}
+
+		private IReadOnlyList<MidiExpression>? midiExpressions;
+		private event Action? MidiExpressionsChanged;
+
 		/// <summary>Raised when the user taps the lyrics, to turn focus mode on or off.</summary>
 		public event Action? FocusModeToggled;
 
@@ -1541,6 +1558,19 @@ namespace Lyrious.UILib.Setlists
 			var cancel = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, "Cancel editing"), first: true);
 			var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Margin = new Thickness(0, 0, 0, 12) };
 			error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable(LyriousTheme.ErrorBrush));
+			// What in the MIDI tags can't be sent (with the band's expressions), as the lyrics are typed.
+			var midiNotes = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Margin = new Thickness(0, 0, 0, 12) };
+			midiNotes.Bind(TextBlock.ForegroundProperty, midiNotes.GetResourceObservable(LyriousTheme.WarningBrush));
+			void ShowMidiNotes()
+			{
+				var problems = Midi.Problems(editor.Text, MidiExpressions);
+				midiNotes.Text = string.Join("\n", problems.Select(problem => "MIDI: " + problem));
+				midiNotes.IsVisible = problems.Count > 0;
+			}
+
+			editor.TextChanged += (_, _) => ShowMidiNotes();
+			MidiExpressionsChanged = ShowMidiNotes;
+			ShowMidiNotes();
 			// Changed from the media button's menu, kept until Save like the rest.
 			var mediaLink = song.MediaLink;
 			var (media, _, addSound) = MediaButton(
@@ -1743,7 +1773,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				Margin = new Thickness(0, 0, 0, 16),
 				RowDefinitions = new RowDefinitions("Auto,*"),
-				Children = { error, editor },
+				Children = { new StackPanel { Children = { error, midiNotes } }, editor },
 			};
 
 			// A song without a name yet (a new one) starts in the name's box, others in the lyrics.

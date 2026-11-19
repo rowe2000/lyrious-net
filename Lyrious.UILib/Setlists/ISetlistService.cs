@@ -144,6 +144,12 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Gives the band a new name (not the private band's, which is fixed).</summary>
 		Task RenameGroupAsync(Guid groupId, string name, CancellationToken cancellationToken = default);
 
+		/// <summary>Replaces the band's MIDI expressions (see <see cref="Midi"/>). Admins only; the server refuses others.</summary>
+		Task SetMidiExpressionsAsync(Guid groupId, IReadOnlyList<MidiExpression> expressions, CancellationToken cancellationToken = default);
+
+		/// <summary>Replaces the band's MIDI commands for every song (select, start, stop). Admins only; the server refuses others.</summary>
+		Task SetMidiSongCommandsAsync(Guid groupId, MidiSongCommands commands, CancellationToken cancellationToken = default);
+
 		/// <summary>Gives the setlist a new name.</summary>
 		Task RenameSetlistAsync(Guid setlistId, string name, CancellationToken cancellationToken = default);
 
@@ -225,7 +231,9 @@ namespace Lyrious.UILib.Setlists
 	/// <param name="IsNew">New (else changed).</param>
 	public sealed record Change(ChangeKind Kind, string Name, string Band, bool IsNew, DateTime When);
 
-	public sealed record GroupSummary(Guid Id, string Name, Guid? CurrentSetlistId, Guid? CurrentSetlistItemId, bool IsPrivate = false);
+	/// <param name="MidiExpressions">The band's MIDI expressions as stored (a JSON array, see <see cref="Midi.ExpressionsFromJson"/>); null if none.</param>
+	/// <param name="MidiCommands">The band's MIDI commands for every song as stored (see <see cref="Midi.SongCommandsFromJson"/>); null if none.</param>
+	public sealed record GroupSummary(Guid Id, string Name, Guid? CurrentSetlistId, Guid? CurrentSetlistItemId, bool IsPrivate = false, string? MidiExpressions = null, string? MidiCommands = null);
 
 	public enum GroupRole { Member, Conductor, Admin }
 
@@ -295,6 +303,8 @@ namespace Lyrious.UILib.Setlists
 		public Task<IReadOnlyList<Change>> GetChangesSinceAsync(DateTime since, CancellationToken cancellationToken = default) => throw NotConnected();
 		public void ForgetLocalChanges() { }
 		public Task RenameGroupAsync(Guid groupId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task SetMidiExpressionsAsync(Guid groupId, IReadOnlyList<MidiExpression> expressions, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task SetMidiSongCommandsAsync(Guid groupId, MidiSongCommands commands, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RenameSetlistAsync(Guid setlistId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistEntry>> GetEntriesAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();

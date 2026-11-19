@@ -34,7 +34,11 @@ internal sealed record GroupDto(
     bool Removed,
     long Checksum,
     // The member's own band (only them in it), made by the server.
-    bool IsPrivate = false);
+    bool IsPrivate = false,
+    // The band's MIDI expressions, a JSON array (see Lyrious.UILib's Midi); null if none.
+    string? MidiExpressions = null,
+    // The band's MIDI commands for every song, a JSON object of select, start and stop; null if none.
+    string? MidiCommands = null);
 
 internal sealed record SetlistDto(System.Guid Id, string Name, System.Guid GroupId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum);
 

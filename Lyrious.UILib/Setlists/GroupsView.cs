@@ -55,6 +55,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised with the new name when an admin changes another member's name.</summary>
 		public event Action<GroupSummary, GroupMember, string>? MemberRenameRequested;
 
+		/// <summary>Raised with all the band's MIDI expressions when an admin adds, changes or deletes one.</summary>
+		public event Action<GroupSummary, IReadOnlyList<MidiExpression>>? MidiExpressionsChangeRequested;
+
 		/// <summary>Raised when an admin removes a member (after confirming).</summary>
 		public event Action<GroupSummary, GroupMember>? MemberRemoveRequested;
 
@@ -205,6 +208,15 @@ namespace Lyrious.UILib.Setlists
 			if (isAdmin)
 			{
 				panel.Children.Add(InviteRow(group));
+			}
+
+			// The band's MIDI expressions: every member sees them, its admins (also of the private band) change them.
+			if (me is { Approved: true })
+			{
+				panel.Children.Add(new MidiExpressionsSection(
+					Midi.ExpressionsFromJson(group.MidiExpressions),
+					canEdit: me.Role == GroupRole.Admin,
+					expressions => MidiExpressionsChangeRequested?.Invoke(group, expressions)));
 			}
 
 			var card = new Border { Padding = new Thickness(16), CornerRadius = new CornerRadius(8), Child = panel };

@@ -26,6 +26,76 @@ public sealed class Group : Entity, IName
 	/// <summary>The name of every member's private band.</summary>
 	public const string PrivateName = "Private";
 
+	/// <summary>
+	/// The band's MIDI expressions: shortcuts for MIDI commands used in lyrics as "$NAME.PARAM1.PARAM2"
+	/// (see Lyrious.UILib's Midi), as a JSON array of { name, description, parameters: [{ name,
+	/// default }], output }; null if none. Every member gets them; only admins change them.
+	/// </summary>
+	[MaxLength(MaxMidiExpressionsLength)]
+	[DataMember] public string? MidiExpressions { get; set; }
+
+	/// <summary>The longest <see cref="MidiExpressions"/> stored.</summary>
+	public const int MaxMidiExpressionsLength = 8000;
+
+	/// <summary>Whether <paramref name="json"/> can be stored as <see cref="MidiExpressions"/>: none, or a JSON array of objects that fits.</summary>
+	public static bool IsValidMidiExpressions(string? json)
+	{
+		if (json == null)
+		{
+			return true;
+		}
+
+		if (json.Length > MaxMidiExpressionsLength)
+		{
+			return false;
+		}
+
+		try
+		{
+			return System.Text.Json.Nodes.JsonNode.Parse(json) is System.Text.Json.Nodes.JsonArray array
+			       && array.All(item => item is System.Text.Json.Nodes.JsonObject);
+		}
+		catch (System.Text.Json.JsonException)
+		{
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// The band's MIDI commands for every song: a JSON object of "select", "start" and "stop", each
+	/// the commands of a MIDI tag (see Lyrious.UILib's Midi), sent when a song is selected, starts
+	/// playing and stops; null if none. Every member gets them; only admins change them.
+	/// </summary>
+	[MaxLength(MaxMidiCommandsLength)]
+	[DataMember] public string? MidiCommands { get; set; }
+
+	/// <summary>The longest <see cref="MidiCommands"/> stored.</summary>
+	public const int MaxMidiCommandsLength = 2000;
+
+	/// <summary>Whether <paramref name="json"/> can be stored as <see cref="MidiCommands"/>: none, or a JSON object of texts that fits.</summary>
+	public static bool IsValidMidiCommands(string? json)
+	{
+		if (json == null)
+		{
+			return true;
+		}
+
+		if (json.Length > MaxMidiCommandsLength)
+		{
+			return false;
+		}
+
+		try
+		{
+			return System.Text.Json.Nodes.JsonNode.Parse(json) is System.Text.Json.Nodes.JsonObject item
+			       && item.All(pair => pair.Value is System.Text.Json.Nodes.JsonValue value && value.TryGetValue<string>(out _));
+		}
+		catch (System.Text.Json.JsonException)
+		{
+			return false;
+		}
+	}
+
 	[DataMember] public Guid? CurrentSetlistId { get; set; }
 	[DataMember] public Guid? CurrentPlayId { get; set; }
 	[DataMember] public Guid? CurrentSetlistItemId { get; set; }

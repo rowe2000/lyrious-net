@@ -17,7 +17,8 @@ namespace Lyrious.UILib.Setlists
 		/// </param>
 		/// <param name="clearSongbook">Deletes every song in the joined band's songbook, returning what happened.</param>
 		/// <param name="bandName">The joined band's name, for the Songbook section. None (no band joined): no Songbook section.</param>
-		public SettingsView(Func<Control, bool, Task<string?>>? importSongbookPro = null, Func<Task<string>>? clearSongbook = null, string? bandName = null)
+		/// <param name="bandSettings">The current band's settings (saved with the band, the same for all its members), shown under "Band settings".</param>
+		public SettingsView(Func<Control, bool, Task<string?>>? importSongbookPro = null, Func<Task<string>>? clearSongbook = null, string? bandName = null, Control? bandSettings = null)
 		{
 			var nextOnStop = new ToggleSwitch
 			{
@@ -133,6 +134,14 @@ namespace Lyrious.UILib.Setlists
 			};
 
 			// The joined band's songbook: importing into it, and clearing it.
+			// The current band's settings: saved with the band, not on this device.
+			if (bandName != null && bandSettings != null)
+			{
+				form.Children.Add(Section($"Band settings · {bandName}"));
+				form.Children.Add(new TextBlock { Text = "Saved with the band: the same for all its members.", Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
+				form.Children.Add(bandSettings);
+			}
+
 			if (bandName != null && (importSongbookPro != null || clearSongbook != null))
 			{
 				form.Children.Add(Section($"Songbook · {bandName}"));
