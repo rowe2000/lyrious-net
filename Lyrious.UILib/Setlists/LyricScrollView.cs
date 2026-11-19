@@ -51,6 +51,7 @@ namespace Lyrious.UILib.Setlists
 		private static readonly string[] Beats = ["4/4", "3/4", "2/4", "6/8", "12/8", "5/4", "7/8"];
 
 		private const string NoKey = "(no key)";
+		private const string NoOriginalKey = "(not set)";
 
 		/// <summary>The title of a song that has no name yet.</summary>
 		private const string NewSongTitle = "New song";
@@ -69,6 +70,19 @@ namespace Lyrious.UILib.Setlists
 		// the media buttons, Save and Cancel. All are icon buttons of the same size, as many either way,
 		// so the title doesn't move or rewrap when editing starts or stops. At least room for three
 		// (40 = a 24-pixel icon plus 8 padding on each side, 4 apart); more media links take more.
+		// The time now (hours and minutes, as the device writes them), at the right of the toolbar.
+		private readonly TextBlock clock = new()
+		{
+			FontSize = 20,
+			FontWeight = FontWeight.SemiBold,
+			Opacity = 0.85,
+			VerticalAlignment = VerticalAlignment.Center,
+			Margin = new Thickness(0, 0, 4, 0),
+		};
+		private readonly DispatcherTimer clockTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+
+		private void ShowTime() => clock.Text = DateTime.Now.ToString("t", System.Globalization.CultureInfo.CurrentCulture);
+
 		private readonly ContentControl titleActions = new()
 		{
 			MinWidth = 128,
@@ -199,11 +213,15 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when the user cancels the editor (the lyrics are showing again).</summary>
 		public event Action? EditCancelled;
 
+		/// <summary>Gets the tags used in the songbook, offered in a popup while the song's tags are typed; null offers none.</summary>
+		public Func<Task<IReadOnlyList<string>>>? LoadUsedTags { get; set; }
+
 		/// <param name="saveSong">Stores the edited song and returns it as stored; throws if that fails.</param>
 		/// <param name="startEditing">Opens with the editor showing, e.g. for a new song or Edit in the songbook.</param>
 		public LyricScrollView(SongDetails song, Func<SongDetails, Task<SongDetails>> saveSong, bool startEditing = false)
 		{
 			this.song = song;
+			clockTimer.Tick += (_, _) => ShowTime();
 			this.saveSong = saveSong;
 			// Where a song's sound file was is remembered until another song is shown.
 			if (soundResume?.SongId != song.Id)
@@ -232,6 +250,7 @@ namespace Lyrious.UILib.Setlists
 				},
 				() => this.song.Name,
 				() => this.song.Lyrics,
+				() => this.song.Artist,
 				ShowProblemAt);
 			lyricsActions = new StackPanel
 			{
@@ -258,7 +277,9 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			// (The media player is the app's, over every page: see MediaPlayerLayer.)
-			Content = PageLayout.SongPage(TitleOf(song), body, PageLayout.SongInfo(song), titleActions);
+			// The time at the right of the toolbar (also in focus mode, so it shows while playing).
+			var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { titleActions, clock } };
+			Content = PageLayout.SongPage(TitleOf(song), body, PageLayout.SongInfo(song), toolbar);
 			ShowTitle();
 		}
 
@@ -290,6 +311,8 @@ namespace Lyrious.UILib.Setlists
 		{
 			base.OnAttachedToVisualTree(e);
 			DisplaySettings.ShowSongHeaderChanged += ShowTitle;
+			ShowTime();
+			clockTimer.Start();
 			ShowTitle();
 			if (App.SoundStore is { } sounds)
 			{
@@ -1002,6 +1025,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			base.OnDetachedFromVisualTree(e);
 			DisplaySettings.ShowSongHeaderChanged -= ShowTitle;
+			clockTimer.Stop();
 			if (App.SoundStore is { } sounds)
 			{
 				sounds.PlayingChanged -= OnSoundPlayingChanged;
@@ -1046,7 +1070,9 @@ namespace Lyrious.UILib.Setlists
 			if (hasLyrics && ChordPro.HasFormatting(song.Lyrics))
 			{
 				// Chords above the words they belong to (or the chord grid), headings, notes, and time tags for the scrolling.
-				var rendered = ChordPro.Render(song.Lyrics, fontSize: 24, lineHeight: 36, song.Tempo, song.Beat, chordGrid: grid);
+				// The lyrics are written in the original key; the chords are shown in the playing key.
+				var transposed = Transpose.Chords(song.Lyrics, Transpose.Semitones(song.OriginalKey, song.PlayingKey), song.PlayingKey);
+				var rendered = ChordPro.Render(transposed, fontSize: 24, lineHeight: 36, song.Tempo, song.Beat, chordGrid: grid);
 				text = rendered.Content;
 				markers = rendered.Markers;
 			}
@@ -1263,8 +1289,8 @@ namespace Lyrious.UILib.Setlists
 		/// where it stopped, until another song is shown), which follow it (see <see cref="FollowMedia"/>),
 		/// and the playback toolbar shows its progress, speed and pitch. Each shows Spotify's or YouTube's icon, a speaker for
 		/// a sound file, else a note. A longclick (or right-click) on one shows a menu: remove that link,
-		/// and add another: search Spotify or YouTube for the song (its name, and the
-		/// artist if the lyrics name one), paste a link from the clipboard, or pick a sound file. A song
+		/// and add another: search Spotify or YouTube for the song (its name and artist: the
+		/// song's, else the one the lyrics name), paste a link from the clipboard, or pick a sound file. A song
 		/// without links has one note button, which shows that menu. Links and sound files can also be
 		/// dropped anywhere on the view (see <see cref="OnMediaDropped"/>), and links pasted with
 		/// Ctrl/⌘+V (see <see cref="PasteMediaAsync"/>).
@@ -1277,7 +1303,7 @@ namespace Lyrious.UILib.Setlists
 		/// sound file on the device and adds it (for one dropped on the view); and what adds a link.
 		/// </returns>
 		private (StackPanel Buttons, Action ShowLinks, Func<IStorageFile, Task> AddSound, Func<string, Task> AddLink) MediaButtons(
-			Func<string> getLinks, Func<string, Task> setLinks, Func<string> name, Func<string> lyrics, Action<Control, string> showProblem)
+			Func<string> getLinks, Func<string, Task> setLinks, Func<string> name, Func<string> lyrics, Func<string> artist, Action<Control, string> showProblem)
 		{
 			var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
 			var sounds = App.SoundStore;
@@ -1526,8 +1552,8 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				var another = link == null ? "" : " another";
-				menu.Items.Add(Item("Search on Spotify", () => OpenAsync(button, MediaLinks.Search(MediaSite.Spotify, MediaLinks.Query(name(), lyrics())))));
-				menu.Items.Add(Item("Search on YouTube", () => OpenAsync(button, MediaLinks.Search(MediaSite.YouTube, MediaLinks.Query(name(), lyrics())))));
+				menu.Items.Add(Item("Search on Spotify", () => OpenAsync(button, MediaLinks.Search(MediaSite.Spotify, MediaLinks.Query(name(), lyrics(), artist())))));
+				menu.Items.Add(Item("Search on YouTube", () => OpenAsync(button, MediaLinks.Search(MediaSite.YouTube, MediaLinks.Query(name(), lyrics(), artist())))));
 				menu.Items.Add(Item($"Paste{another} link from clipboard", () => PasteAsync(button)));
 				if (sounds != null)
 				{
@@ -1860,7 +1886,9 @@ namespace Lyrious.UILib.Setlists
 			StopNudge();
 			scroller = null;
 			var name = new TextBox { Text = song.Name, MaxLength = MaxNameLength, PlaceholderText = "Song name" };
-			var key = Choice(Keys, song.Key, NoKey);
+			var artist = new TextBox { Text = song.Artist, MaxLength = 100, PlaceholderText = "Artist", MinWidth = 200 };
+			var key = Choice(Keys, song.PlayingKey, NoKey);
+			var originalKey = Choice(Keys, song.OriginalKey, NoOriginalKey);
 			var beat = Choice(Beats, song.Beat, null);
 			var tempo = new NumericUpDown { Value = (decimal)Math.Clamp(song.Tempo, 20, 300), Minimum = 20, Maximum = 300, Increment = 1, FormatString = "0", MinWidth = 140 };
 			var editor = new TextBox
@@ -1903,6 +1931,7 @@ namespace Lyrious.UILib.Setlists
 				},
 				() => string.IsNullOrWhiteSpace(name.Text) ? song.Name : name.Text,
 				() => editor.Text ?? "",
+				() => artist.Text ?? "",
 				(_, message) =>
 				{
 					error.Text = message;
@@ -1962,19 +1991,23 @@ namespace Lyrious.UILib.Setlists
 			// Key, tempo and beat likewise: text until clicked, then their inputs, side by side on one
 			// line (so without labels and spin buttons), until none of them has the focus any more.
 			key.MinWidth = 0;
+			originalKey.MinWidth = 0;
 			beat.MinWidth = 0;
 			tempo.MinWidth = 0;
 			tempo.Width = 72;
 			tempo.ShowButtonSpinner = false;
-			ToolTip.SetTip(key, "Key");
+			ToolTip.SetTip(key, "Playing key: the key the band plays the song in");
+			ToolTip.SetTip(originalKey, "Original key: the key the song was written or recorded in");
 			ToolTip.SetTip(tempo, "Tempo (bpm)");
 			ToolTip.SetTip(beat, "Beat");
-			var detailsInputs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { key, tempo, beat } };
+			var originalLabel = new TextBlock { Text = "orig.", Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center };
+			var detailsInputs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { key, originalLabel, originalKey, tempo, beat } };
 
-			// The song with the key, tempo and beat as they are in the inputs.
+			// The song with the keys, tempo and beat as they are in the inputs.
 			SongDetails WithDetails() => song with
 			{
-				Key = key.SelectedItem as string is { } k && k != NoKey ? k : "",
+				PlayingKey = key.SelectedItem as string is { } k && k != NoKey ? k : "",
+				OriginalKey = originalKey.SelectedItem as string is { } o && o != NoOriginalKey ? o : "",
 				Beat = beat.SelectedItem as string ?? song.Beat,
 				Tempo = (float)(tempo.Value ?? (decimal)song.Tempo),
 			};
@@ -1982,13 +2015,13 @@ namespace Lyrious.UILib.Setlists
 			var info = PageLayout.SongInfo(song);
 			var detailsText = new TextBlock
 			{
-				Text = string.IsNullOrEmpty(info) ? "Set key, tempo and beat" : info,
+				Text = string.IsNullOrEmpty(info) ? "Set keys, tempo and beat" : info,
 				Opacity = 0.7,
 				Background = Brushes.Transparent,
 				Cursor = new Cursor(StandardCursorType.Hand),
 				Margin = new Thickness(0, 0, 0, 5),
 			};
-			ToolTip.SetTip(detailsText, "Click to change key, tempo and beat");
+			ToolTip.SetTip(detailsText, "Click to change the playing key, original key, tempo and beat");
 			var detailsSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Content = detailsText };
 			detailsText.Tapped += (_, e) =>
 			{
@@ -2001,7 +2034,7 @@ namespace Lyrious.UILib.Setlists
 			// list of a drop-down (which is in a window of its own, but logically inside the drop-down).
 			bool FocusInDetails()
 			{
-				if (key.IsDropDownOpen || beat.IsDropDownOpen)
+				if (key.IsDropDownOpen || originalKey.IsDropDownOpen || beat.IsDropDownOpen)
 				{
 					return true;
 				}
@@ -2029,15 +2062,218 @@ namespace Lyrious.UILib.Setlists
 				if (detailsSlot.Content == detailsInputs && !FocusInDetails())
 				{
 					var edited = PageLayout.SongInfo(WithDetails());
-					detailsText.Text = string.IsNullOrEmpty(edited) ? "Set key, tempo and beat" : edited;
+					detailsText.Text = string.IsNullOrEmpty(edited) ? "Set keys, tempo and beat" : edited;
 					detailsSlot.Content = detailsText;
 				}
 			});
 			detailsInputs.LostFocus += (_, _) => CheckDetailsFocus();
 			key.DropDownClosed += (_, _) => CheckDetailsFocus();
+			originalKey.DropDownClosed += (_, _) => CheckDetailsFocus();
 			beat.DropDownClosed += (_, _) => CheckDetailsFocus();
 
-			editHeader = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { nameSlot, detailsSlot } };
+			// The tags likewise: chips (or "Add tags") until clicked, then a text box of tags separated
+			// by commas, until it loses the focus or Enter is pressed.
+			var tagsBox = new TextBox
+			{
+				Text = SongTags.Join(SongTags.Parse(song.Tags)),
+				PlaceholderText = "Tags, separated by commas",
+				MinWidth = 240,
+				MaxLength = 500,
+			};
+			ToolTip.SetTip(tagsBox, "Tags, separated by commas (e.g. christmas, ballad)");
+			// The artist likewise: "by …" (or "Add artist") until clicked, then its text box, until it
+			// loses the focus or Enter is pressed.
+			var artistSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 12, 5) };
+			void ShowArtistText()
+			{
+				var text = artist.Text?.Trim() ?? "";
+				var shown = new TextBlock
+				{
+					Text = text.Length == 0 ? "Add artist" : $"by {text}",
+					Opacity = 0.7,
+					FontStyle = text.Length == 0 ? FontStyle.Italic : FontStyle.Normal,
+					Background = Brushes.Transparent,
+					Cursor = new Cursor(StandardCursorType.Hand),
+				};
+				ToolTip.SetTip(shown, "Click to change the artist");
+				shown.Tapped += (_, e) =>
+				{
+					e.Handled = true;
+					artistSlot.Content = artist;
+					Dispatcher.UIThread.Post(() =>
+					{
+						artist.Focus();
+						artist.SelectAll();
+					});
+				};
+				artistSlot.Content = shown;
+			}
+
+			artist.LostFocus += (_, _) => ShowArtistText();
+			artist.KeyDown += (_, e) =>
+			{
+				if (e.Key == Avalonia.Input.Key.Enter)
+				{
+					e.Handled = true;
+					editor.Focus();
+				}
+			};
+			ShowArtistText();
+
+			var tagsSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(12, 0, 0, 3) };
+
+			// Below the box, the songbook's tags that the song doesn't have yet, narrowed to the ones
+			// containing what's typed after the last comma; clicking one puts it in the box.
+			var usedTagsList = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 6, LineSpacing = 6, MaxWidth = 360 };
+			var usedTagsFrame = new Border
+			{
+				Padding = new Thickness(8),
+				CornerRadius = new CornerRadius(6),
+				BorderThickness = new Thickness(1),
+				Child = new StackPanel
+				{
+					Spacing = 6,
+					Children =
+					{
+						new TextBlock { Text = "Used tags", FontSize = 12, Opacity = 0.7 },
+						usedTagsList,
+					},
+				},
+			};
+			usedTagsFrame.Bind(Border.BackgroundProperty, usedTagsFrame.GetResourceObservable("FlyoutPresenterBackground"));
+			usedTagsFrame.Bind(Border.BorderBrushProperty, usedTagsFrame.GetResourceObservable("FlyoutBorderThemeBrush"));
+			var usedTagsPopup = new Avalonia.Controls.Primitives.Popup
+			{
+				PlacementTarget = tagsBox,
+				Placement = PlacementMode.BottomEdgeAlignedLeft,
+				VerticalOffset = 4,
+				Child = usedTagsFrame,
+			};
+			var tagsEditor = new Panel { Children = { tagsBox, usedTagsPopup } };
+			IReadOnlyList<string>? usedTags = null;
+			// Set while a tag in the popup is being clicked, so the box keeps showing.
+			var pickingTag = false;
+
+			// The text after the last comma: the tag being typed.
+			string TypedTag()
+			{
+				var text = tagsBox.Text ?? "";
+				return text[(text.LastIndexOfAny([',', ';']) + 1)..].Trim().TrimStart('#');
+			}
+
+			void PickTag(string tag)
+			{
+				var text = tagsBox.Text ?? "";
+				var kept = text[..(text.LastIndexOfAny([',', ';']) + 1)];
+				tagsBox.Text = SongTags.Join(SongTags.Parse(kept).Append(tag)) + ", ";
+				tagsBox.CaretIndex = tagsBox.Text.Length;
+				tagsBox.Focus();
+			}
+
+			void ShowUsedTags()
+			{
+				var typed = TypedTag();
+				var have = SongTags.Parse(tagsBox.Text);
+				var offered = (usedTags ?? [])
+					.Where(tag => !have.Contains(tag, StringComparer.CurrentCultureIgnoreCase) || tag.Equals(typed, StringComparison.CurrentCultureIgnoreCase))
+					.Where(tag => typed.Length == 0 || tag.Contains(typed, StringComparison.CurrentCultureIgnoreCase))
+					.Where(tag => !tag.Equals(typed, StringComparison.CurrentCultureIgnoreCase))
+					.ToArray();
+				usedTagsList.Children.Clear();
+				foreach (var tag in offered)
+				{
+					var chip = PageLayout.TagChip(tag, 13);
+					chip.Cursor = new Cursor(StandardCursorType.Hand);
+					chip.Padding = new Thickness(10, 3);
+					ToolTip.SetTip(chip, $"Add {tag}");
+					chip.PointerPressed += (_, e) =>
+					{
+						pickingTag = true;
+						e.Handled = true;
+					};
+					chip.PointerReleased += (_, e) =>
+					{
+						e.Handled = true;
+						PickTag(tag);
+						pickingTag = false;
+					};
+					usedTagsList.Children.Add(chip);
+				}
+
+				usedTagsPopup.IsOpen = offered.Length > 0 && tagsSlot.Content == tagsEditor;
+			}
+
+			tagsBox.GotFocus += async (_, _) =>
+			{
+				if (usedTags == null && LoadUsedTags is { } load)
+				{
+					try
+					{
+						usedTags = await load();
+					}
+					catch (Exception ex)
+					{
+						usedTags = [];
+						System.Diagnostics.Debug.WriteLine($"Couldn't get the songbook's tags: {ex.Message}");
+					}
+				}
+
+				ShowUsedTags();
+			};
+			tagsBox.TextChanged += (_, _) =>
+			{
+				if (tagsBox.IsFocused)
+				{
+					ShowUsedTags();
+				}
+			};
+
+			void ShowTagsText()
+			{
+				usedTagsPopup.IsOpen = false;
+				var tags = SongTags.Parse(tagsBox.Text);
+				Control shown = tags.Count == 0
+					? new TextBlock { Text = "Add tags", Opacity = 0.7, FontStyle = FontStyle.Italic, Margin = new Thickness(0, 0, 0, 2) }
+					: PageLayout.TagChips(tags);
+				var holder = new Border { Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand), Child = shown };
+				ToolTip.SetTip(holder, "Click to change the tags");
+				holder.Tapped += (_, e) =>
+				{
+					e.Handled = true;
+					tagsSlot.Content = tagsEditor;
+					Dispatcher.UIThread.Post(() =>
+					{
+						tagsBox.Focus();
+						tagsBox.CaretIndex = tagsBox.Text?.Length ?? 0;
+					});
+				};
+				tagsSlot.Content = holder;
+			}
+
+			// Checked a moment after the focus left: a tag clicked in the popup brings it back.
+			tagsBox.LostFocus += (_, _) => Dispatcher.UIThread.Post(() =>
+			{
+				if (!pickingTag && !tagsBox.IsFocused)
+				{
+					ShowTagsText();
+				}
+			});
+			tagsBox.KeyDown += (_, e) =>
+			{
+				if (e.Key == Avalonia.Input.Key.Enter)
+				{
+					e.Handled = true;
+					editor.Focus();
+				}
+				else if (e.Key == Avalonia.Input.Key.Escape && usedTagsPopup.IsOpen)
+				{
+					e.Handled = true;
+					usedTagsPopup.IsOpen = false;
+				}
+			};
+			ShowTagsText();
+
+			editHeader = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { nameSlot, artistSlot, detailsSlot, tagsSlot } };
 
 			// The media button, Save and Cancel take the pencil's place at the right of the title.
 			titleActions.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { media, save, cancel } };
@@ -2059,9 +2295,11 @@ namespace Lyrious.UILib.Setlists
 					Name = name.Text!.Trim(),
 					Lyrics = editor.Text ?? string.Empty,
 					MediaLink = mediaLink.Trim(),
+					Tags = SongTags.Join(SongTags.Parse(tagsBox.Text)),
+					Artist = artist.Text?.Trim() ?? "",
 				};
 
-				var inputs = new Control[] { save, cancel, media, name, key, tempo, beat, editor };
+				var inputs = new Control[] { save, cancel, media, name, artist, key, originalKey, tempo, beat, tagsBox, editor };
 				foreach (var input in inputs)
 				{
 					input.IsEnabled = false;

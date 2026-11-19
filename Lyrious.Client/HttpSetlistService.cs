@@ -1066,7 +1066,7 @@ public sealed class HttpSetlistService : ISetlistService
             songbook.Id, now, now, Removed: false);
         current.Create("song", Node(song, ClientJsonContext.Default.NewSongDto));
         Queued(current);
-        return new SongDetails(song.Id, song.Name, song.Key, song.Tempo, song.Beat, song.Lyrics, song.MediaLink);
+        return new SongDetails(song.Id, song.Name, song.Key, song.Tempo, song.Beat, song.Lyrics, song.MediaLink, song.Tags, song.OriginalKey, song.Artist);
     }
 
     /// <summary>
@@ -1082,15 +1082,18 @@ public sealed class HttpSetlistService : ISetlistService
 
     public async Task<SongDetails> UpdateSongAsync(SongDetails song, CancellationToken cancellationToken = default)
     {
-        // The server's limits: name 100 characters, key and beat 10, lyrics 5000, media link 500.
+        // The server's limits: name and artist 100 characters, keys and beat 10, lyrics 5000, media link and tags 500.
         return await UpdateSongFieldsAsync(song.Id, new JsonObject
         {
             ["name"] = Limit(song.Name, 100),
-            ["key"] = Limit(song.Key, 10),
+            ["key"] = Limit(song.PlayingKey, 10),
+            ["originalKey"] = Limit(song.OriginalKey, 10),
+            ["artist"] = Limit(song.Artist.Trim(), 100),
             ["tempo"] = song.Tempo,
             ["beat"] = Limit(song.Beat, 10),
             ["lyrics"] = Limit(song.Lyrics, 5000),
             ["mediaLink"] = Limit(song.MediaLink, 500),
+            ["tags"] = Limit(SongTags.Join(SongTags.Parse(song.Tags)), 500),
         });
     }
 
@@ -1129,6 +1132,26 @@ public sealed class HttpSetlistService : ISetlistService
         for (var i = 0; i < songIds.Count; i++)
         {
             current.Create("setlistitem", Node(new SetlistItemDto(Guid.NewGuid(), next + i, songIds[i], setlistId, Removed: false), ClientJsonContext.Default.SetlistItemDto));
+        }
+
+        Queued(current);
+    }
+
+    /// <summary>
+    /// Makes the setlist's songs these, in this order: its entries are removed (the API keeps them,
+    /// marked as removed) and the songs added at positions 0, 1, 2, … The setlist itself stays.
+    /// </summary>
+    public async Task ReplaceSongsAsync(Guid setlistId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        foreach (var item in Live(current, "setlistitem", ClientJsonContext.Default.SetlistItemDto).Where(item => item.SetlistId == setlistId).ToArray())
+        {
+            current.Delete("setlistitem", item.Id);
+        }
+
+        for (var i = 0; i < songIds.Count; i++)
+        {
+            current.Create("setlistitem", Node(new SetlistItemDto(Guid.NewGuid(), i, songIds[i], setlistId, Removed: false), ClientJsonContext.Default.SetlistItemDto));
         }
 
         Queued(current);
@@ -1241,5 +1264,5 @@ public sealed class HttpSetlistService : ISetlistService
 
     private static SetlistEntry ToEntry(SetlistItemDto item, SongDto song) => new(item.Id, item.SetlistId, item.Position, ToDetails(song));
 
-    private static SongDetails ToDetails(SongDto song) => new(song.Id, song.Name, song.Key ?? "", song.Tempo, song.Beat ?? "", song.Lyrics ?? "", song.MediaLink ?? "");
+    private static SongDetails ToDetails(SongDto song) => new(song.Id, song.Name, song.Key ?? "", song.Tempo, song.Beat ?? "", song.Lyrics ?? "", song.MediaLink ?? "", song.Tags ?? "", song.OriginalKey ?? "", song.Artist ?? "");
 }

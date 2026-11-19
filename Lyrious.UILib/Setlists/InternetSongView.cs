@@ -21,7 +21,7 @@ namespace Lyrious.UILib.Setlists
 	{
 		private readonly Func<string, Task<IReadOnlyList<InternetSong>>> search;
 		private readonly IReadOnlySet<string> songbookNames;
-		private readonly TextBox query = new() { PlaceholderText = "Title and/or artist" };
+		private readonly TextBox query = PageLayout.WithClearButton(new TextBox { PlaceholderText = "Title and/or artist" });
 		private readonly Button searchButton = new() { Content = "Search", IsEnabled = false };
 		private readonly Button ultimateGuitarButton = new() { Content = "Search on Ultimate Guitar ↗", IsEnabled = false, Margin = new Thickness(0, 0, 0, 16) };
 		private readonly ContentControl results = new();

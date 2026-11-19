@@ -9,7 +9,14 @@ public sealed class Song : Entity, IName
 	[MaxLength(100)]
     [DataMember] public string Name { get; set; } = "";
 	[MaxLength(10)]
+    /// <summary>The playing key: the key the band plays the song in (e.g. "G"); empty if not set.</summary>
     [DataMember] public string Key { get; set; } = "";
+    /// <summary>The key the song was written or recorded in; empty if not set.</summary>
+    [MaxLength(10)]
+    [DataMember] public string OriginalKey { get; set; } = "";
+    /// <summary>Who wrote or recorded the song (e.g. "The Beatles"); empty if not set.</summary>
+    [MaxLength(100)]
+    [DataMember] public string Artist { get; set; } = "";
     [DataMember] public float Tempo { get; set; } = 120;
 	[MaxLength(10)]
     [DataMember] public string Beat { get; set; } = "4/4";
@@ -19,6 +26,11 @@ public sealed class Song : Entity, IName
     /// <summary>A link to listen to or watch the song, e.g. on Spotify or YouTube; empty if none.</summary>
     [MaxLength(500)]
     [DataMember] public string MediaLink { get; set; } = "";
+    /// <summary>Tags to sort the song by (e.g. "christmas, ballad"), separated by commas; empty if none.</summary>
+    [MaxLength(MaxTagsLength)]
+    [DataMember] public string Tags { get; set; } = "";
+
+    public const int MaxTagsLength = 500;
 
     [DataMember] public Guid SongbookId { get; set; }
     [JsonIgnore] public Songbook? Songbook { get; set; }

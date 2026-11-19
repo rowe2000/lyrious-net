@@ -65,24 +65,15 @@ namespace Lyrious.UILib.Setlists
 				closable: true);
 		}
 
-		/// <summary>One songbook song: name, then "in setlist" and key; stays highlighted while selected.</summary>
+		/// <summary>
+		/// One songbook song, as the songbook shows it (name and tags, then "in setlist", key, tempo
+		/// and beat); stays highlighted while selected.
+		/// </summary>
 		private static ToggleButton SongRow(SongDetails song, bool inSetlist, Action<SongDetails, bool> toggle)
 		{
-			var detail = string.Join(" · ", new[] { inSetlist ? "in setlist" : null, string.IsNullOrWhiteSpace(song.Key) ? null : song.Key }.Where(part => part != null));
-
-			var row = new DockPanel();
-			if (detail.Length > 0)
-			{
-				var detailText = new TextBlock { Text = detail, Opacity = 0.7, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-				DockPanel.SetDock(detailText, Dock.Right);
-				row.Children.Add(detailText);
-			}
-
-			row.Children.Add(new TextBlock { Text = song.Name, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
-
 			var button = new ToggleButton
 			{
-				Content = row,
+				Content = SongsView.SongRow(song, inSetlist ? "in setlist" : null),
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				HorizontalContentAlignment = HorizontalAlignment.Stretch,
 				Padding = new Thickness(16, 12),

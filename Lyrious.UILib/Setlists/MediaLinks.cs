@@ -274,9 +274,10 @@ namespace Lyrious.UILib.Setlists
 		/// What to search for: the song's name, and its artist if the lyrics name one (ChordPro's
 		/// {artist: …}, or {subtitle: …} as it's often used for the artist).
 		/// </summary>
-		public static string Query(string name, string lyrics)
+		/// <param name="artist">The song's artist; when empty, the lyrics' {artist: …} (or subtitle) is used.</param>
+		public static string Query(string name, string lyrics, string? artist = null)
 		{
-			var artist = ChordPro.DirectiveValue(lyrics, "artist", "subtitle", "st");
+			artist = string.IsNullOrWhiteSpace(artist) ? ChordPro.DirectiveValue(lyrics, "artist", "subtitle", "st") : artist.Trim();
 			return string.IsNullOrWhiteSpace(artist) ? name.Trim() : $"{name.Trim()} {artist}";
 		}
 

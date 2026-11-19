@@ -38,6 +38,9 @@ public class LyriousContext : LocalContext<Member, Role>
 		{
 			var sqlite = Database.IsSqlite();
 			AddColumnIfMissing(nameof(Songs), nameof(Song.MediaLink), sqlite ? "TEXT NOT NULL DEFAULT ''" : "nvarchar(500) NOT NULL DEFAULT ''");
+			AddColumnIfMissing(nameof(Songs), nameof(Song.Tags), sqlite ? "TEXT NOT NULL DEFAULT ''" : $"nvarchar({Song.MaxTagsLength}) NOT NULL DEFAULT ''");
+			AddColumnIfMissing(nameof(Songs), nameof(Song.OriginalKey), sqlite ? "TEXT NOT NULL DEFAULT ''" : "nvarchar(10) NOT NULL DEFAULT ''");
+			AddColumnIfMissing(nameof(Songs), nameof(Song.Artist), sqlite ? "TEXT NOT NULL DEFAULT ''" : "nvarchar(100) NOT NULL DEFAULT ''");
 			AddColumnIfMissing(nameof(Members), nameof(Member.LastLoginAt), sqlite ? "TEXT NULL" : "datetime2 NULL");
 			AddColumnIfMissing(nameof(Groups), nameof(Group.IsPrivate), sqlite ? "INTEGER NOT NULL DEFAULT 0" : "bit NOT NULL DEFAULT 0");
 			AddColumnIfMissing(nameof(Groups), nameof(Group.MidiCommands), sqlite ? "TEXT NULL" : $"nvarchar({Group.MaxMidiCommandsLength}) NULL");

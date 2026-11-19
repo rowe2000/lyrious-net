@@ -44,7 +44,7 @@ internal sealed record SetlistDto(System.Guid Id, string Name, System.Guid Group
 
 internal sealed record SetlistItemDto(System.Guid Id, int Position, System.Guid SongId, System.Guid SetlistId, bool Removed);
 
-internal sealed record SongDto(System.Guid Id, string Name, string? Key, float Tempo, string? Beat, string? Lyrics, System.Guid SongbookId, bool Removed, string? MediaLink = null);
+internal sealed record SongDto(System.Guid Id, string Name, string? Key, float Tempo, string? Beat, string? Lyrics, System.Guid SongbookId, bool Removed, string? MediaLink = null, string? Tags = null, string? OriginalKey = null, string? Artist = null);
 
 internal sealed record SongbookDto(System.Guid Id, string Name, System.Guid? GroupId, bool Removed);
 
@@ -52,7 +52,7 @@ internal sealed record SongbookDto(System.Guid Id, string Name, System.Guid? Gro
 /// <summary>A new song, with every field the API stores (it replaces all fields with what it receives).</summary>
 internal sealed record NewSongDto(
     System.Guid Id, string Name, string Key, float Tempo, string Beat, int LengthMilliSeconds, string Lyrics,
-    System.Guid SongbookId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, string MediaLink = "");
+    System.Guid SongbookId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, string MediaLink = "", string Tags = "", string OriginalKey = "", string Artist = "");
 
 /// <summary>A search result from LRCLIB (https://lrclib.net/docs).</summary>
 internal sealed record LrclibTrack(long Id, string? TrackName, string? ArtistName, string? AlbumName, double? Duration, bool Instrumental, string? PlainLyrics);

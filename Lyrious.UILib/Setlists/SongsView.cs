@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 
 namespace Lyrious.UILib.Setlists
@@ -17,6 +18,11 @@ namespace Lyrious.UILib.Setlists
 	public sealed class SongsView : UserControl
 	{
 		private readonly TextBlock status = new() { Opacity = 0.7, TextWrapping = TextWrapping.Wrap, IsVisible = false, Margin = new Avalonia.Thickness(0, 0, 0, 16) };
+
+		// The search text and chosen tags, kept from one showing of the page to the next while the
+		// app runs.
+		private static string savedSearch = "";
+		private static readonly HashSet<string> savedTags = new(StringComparer.CurrentCultureIgnoreCase);
 
 		/// <summary>Raised when the user opens a song (double click, or the open button).</summary>
 		public event Action<SongDetails>? SongSelected;
@@ -45,6 +51,15 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when the user wants to find a song on the internet.</summary>
 		public event Action? InternetSearchRequested;
 
+		/// <summary>
+		/// Raised with the songs the list shows (searched and filtered as it is) when the user wants them
+		/// as the setlist in the right drawer, just for now: it isn't saved.
+		/// </summary>
+		public event Action<IReadOnlyList<SongDetails>>? ShowAsSetlistRequested;
+
+		// A list (three lines) with a play triangle at its lower right.
+		private const string AsSetlistIcon = "M4,6 H20 M4,11 H14 M4,16 H10 M15,14 L21,17.5 L15,21 Z";
+
 		/// <summary>The band whose songbook this is.</summary>
 		public GroupSummary Group { get; }
 
@@ -59,25 +74,70 @@ namespace Lyrious.UILib.Setlists
 		{
 			Group = group;
 			CurrentSongId = currentSongId;
-			// The list, rebuilt as the search text changes.
+			// The list, rebuilt as the search text or the chosen tags change.
 			var list = new ContentControl();
-			var search = new TextBox { PlaceholderText = "Search songs and lyrics", Margin = new Avalonia.Thickness(0, 0, 0, 16) };
+			// The search text and tags as they were when the page was last left.
+			var search = PageLayout.WithClearButton(new TextBox { Text = savedSearch, PlaceholderText = "Search songs, artists, lyrics and tags", Margin = new Avalonia.Thickness(0, 0, 0, 16) });
 			DockPanel.SetDock(search, Dock.Top);
+			// The tags chosen to filter by: a song is shown when it has all of them. Of the tags chosen
+			// before, those this songbook has.
+			var allTags = SongTags.AllOf(songs);
+			var chosenTags = new HashSet<string>(allTags.Where(savedTags.Contains), StringComparer.CurrentCultureIgnoreCase);
+			// The songs the list shows now, for the setlist tool.
+			IReadOnlyList<SongDetails> shownSongs = songs;
 
 			void ShowList()
 			{
 				var text = search.Text?.Trim() ?? "";
-				var shown = text.Length == 0 ? songs : songs.Where(song => Matches(song, text)).ToArray();
-				list.Content = SongList(shown, currentSongId, songs.Count == 0
-					? "There are no songs in the songbook yet. Add one with +."
-					: $"No songs match \"{text}\".");
+				var shown = (IReadOnlyList<SongDetails>)songs
+					.Where(song => text.Length == 0 || Matches(song, text))
+					.Where(song => chosenTags.All(tag => SongTags.Has(song, tag)))
+					.ToArray();
+				string emptyText;
+				if (songs.Count == 0)
+				{
+					emptyText = "There are no songs in the songbook yet. Add one with +.";
+				}
+				else if (chosenTags.Count == 0)
+				{
+					emptyText = $"No songs match \"{text}\".";
+				}
+				else
+				{
+					var tags = string.Join(", ", chosenTags);
+					emptyText = text.Length == 0
+						? $"No songs have all of these tags: {tags}."
+						: $"No songs with the tags {tags} match \"{text}\".";
+				}
+
+				shownSongs = shown;
+				list.Content = SongList(shown, currentSongId, emptyText);
+
+				// Kept for the next time the page shows. Chosen tags this songbook doesn't have stay
+				// chosen (for a songbook that has them).
+				savedSearch = search.Text ?? "";
+				savedTags.ExceptWith(allTags);
+				savedTags.UnionWith(chosenTags);
 			}
+
+			var tagFilter = TagFilter(allTags, chosenTags, ShowList);
 
 			search.TextChanged += (_, _) => ShowList();
 			ShowList();
 
 			var (nameRow, showNameRow) = PageLayout.NameRow("Name of the new song", name => EmptySongRequested?.Invoke(name));
 			DockPanel.SetDock(status, Dock.Top);
+
+			// The songs listed (as searched and filtered) as the setlist in the right drawer, not saved.
+			var asSetlistButton = HomeView.IconButton(AsSetlistIcon, "Show these songs as the setlist in the right drawer (not saved as a setlist)");
+			asSetlistButton.IsEnabled = songs.Count > 0;
+			asSetlistButton.Click += (_, _) =>
+			{
+				if (shownSongs.Count > 0)
+				{
+					ShowAsSetlistRequested?.Invoke(shownSongs);
+				}
+			};
 
 			var addButton = PageLayout.AddButton("Add song");
 			var empty = new MenuItem { Header = "New empty song…" };
@@ -90,9 +150,9 @@ namespace Lyrious.UILib.Setlists
 
 			Content = PageLayout.Page(
 				"Songbook",
-				new DockPanel { Children = { SongbookChooser(group, songbooks ?? []), nameRow, status, search, list } },
+				new DockPanel { Children = { SongbookChooser(group, songbooks ?? []), nameRow, status, search, tagFilter, list } },
 				subtitle: $"{group.Name} · choose a song",
-				titleAction: addButton,
+				titleAction: new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Children = { asSetlistButton, addButton } },
 				closable: true);
 		}
 
@@ -134,11 +194,86 @@ namespace Lyrious.UILib.Setlists
 			return chooser;
 		}
 
+		/// <summary>
+		/// The songbook's tags as small toggle buttons below the search box: each one chosen narrows
+		/// the list to the songs that have it (and all the others chosen). Hidden when no song has tags.
+		/// </summary>
+		private static Control TagFilter(IReadOnlyList<string> tags, HashSet<string> chosen, Action changed)
+		{
+			var filter = new WrapPanel
+			{
+				Orientation = Avalonia.Layout.Orientation.Horizontal,
+				ItemSpacing = 6,
+				LineSpacing = 6,
+				Margin = new Avalonia.Thickness(0, -6, 0, 16),
+				IsVisible = tags.Count > 0,
+			};
+			foreach (var tag in tags)
+			{
+				var button = new ToggleButton
+				{
+					Content = new TextBlock { Text = tag, FontSize = 13 },
+					Padding = new Avalonia.Thickness(10, 2),
+					MinHeight = 0,
+					CornerRadius = new Avalonia.CornerRadius(12),
+					IsChecked = chosen.Contains(tag),
+				};
+				ToolTip.SetTip(button, $"Show only songs tagged {tag}");
+				button.IsCheckedChanged += (_, _) =>
+				{
+					if (button.IsChecked == true)
+					{
+						chosen.Add(tag);
+					}
+					else
+					{
+						chosen.Remove(tag);
+					}
+
+					changed();
+				};
+				filter.Children.Add(button);
+			}
+
+			DockPanel.SetDock(filter, Dock.Top);
+			return filter;
+		}
+
+		/// <summary>A song's row: its name, and its tags, key, tempo and beat at the right.</summary>
+		private static Control SongRow(SongDetails song) => SongRow(song, null);
+
+		/// <summary>
+		/// A song's row as the songbook shows it: its name, and at the right its tags, then its key, tempo
+		/// and beat at the right, after <paramref name="note"/> (e.g. "in setlist") when there is one.
+		/// </summary>
+		internal static Control SongRow(SongDetails song, string? note)
+		{
+			// At the right the key, tempo and beat, and before them the tags: docked, they keep their
+			// room, and the name (last, filling the rest) is trimmed with "…" when it doesn't fit.
+			var row = new DockPanel();
+			var info = PageLayout.SongInfoText(song, note);
+			info.Margin = new Avalonia.Thickness(12, 0, 0, 0);
+			DockPanel.SetDock(info, Dock.Right);
+			row.Children.Add(info);
+			var tags = SongTags.Parse(song.Tags);
+			if (tags.Count > 0)
+			{
+				var chips = PageLayout.TagChips(tags);
+				chips.Margin = new Avalonia.Thickness(10, 0, 0, 0);
+				chips.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+				DockPanel.SetDock(chips, Dock.Right);
+				row.Children.Add(chips);
+			}
+
+			row.Children.Add(new TextBlock { Text = song.Name, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+			return row;
+		}
+
 		/// <summary>The songs as a selectable list: a click selects (toolbar: open, edit, delete), a double click opens.</summary>
 		private SelectableList<SongDetails> SongList(IReadOnlyList<SongDetails> songs, Guid? currentSongId, string emptyText)
 			=> new(
 				songs,
-				song => PageLayout.RowContent(song.Name, PageLayout.SongInfo(song)),
+				SongRow,
 				song => song.Id == currentSongId,
 				song =>
 				[
@@ -198,9 +333,11 @@ namespace Lyrious.UILib.Setlists
 			return button;
 		}
 
-		/// <summary>Whether the song's name or lyrics contain the text (ignoring case; chords in the lyrics don't get in the way).</summary>
+		/// <summary>Whether the song's name, artist, tags or lyrics contain the text (ignoring case; chords in the lyrics don't get in the way).</summary>
 		private static bool Matches(SongDetails song, string text)
 			=> song.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)
+			   || song.Tags.Contains(text, StringComparison.CurrentCultureIgnoreCase)
+			   || song.Artist.Contains(text, StringComparison.CurrentCultureIgnoreCase)
 			   || ChordPro.StripChords(song.Lyrics).Contains(text, StringComparison.CurrentCultureIgnoreCase);
 
 		/// <summary>Imports a song from a text or ChordPro file the user picks.</summary>

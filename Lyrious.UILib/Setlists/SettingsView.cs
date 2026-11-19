@@ -207,7 +207,7 @@ namespace Lyrious.UILib.Setlists
 						new TextBlock { Text = "Convert the songs to Lyrious format?", FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
 						new TextBlock
 						{
-							Text = "Each song then starts with a heading of its key and name (\"# [D] Amazing Grace\"), and comments such as {c: Verse 1} become headings (\"## Verse 1\").",
+							Text = "Each song then starts with a heading of its key and name (\"# [D]Amazing Grace\"), comments such as {c: Verse 1} become headings (\"## Verse 1\"), and a heading like \"# [d] Intro\" becomes \"# [D]Intro\". Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist.",
 							TextWrapping = TextWrapping.Wrap,
 							Opacity = 0.8,
 						},
@@ -337,7 +337,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				Padding = new Thickness(6),
 				// Always as wide, whatever it says, so the popup under it stays put while a colour is picked.
-				Width = 190,
+				Width = 130,
 				HorizontalContentAlignment = HorizontalAlignment.Stretch,
 				Content = new DockPanel { Children = { swatch, label } },
 			};

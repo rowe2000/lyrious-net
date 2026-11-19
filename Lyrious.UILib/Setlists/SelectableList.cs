@@ -45,13 +45,46 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var list = new StackPanel { Spacing = 4 };
+			Control? currentRow = null;
 			foreach (var item in items)
 			{
-				list.Children.Add(Row(item, content(item), isCurrent(item), tools(item), activate));
+				var current = isCurrent(item);
+				var row = Row(item, content(item), current, tools(item), activate);
+				currentRow ??= current ? row : null;
+				list.Children.Add(row);
 			}
 
-			Content = new ScrollViewer { Content = list };
+			var scroller = new ScrollViewer { Content = list };
+			Content = scroller;
 			Select(items.FirstOrDefault(isCurrent));
+			if (currentRow != null)
+			{
+				ScrollToMiddleOnce(scroller, list, currentRow);
+			}
+		}
+
+		/// <summary>
+		/// Once the list is first laid out, scrolls it so the row is in the middle (as far as it can),
+		/// so the current item is in sight when the page opens.
+		/// </summary>
+		private static void ScrollToMiddleOnce(ScrollViewer scroller, Control list, Control row)
+		{
+			void OnLayout(object? sender, EventArgs e)
+			{
+				if (scroller.Viewport.Height <= 0 || row.Bounds.Height <= 0)
+				{
+					return; // Not laid out yet.
+				}
+
+				scroller.LayoutUpdated -= OnLayout;
+				if (row.TranslatePoint(default, list) is { } top)
+				{
+					var offset = top.Y - (scroller.Viewport.Height - row.Bounds.Height) / 2;
+					scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(offset, 0, Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height)));
+				}
+			}
+
+			scroller.LayoutUpdated += OnLayout;
 		}
 
 		private Control Row(T item, Control content, bool isCurrent, IEnumerable<Control> tools, Action<T> activate)

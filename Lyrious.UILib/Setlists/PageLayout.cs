@@ -545,13 +545,112 @@ namespace Lyrious.UILib.Setlists
 			return button;
 		}
 
-		/// <summary>A song's key, tempo and beat, e.g. "G# · 120 bpm · 4/4"; empty if none are set.</summary>
+		/// <summary>
+		/// Gives a search box a small ✕ at its right end, shown while there's text: it empties the box
+		/// (so everything is listed again) and leaves the focus in it.
+		/// </summary>
+		public static T WithClearButton<T>(T box) where T : TextBox
+		{
+			var cross = new Avalonia.Controls.Shapes.Path
+			{
+				Data = Geometry.Parse("M6,6 L18,18 M18,6 L6,18"),
+				StrokeThickness = 2,
+				StrokeLineCap = PenLineCap.Round,
+				Width = 14,
+				Height = 14,
+				Stretch = Stretch.Uniform,
+			};
+			cross.Bind(Avalonia.Controls.Shapes.Shape.StrokeProperty, cross.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
+			var clear = new Button
+			{
+				Content = cross,
+				Padding = new Thickness(6),
+				Margin = new Thickness(0, 0, 2, 0),
+				MinHeight = 0,
+				Background = Brushes.Transparent,
+				BorderThickness = new Thickness(0),
+				VerticalAlignment = VerticalAlignment.Center,
+				Focusable = false,
+				Cursor = new Cursor(StandardCursorType.Arrow),
+				IsVisible = !string.IsNullOrEmpty(box.Text),
+			};
+			ToolTip.SetTip(clear, "Clear");
+			clear.Click += (_, _) =>
+			{
+				box.Text = string.Empty;
+				box.Focus();
+			};
+			box.TextChanged += (_, _) => clear.IsVisible = !string.IsNullOrEmpty(box.Text);
+			box.InnerRightContent = clear;
+			return box;
+		}
+
+		/// <summary>A song's tags as small rounded labels flowing left to right.</summary>
+		public static WrapPanel TagChips(System.Collections.Generic.IEnumerable<string> tags, double fontSize = 12)
+		{
+			var chips = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 4, LineSpacing = 4 };
+			foreach (var tag in tags)
+			{
+				chips.Children.Add(TagChip(tag, fontSize));
+			}
+
+			return chips;
+		}
+
+		/// <summary>One tag as a small rounded label.</summary>
+		public static Border TagChip(string tag, double fontSize = 12) => new()
+		{
+			CornerRadius = new CornerRadius(10),
+			Padding = new Thickness(8, 1),
+			Background = new SolidColorBrush(Color.FromArgb(0x38, 0x80, 0x80, 0x80)),
+			VerticalAlignment = VerticalAlignment.Center,
+			Child = new TextBlock { Text = tag, FontSize = fontSize, VerticalAlignment = VerticalAlignment.Center },
+		};
+
+		/// <summary>
+		/// A song's keys, tempo and beat for a list row, after <paramref name="note"/> (e.g. "in setlist")
+		/// when there is one: the playing key in the full text colour, the rest (with the original key,
+		/// when it differs) dimmed.
+		/// </summary>
+		public static Control SongInfoText(SongDetails song, string? note = null, double fontSize = 14)
+		{
+			var key = song.PlayingKey?.Trim() ?? "";
+			var original = OriginalKeyNote(song);
+			var rest = SongInfo(song with { PlayingKey = "", OriginalKey = "" });
+			var line = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+			void Add(string text, bool dim)
+			{
+				if (text.Length > 0)
+				{
+					line.Children.Add(new TextBlock { Text = text, FontSize = fontSize, Opacity = dim ? 0.7 : 1 });
+				}
+			}
+
+			// "in setlist · G (orig. A) · 120 bpm · 4/4", with only the parts there are.
+			var keyPart = key.Length > 0 || original.Length > 0;
+			Add(string.IsNullOrEmpty(note) ? "" : note + (keyPart || rest.Length > 0 ? " · " : ""), true);
+			Add(key, false);
+			Add(original.Length == 0 ? "" : (key.Length > 0 ? $" ({original})" : original), true);
+			Add(rest.Length == 0 ? "" : (keyPart ? " · " : "") + rest, true);
+			return line;
+		}
+
+		/// <summary>"orig. A" when the song's original key is set and isn't the playing key; else empty.</summary>
+		public static string OriginalKeyNote(SongDetails song)
+		{
+			var original = song.OriginalKey?.Trim() ?? "";
+			return original.Length > 0 && !original.Equals(song.PlayingKey?.Trim(), StringComparison.Ordinal) ? $"orig. {original}" : "";
+		}
+
+		/// <summary>A song's keys, tempo and beat, e.g. "G# (orig. A) · 120 bpm · 4/4"; empty if none are set.</summary>
 		public static string SongInfo(SongDetails song)
 		{
 			var parts = new System.Collections.Generic.List<string>();
-			if (!string.IsNullOrWhiteSpace(song.Key))
+			var key = song.PlayingKey?.Trim() ?? "";
+			var original = OriginalKeyNote(song);
+			if (key.Length > 0 || original.Length > 0)
 			{
-				parts.Add(song.Key);
+				parts.Add(key.Length == 0 ? original : original.Length == 0 ? key : $"{key} ({original})");
 			}
 
 			if (song.Tempo > 0)
