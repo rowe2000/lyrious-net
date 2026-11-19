@@ -475,6 +475,14 @@ namespace Lyrious.UILib.Setlists
 			info.Margin = new Avalonia.Thickness(12, 0, 0, 0);
 			DockPanel.SetDock(info, Dock.Right);
 			row.Children.Add(info);
+			// The media icons between the tags and the key, tempo and beat.
+			if (MediaIcons(song) is { } media)
+			{
+				media.Margin = new Avalonia.Thickness(10, 0, 0, 0);
+				DockPanel.SetDock(media, Dock.Right);
+				row.Children.Add(media);
+			}
+
 			var tags = SongTags.Sorted(song.Tags);
 			if (tags.Count > 0)
 			{
@@ -487,6 +495,48 @@ namespace Lyrious.UILib.Setlists
 
 			row.Children.Add(new TextBlock { Text = song.Name, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
 			return row;
+		}
+
+		/// <summary>
+		/// Small icons of the song's media links, one per kind (Spotify, YouTube, sound file, other
+		/// link), with what they are in a tooltip; null for a song without media.
+		/// </summary>
+		private static Control? MediaIcons(SongDetails song)
+		{
+			var links = MediaLinks.Split(song.MediaLink);
+			if (links.Count == 0)
+			{
+				return null;
+			}
+
+			var kinds = links
+				.Select(link => (Link: link, Sound: MediaLinks.SoundOf(link)))
+				.Select(l => (l.Link, l.Sound, Site: l.Sound != null ? MediaSite.Sound : MediaLinks.SiteOf(MediaLinks.Parse(l.Link))))
+				.ToList();
+			var icons = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Background = Brushes.Transparent };
+			foreach (var site in kinds.Select(k => k.Site).Distinct().OrderBy(site => site))
+			{
+				var icon = MediaLinks.Icon(site);
+				icon.Width = 16;
+				icon.Height = 16;
+				if (icon is Avalonia.Controls.Shapes.Shape shape)
+				{
+					shape.StrokeThickness = 1.75;
+				}
+
+				icon.Opacity = site is MediaSite.Spotify or MediaSite.YouTube ? 1 : 0.75;
+				icons.Children.Add(icon);
+			}
+
+			var described = kinds.Select(k => k.Site switch
+			{
+				MediaSite.Spotify => "Spotify",
+				MediaSite.YouTube => "YouTube",
+				MediaSite.Sound => L.T("Sound file: {0}", k.Sound!.Name),
+				_ => k.Link,
+			});
+			ToolTip.SetTip(icons, L.T("Media: {0}", string.Join(", ", described)));
+			return icons;
 		}
 
 		/// <summary>

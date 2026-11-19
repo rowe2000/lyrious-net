@@ -22,6 +22,7 @@ namespace Lyrious.UILib
 		public const string About = "M12,3 A9,9 0 1 0 12,21 A9,9 0 1 0 12,3 M12,11 V16 M12,8 H12.01";
 		public const string Profile = "M12,12 A4,4 0 1 0 12,4 A4,4 0 1 0 12,12 M4,21 C4,17 7.6,14.5 12,14.5 C16.4,14.5 20,17 20,21";
 		public const string Exit = "M10,4 H5 V20 H10 M14,8 L18,12 L14,16 M8,12 H18";
+		public const string Trash = "M5,7 H19 M10,7 V5 H14 V7 M7,7 L8,20 H16 L17,7 M10,11 V16 M14,11 V16";
 
 		/// <summary>
 		/// The icon as a line drawing at the size given, in the colour of the text around it. The whole

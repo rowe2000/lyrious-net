@@ -182,6 +182,248 @@ namespace Lyrious.UILib.Setlists
 		private SongDetails song;
 
 		/// <summary>
+		/// The member's own settings for the song (their transpose and lyrics), seen only by them;
+		/// setting it shows the lyrics with it (not while editing: the editor keeps what's typed).
+		/// </summary>
+		public MySongSetting MySetting
+		{
+			get => mySetting;
+			set
+			{
+				mySetting = value ?? MySongSetting.None;
+				if (!IsEditing)
+				{
+					ShowSongHeader();
+					ShowLyrics();
+				}
+			}
+		}
+
+		private MySongSetting mySetting = MySongSetting.None;
+
+		/// <summary>
+		/// Lets the member have their own transpose and lyrics for the song: reads them (the lyrics are
+		/// then shown with them) and stores them with <paramref name="save"/> when changed.
+		/// </summary>
+		public async void UseMySetting(Func<Task<MySongSetting>> load, Func<MySongSetting, Task> save)
+		{
+			SaveMySetting = save;
+			MySongSetting loaded;
+			try
+			{
+				loaded = await load();
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't read the member's own song settings: {ex.Message}");
+				loaded = MySongSetting.None;
+			}
+
+			mySetting = loaded;
+			if (IsEditing)
+			{
+				// The editor opened with the view: again, now offering the member's own lyrics too.
+				ShowEditor();
+			}
+			else
+			{
+				ShowSongHeader();
+				ShowLyrics();
+			}
+		}
+
+		/// <summary>
+		/// For the band's admins: the other members and their own lyrics for the song, to see, change
+		/// or add in the editor; null for anyone else.
+		/// </summary>
+		public Func<Task<IReadOnlyList<MemberLyrics>>>? LoadMembersLyrics { get; set; }
+
+		/// <summary>Stores another member's own lyrics for the song (empty removes them); set with <see cref="LoadMembersLyrics"/>.</summary>
+		public Func<Guid, string, Task>? SaveMemberLyrics { get; set; }
+
+		/// <summary>Stores the member's own settings for the song; null where they can't be kept (no transpose or lyrics of their own then).</summary>
+		public Func<MySongSetting, Task>? SaveMySetting { get; set; }
+
+		// Whether the band's lyrics are shown rather than the member's own (kept on this device).
+		private const string BandLyricsSettingKey = "showBandLyrics";
+
+		private static bool ShowBandLyrics
+		{
+			get => App.Settings.Get(BandLyricsSettingKey) == "1";
+			set => App.Settings.Set(BandLyricsSettingKey, value ? "1" : null);
+		}
+
+		/// <summary>The lyrics shown: the member's own if they have some (and haven't chosen the band's), else the band's.</summary>
+		private string ShownLyrics => mySetting.HasLyrics && !ShowBandLyrics ? mySetting.Lyrics : song.Lyrics;
+
+		/// <summary>The key the chords are shown in: the playing key moved by the member's transpose.</summary>
+		private string ShownKey => KeyMovedBy(mySetting.ActiveTranspose);
+
+		/// <summary>The playing key moved by the semitones (the key itself if it isn't set).</summary>
+		private string KeyMovedBy(int semitones) => semitones == 0 || string.IsNullOrWhiteSpace(song.PlayingKey)
+			? song.PlayingKey
+			: Transpose.Chord(song.PlayingKey.Trim(), semitones, song.PlayingKey) ?? song.PlayingKey;
+
+		private static string Signed(int semitones) => semitones == 0 ? "±0" : semitones.ToString("+0;−0");
+
+		/// <summary>The song's details for the header, with the member's transpose after them.</summary>
+		private string InfoText()
+		{
+			var info = PageLayout.SongInfo(song);
+			if (mySetting.ActiveTranspose == 0)
+			{
+				return info;
+			}
+
+			var mine = string.IsNullOrWhiteSpace(song.PlayingKey)
+				? L.T("Me: {0}", Signed(mySetting.Transpose))
+				: L.T("Me: {0} ({1})", ShownKey, Signed(mySetting.Transpose));
+			return info.Length == 0 ? mine : $"{info} · {mine}";
+		}
+
+		private readonly LongClickButton transposeButton;
+		private readonly Button lyricsSourceButton;
+
+		/// <summary>A toolbar button with a short text instead of an icon, as tall as the icon buttons.</summary>
+		private static T TextButton<T>(string description) where T : Button, new()
+		{
+			var button = new T
+			{
+				MinHeight = 40,
+				MinWidth = 40,
+				Padding = new Thickness(8, 4),
+				FontSize = 15,
+				Background = Brushes.Transparent,
+				BorderThickness = new Thickness(0),
+				VerticalContentAlignment = VerticalAlignment.Center,
+				HorizontalContentAlignment = HorizontalAlignment.Center,
+			};
+			ToolTip.SetTip(button, description);
+			Avalonia.Automation.AutomationProperties.SetName(button, description);
+			return button;
+		}
+
+		/// <summary>The member's transpose: − and + by a semitone (−11 to +11), and back to none; saved at once.</summary>
+		private void ShowTransposeMenu()
+		{
+			var value = new TextBlock { FontSize = 20, FontWeight = FontWeight.Bold, MinWidth = 48, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+			var key = new TextBlock { Opacity = 0.7, HorizontalAlignment = HorizontalAlignment.Center };
+			var down = new Button { Content = "−", FontSize = 20, MinWidth = 44 };
+			var up = new Button { Content = "+", FontSize = 20, MinWidth = 44 };
+			var reset = new Button { Content = L.T("Reset"), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+			ToolTip.SetTip(down, L.T("A semitone lower"));
+			ToolTip.SetTip(up, L.T("A semitone higher"));
+			// On or off, the value kept (as holding the toolbar button does).
+			var enabled = new CheckBox { Content = L.T("Transpose on") };
+			ToolTip.SetTip(enabled, L.T("Off, the band's chords show; your transpose is kept for later"));
+
+			void Show()
+			{
+				var t = mySetting.Transpose;
+				value.Text = Signed(t);
+				key.Text = string.IsNullOrWhiteSpace(song.PlayingKey) ? "" : L.T("{0} becomes {1}", song.PlayingKey, KeyMovedBy(t));
+				key.IsVisible = t != 0 && key.Text.Length > 0;
+				down.IsEnabled = t > MySongSetting.MinTranspose;
+				up.IsEnabled = t < MySongSetting.MaxTranspose;
+				reset.IsEnabled = t != 0;
+				enabled.IsEnabled = t != 0;
+				enabled.IsChecked = t != 0 && !mySetting.TransposeOff;
+				value.Opacity = t != 0 && mySetting.TransposeOff ? 0.5 : 1;
+			}
+
+			void Change(int t)
+			{
+				// Changing it turns it on.
+				ApplyMySetting(mySetting with { Transpose = Math.Clamp(t, MySongSetting.MinTranspose, MySongSetting.MaxTranspose), TransposeOff = false });
+				Show();
+			}
+
+			down.Click += (_, _) => Change(mySetting.Transpose - 1);
+			up.Click += (_, _) => Change(mySetting.Transpose + 1);
+			reset.Click += (_, _) => Change(0);
+			enabled.IsCheckedChanged += (_, _) =>
+			{
+				var off = enabled.IsChecked != true;
+				if (mySetting.Transpose != 0 && off != mySetting.TransposeOff)
+				{
+					ApplyMySetting(mySetting with { TransposeOff = off });
+					Show();
+				}
+			};
+			Show();
+			new Flyout
+			{
+				Placement = PlacementMode.BottomEdgeAlignedRight,
+				Content = new StackPanel
+				{
+					Spacing = 8,
+					MinWidth = 180,
+					Children =
+					{
+						new TextBlock { Text = L.T("My transpose"), FontWeight = FontWeight.SemiBold },
+						new TextBlock { Text = L.T("Only you see the chords moved."), FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, MaxWidth = 200 },
+						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, Children = { down, value, up } },
+						key,
+						enabled,
+						reset,
+					},
+				},
+			}.ShowAt(transposeButton);
+		}
+
+		/// <summary>Shows the lyrics with the member's changed settings, and stores them.</summary>
+		private async void ApplyMySetting(MySongSetting changed)
+		{
+			mySetting = changed;
+			ShowSongHeader();
+			ShowLyrics();
+			if (SaveMySetting is { } save)
+			{
+				try
+				{
+					await save(changed);
+				}
+				catch (Exception ex)
+				{
+					ShowProblemAt(transposeButton, L.T("Couldn't save. {0}", ex.Message));
+				}
+			}
+		}
+
+		/// <summary>The toolbar's buttons for the member's own settings, as the song and its settings are now.</summary>
+		private void ShowMySettingButtons(bool hasChords)
+		{
+			var t = mySetting.Transpose;
+			var on = t != 0 && !mySetting.TransposeOff;
+			transposeButton.IsVisible = SaveMySetting != null && (hasChords || t != 0);
+			transposeButton.Content = t == 0 ? "♯♭" : Signed(t);
+			// Turned off, the value still shows, dimmed.
+			transposeButton.Opacity = t != 0 && mySetting.TransposeOff ? 0.5 : 1;
+			if (on)
+			{
+				transposeButton.Classes.Add("accent");
+				transposeButton.ClearValue(BackgroundProperty);
+			}
+			else
+			{
+				transposeButton.Classes.Remove("accent");
+				transposeButton.Background = Brushes.Transparent;
+			}
+
+			ToolTip.SetTip(transposeButton, t == 0
+				? L.T("My transpose: move the chords for me only")
+				: mySetting.TransposeOff
+					? L.T("My transpose {0} is off. Hold to turn it on", Signed(t))
+					: L.T("My transpose: {0}. Hold to turn it off", Signed(t)));
+
+			lyricsSourceButton.IsVisible = mySetting.HasLyrics;
+			lyricsSourceButton.Content = ShowBandLyrics ? L.T("The band's") : L.T("Mine");
+			ToolTip.SetTip(lyricsSourceButton, ShowBandLyrics
+				? L.T("Showing the band's lyrics. Click to show yours")
+				: L.T("Showing your own lyrics. Click to show the band's"));
+		}
+
+		/// <summary>
 		/// The band's MIDI expressions (see <see cref="Midi"/>), for the editor to point out what in the
 		/// lyrics' MIDI tags can't be sent; set once they're read.
 		/// </summary>
@@ -252,12 +494,29 @@ namespace Lyrious.UILib.Setlists
 				() => this.song.Lyrics,
 				() => this.song.Artist,
 				ShowProblemAt);
+			// The member's own transpose and lyrics (only they see them).
+			transposeButton = TextButton<LongClickButton>(L.T("My transpose: move the chords for me only"));
+			transposeButton.Click += (_, _) => ShowTransposeMenu();
+			// Held: the transpose off or on again, its value kept.
+			transposeButton.LongClick += () =>
+			{
+				if (mySetting.Transpose != 0)
+				{
+					ApplyMySetting(mySetting with { TransposeOff = !mySetting.TransposeOff });
+				}
+			};
+			lyricsSourceButton = TextButton<Button>(L.T("Mine"));
+			lyricsSourceButton.Click += (_, _) =>
+			{
+				ShowBandLyrics = !ShowBandLyrics;
+				ShowLyrics();
+			};
 			lyricsActions = new StackPanel
 			{
 				Orientation = Orientation.Horizontal,
 				Spacing = 4,
 				HorizontalAlignment = HorizontalAlignment.Right,
-				Children = { mediaButtons, chordGridButton, editButton },
+				Children = { mediaButtons, lyricsSourceButton, transposeButton, chordGridButton, editButton },
 			};
 			// Sound files and links dropped anywhere on the view are added to the song's media links.
 			// Tunnelling: seen before the editor's text box, which would type a dropped link into the lyrics.
@@ -279,7 +538,7 @@ namespace Lyrious.UILib.Setlists
 			// (The media player is the app's, over every page: see MediaPlayerLayer.)
 			// The time at the right of the toolbar (also in focus mode, so it shows while playing).
 			var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { titleActions, clock } };
-			Content = PageLayout.SongPage(TitleOf(song), body, PageLayout.SongInfo(song), toolbar);
+			Content = PageLayout.SongPage(TitleOf(song), body, InfoText(), toolbar);
 			ShowTitle();
 		}
 
@@ -290,7 +549,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (Content is Control page)
 			{
-				PageLayout.SetSongTitle(page, TitleOf(song), PageLayout.SongInfo(song));
+				PageLayout.SetSongTitle(page, TitleOf(song), InfoText());
 			}
 		}
 
@@ -1045,15 +1304,17 @@ namespace Lyrious.UILib.Setlists
 		private void ShowLyrics()
 		{
 			StopNudge();
-			var hasLyrics = !string.IsNullOrWhiteSpace(song.Lyrics);
+			var lyrics = ShownLyrics;
+			var hasLyrics = !string.IsNullOrWhiteSpace(lyrics);
 			Control text;
 			markers = [];
 			timeline = null;
 			// The chord grid button only for lyrics with chords; highlighted while the grid is on.
 			// Lyrics with chords, or bar lines ("|"), can be shown as a chord grid.
-			var hasChords = hasLyrics && (ChordPro.IsChordPro(song.Lyrics) || ChordPro.HasBarLines(song.Lyrics));
+			var hasChords = hasLyrics && (ChordPro.IsChordPro(lyrics) || ChordPro.HasBarLines(lyrics));
 			var grid = hasChords && ChordGrid;
 			chordGridButton.IsVisible = hasChords;
+			ShowMySettingButtons(hasChords);
 			if (grid)
 			{
 				chordGridButton.Classes.Add("accent");
@@ -1067,11 +1328,12 @@ namespace Lyrious.UILib.Setlists
 
 			ToolTip.SetTip(chordGridButton, grid ? L.T("Show chords over the words") : L.T("Show a chord grid (chords only, by bar)"));
 
-			if (hasLyrics && ChordPro.HasFormatting(song.Lyrics))
+			if (hasLyrics && ChordPro.HasFormatting(lyrics))
 			{
 				// Chords above the words they belong to (or the chord grid), headings, notes, and time tags for the scrolling.
-				// The lyrics are written in the original key; the chords are shown in the playing key.
-				var transposed = Transpose.Chords(song.Lyrics, Transpose.Semitones(song.OriginalKey, song.PlayingKey), song.PlayingKey);
+				// The lyrics are written in the original key; the chords are shown in the playing key, moved
+				// by the member's own transpose.
+				var transposed = Transpose.Chords(lyrics, Transpose.Semitones(song.OriginalKey, song.PlayingKey) + mySetting.ActiveTranspose, ShownKey);
 				var rendered = ChordPro.Render(transposed, fontSize: 24, lineHeight: 36, song.Tempo, song.Beat, chordGrid: grid);
 				text = rendered.Content;
 				markers = rendered.Markers;
@@ -1080,7 +1342,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				text = new TextBlock
 				{
-					Text = hasLyrics ? song.Lyrics : L.T("There are no lyrics for this song yet. Add them with the pencil button."),
+					Text = hasLyrics ? lyrics : L.T("There are no lyrics for this song yet. Add them with the pencil button."),
 					FontSize = hasLyrics ? 24 : 16,
 					LineHeight = hasLyrics ? 36 : double.NaN,
 					Opacity = hasLyrics ? 1 : 0.7,
@@ -1902,6 +2164,185 @@ namespace Lyrious.UILib.Setlists
 				VerticalContentAlignment = VerticalAlignment.Top,
 				PlaceholderText = L.T("Type or paste the lyrics"),
 			};
+
+			// The band's lyrics, the member's own, or (for the band's admins) another member's: several
+			// texts in one box; switching keeps what was typed in each. A version of one's own starts as
+			// a copy of the band's.
+			var bandText = song.Lyrics;
+			string? myText = mySetting.HasLyrics ? mySetting.Lyrics : null;
+			var canHaveMine = SaveMySetting != null && song.Id != Guid.Empty;
+			var editingMine = canHaveMine && mySetting.HasLyrics && !ShowBandLyrics;
+			Guid? editingMember = null;
+			if (editingMine)
+			{
+				editor.Text = myText;
+			}
+
+			// Other members' lyrics, as stored and as typed here.
+			var membersLyrics = new List<MemberLyrics>();
+			var memberTexts = new Dictionary<Guid, string>();
+
+			var bandChoice = new Avalonia.Controls.Primitives.ToggleButton { Content = L.T("The band's lyrics") };
+			var myChoice = new Avalonia.Controls.Primitives.ToggleButton { Content = L.T("My lyrics") };
+			var memberChoice = new ComboBox { IsVisible = false, MinWidth = 160, MaxDropDownHeight = 320 };
+			var removeMineText = new TextBlock { Text = L.T("Remove my lyrics"), VerticalAlignment = VerticalAlignment.Center };
+			var removeMine = new Button
+			{
+				Content = new StackPanel
+				{
+					Orientation = Orientation.Horizontal,
+					Spacing = 6,
+					Children = { AppIcons.Create(AppIcons.Trash, 16), removeMineText },
+				},
+			};
+			// Red when hovered, and asks first: removing a version of the lyrics can't be undone after Save.
+			PageLayout.RedOnHover(removeMine);
+			var removeQuestion = new TextBlock { TextWrapping = TextWrapping.Wrap };
+			var confirmRemove = PageLayout.DangerButton(L.T("Remove"));
+			var keepVersion = new Button { Content = L.T("Cancel") };
+			var removeFlyout = new Flyout
+			{
+				Content = new StackPanel
+				{
+					Spacing = 12,
+					MaxWidth = 280,
+					Children =
+					{
+						removeQuestion,
+						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { confirmRemove, keepVersion } },
+					},
+				},
+			};
+			keepVersion.Click += (_, _) => removeFlyout.Hide();
+			removeMine.Flyout = removeFlyout;
+			ToolTip.SetTip(bandChoice, L.T("The lyrics everyone in the band sees"));
+			ToolTip.SetTip(myChoice, L.T("Your own version of the lyrics, seen only by you"));
+			ToolTip.SetTip(memberChoice, L.T("As the band's admin: see, change or add a member's own lyrics"));
+			var lyricsChoice = new WrapPanel
+			{
+				Orientation = Orientation.Horizontal,
+				ItemSpacing = 6,
+				LineSpacing = 6,
+				Margin = new Thickness(0, 0, 0, 8),
+				IsVisible = canHaveMine,
+				Children = { bandChoice, myChoice, memberChoice, removeMine },
+			};
+
+			// Set while the member list's selection is set here, not chosen.
+			var settingMemberChoice = false;
+
+			string MemberName(Guid id) => membersLyrics.FirstOrDefault(m => m.MemberId == id)?.Name ?? "";
+
+			void ShowLyricsChoice()
+			{
+				bandChoice.IsChecked = !editingMine && editingMember == null;
+				myChoice.IsChecked = editingMine;
+				settingMemberChoice = true;
+				memberChoice.SelectedIndex = editingMember is { } m ? membersLyrics.FindIndex(x => x.MemberId == m) + 1 : 0;
+				settingMemberChoice = false;
+				removeMine.IsVisible = editingMine || editingMember != null;
+				removeMineText.Text = editingMember is { } member ? L.T("Remove {0}'s lyrics", MemberName(member)) : L.T("Remove my lyrics");
+				removeQuestion.Text = editingMember is { } whose
+					? L.T("Remove {0}'s own lyrics? They see the band's lyrics again once the song is saved.", MemberName(whose))
+					: L.T("Remove your own lyrics? You see the band's lyrics again once the song is saved.");
+				ToolTip.SetTip(removeMine, editingMember is { } who
+					? L.T("{0} sees the band's lyrics again", MemberName(who))
+					: L.T("Show the band's lyrics to you again"));
+			}
+
+			// What's typed is kept with the version it belongs to.
+			void KeepTyped()
+			{
+				if (editingMember is { } m)
+				{
+					memberTexts[m] = editor.Text ?? "";
+				}
+				else if (editingMine)
+				{
+					myText = editor.Text ?? "";
+				}
+				else
+				{
+					bandText = editor.Text ?? "";
+				}
+			}
+
+			void SwitchLyrics(bool mine, Guid? member = null)
+			{
+				if (mine != editingMine || member != editingMember)
+				{
+					KeepTyped();
+					editingMine = mine;
+					editingMember = member;
+					editor.Text = member is { } m
+						? memberTexts.TryGetValue(m, out var theirs) && !string.IsNullOrWhiteSpace(theirs) ? theirs : bandText
+						: mine ? (string.IsNullOrWhiteSpace(myText) ? bandText : myText) : bandText;
+					editor.Focus();
+				}
+
+				ShowLyricsChoice();
+			}
+
+			bandChoice.Click += (_, _) => SwitchLyrics(false);
+			myChoice.Click += (_, _) => SwitchLyrics(true);
+			memberChoice.SelectionChanged += (_, _) =>
+			{
+				if (!settingMemberChoice && memberChoice.SelectedIndex > 0)
+				{
+					SwitchLyrics(false, membersLyrics[memberChoice.SelectedIndex - 1].MemberId);
+				}
+			};
+			confirmRemove.Click += (_, _) =>
+			{
+				removeFlyout.Hide();
+				// What's typed in that version is dropped; Save removes it.
+				if (editingMember is { } m)
+				{
+					memberTexts[m] = "";
+				}
+				else
+				{
+					myText = "";
+				}
+
+				editingMine = false;
+				editingMember = null;
+				editor.Text = bandText;
+				ShowLyricsChoice();
+			};
+			ShowLyricsChoice();
+
+			// For the band's admins: the other members, marked when they have lyrics of their own.
+			async Task LoadMembersAsync(Func<Task<IReadOnlyList<MemberLyrics>>> load)
+			{
+				try
+				{
+					membersLyrics = (await load()).ToList();
+				}
+				catch (Exception ex)
+				{
+					System.Diagnostics.Debug.WriteLine($"Couldn't read the members' lyrics: {ex.Message}");
+					return;
+				}
+
+				foreach (var member in membersLyrics.Where(m => !string.IsNullOrWhiteSpace(m.Lyrics)))
+				{
+					memberTexts[member.MemberId] = member.Lyrics;
+				}
+
+				var items = new List<string> { L.T("Another member's lyrics…") };
+				items.AddRange(membersLyrics.Select(m => string.IsNullOrWhiteSpace(m.Lyrics) ? m.Name : L.T("{0} · own lyrics", m.Name)));
+				settingMemberChoice = true;
+				memberChoice.ItemsSource = items;
+				settingMemberChoice = false;
+				memberChoice.IsVisible = membersLyrics.Count > 0;
+				ShowLyricsChoice();
+			}
+
+			if (canHaveMine && LoadMembersLyrics is { } loadMembers && SaveMemberLyrics != null)
+			{
+				_ = LoadMembersAsync(loadMembers);
+			}
 			var save = PageLayout.OkButton(L.T("Save song"));
 			// Escape cancels too (before the page's ✕).
 			var cancel = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, L.T("Cancel editing")), first: true);
@@ -2000,7 +2441,7 @@ namespace Lyrious.UILib.Setlists
 			ToolTip.SetTip(originalKey, L.T("Original key: the key the song was written or recorded in"));
 			ToolTip.SetTip(tempo, L.T("Tempo (bpm)"));
 			ToolTip.SetTip(beat, L.T("Beat"));
-			var originalLabel = new TextBlock { Text = "orig.", Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center };
+			var originalLabel = new TextBlock { Text = L.T("orig."), Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center };
 			var detailsInputs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { key, originalLabel, originalKey, tempo, beat } };
 
 			// The song with the keys, tempo and beat as they are in the inputs.
@@ -2089,7 +2530,7 @@ namespace Lyrious.UILib.Setlists
 				var text = artist.Text?.Trim() ?? "";
 				var shown = new TextBlock
 				{
-					Text = text.Length == 0 ? L.T("Add artist") : $"by {text}",
+					Text = text.Length == 0 ? L.T("Add artist") : L.T("by {0}", text),
 					Opacity = 0.7,
 					FontStyle = text.Length == 0 ? FontStyle.Italic : FontStyle.Normal,
 					Background = Brushes.Transparent,
@@ -2290,16 +2731,18 @@ namespace Lyrious.UILib.Setlists
 			};
 			save.Click += async (_, _) =>
 			{
+				KeepTyped();
+
 				var edited = WithDetails() with
 				{
 					Name = name.Text!.Trim(),
-					Lyrics = editor.Text ?? string.Empty,
+					Lyrics = bandText,
 					MediaLink = mediaLink.Trim(),
 					Tags = SongTags.Tidy(tagsBox.Text),
 					Artist = artist.Text?.Trim() ?? "",
 				};
 
-				var inputs = new Control[] { save, cancel, media, name, artist, key, originalKey, tempo, beat, tagsBox, editor };
+				var inputs = new Control[] { save, cancel, media, name, artist, key, originalKey, tempo, beat, tagsBox, editor, bandChoice, myChoice, memberChoice, removeMine };
 				foreach (var input in inputs)
 				{
 					input.IsEnabled = false;
@@ -2311,6 +2754,43 @@ namespace Lyrious.UILib.Setlists
 					var before = song.MediaLink;
 					song = await saveSong(edited);
 					UploadNewSound(before, song);
+
+					// Their own lyrics: stored if changed (a copy of the band's left as it was isn't a version of their own).
+					if (myText != null && SaveMySetting is { } saveMine)
+					{
+						var mine = string.IsNullOrWhiteSpace(myText) || (!mySetting.HasLyrics && myText == bandText) ? "" : myText;
+						if (mine != mySetting.Lyrics)
+						{
+							var changed = mySetting with { Lyrics = mine };
+							await saveMine(changed);
+							mySetting = changed;
+						}
+					}
+
+					// Other members' lyrics (by an admin): stored if changed, as for their own.
+					if (SaveMemberLyrics is { } saveTheirs)
+					{
+						foreach (var member in membersLyrics)
+						{
+							if (!memberTexts.TryGetValue(member.MemberId, out var typed))
+							{
+								continue;
+							}
+
+							var theirs = string.IsNullOrWhiteSpace(typed) || (string.IsNullOrWhiteSpace(member.Lyrics) && typed == bandText) ? "" : typed;
+							if (theirs != member.Lyrics)
+							{
+								await saveTheirs(member.MemberId, theirs);
+							}
+						}
+					}
+
+					// The lyrics page shows the version just edited (one's own or the band's).
+					if (mySetting.HasLyrics && editingMember == null)
+					{
+						ShowBandLyrics = !editingMine;
+					}
+
 					ShowSongHeader();
 					ShowLyrics();
 					SongSaved?.Invoke(song);
@@ -2333,7 +2813,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				Margin = new Thickness(0, 0, 0, 16),
 				RowDefinitions = new RowDefinitions("Auto,*"),
-				Children = { new StackPanel { Children = { error, midiNotes } }, editor },
+				Children = { new StackPanel { Children = { error, midiNotes, lyricsChoice } }, editor },
 			};
 
 			// A song without a name yet (a new one) starts in the name's box, others in the lyrics.

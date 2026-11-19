@@ -119,6 +119,27 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		event Action<string>? MySettingsChanged;
 
+		/// <summary>The logged-in member's own settings for the song (no transpose and no lyrics of their own if none).</summary>
+		Task<MySongSetting> GetMySongSettingAsync(Guid songId, CancellationToken cancellationToken = default);
+
+		/// <summary>Stores the logged-in member's own settings for the song; works offline and syncs later.</summary>
+		Task SaveMySongSettingAsync(Guid songId, MySongSetting setting, CancellationToken cancellationToken = default);
+
+		/// <summary>
+		/// Raised (possibly on a background thread) with the song's id when the member's own settings for
+		/// it change on another of their devices.
+		/// </summary>
+		event Action<Guid>? MySongSettingChanged;
+
+		/// <summary>
+		/// The other members of the band and their own lyrics for the song (empty if they have none),
+		/// for the band's admins; empty for anyone else.
+		/// </summary>
+		Task<IReadOnlyList<MemberLyrics>> GetMembersLyricsAsync(Guid groupId, Guid songId, CancellationToken cancellationToken = default);
+
+		/// <summary>Stores another member's own lyrics for the song (empty removes them). The band's admins only.</summary>
+		Task SaveMemberLyricsAsync(Guid songId, Guid memberId, string lyrics, CancellationToken cancellationToken = default);
+
 		/// <summary>Removes a member from a band. Admins only, and not the last admin.</summary>
 		Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default);
 
@@ -255,6 +276,23 @@ namespace Lyrious.UILib.Setlists
 
 	/// <param name="MediaLink">A link to listen to or watch the song (Spotify, YouTube, …); empty if none.</param>
 	/// <param name="Tags">Tags to sort the song by, separated by spaces (see <see cref="SongTags"/>); empty if none.</param>
+	/// <summary>
+	/// A member's own settings for a song, seen only by them: semitones the chords are moved by on
+	/// top of the song's own (−11 to +11), and their own lyrics (empty: the band's are shown).
+	/// </summary>
+	public sealed record MySongSetting(int Transpose, string Lyrics, bool TransposeOff = false)
+	{
+		/// <summary>The semitones the chords are moved by now: none while the transpose is turned off.</summary>
+		public int ActiveTranspose => TransposeOff ? 0 : Transpose;
+		public const int MinTranspose = -11;
+		public const int MaxTranspose = 11;
+		public static readonly MySongSetting None = new(0, "");
+		public bool HasLyrics => !string.IsNullOrWhiteSpace(Lyrics);
+	}
+
+	/// <summary>A band member and their own lyrics for a song (empty: they see the band's).</summary>
+	public sealed record MemberLyrics(Guid MemberId, string Name, string Lyrics);
+
 	public sealed record SongDetails(Guid Id, string Name, string PlayingKey, float Tempo, string Beat, string Lyrics, string MediaLink = "", string Tags = "", string OriginalKey = "", string Artist = "");
 
 	/// <summary>A song found online: title, artist, album, length and plain lyrics (empty if the database has none).</summary>
@@ -300,6 +338,11 @@ namespace Lyrious.UILib.Setlists
 		public Task<string?> GetMySettingsAsync(CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SaveMySettingsAsync(string settings, CancellationToken cancellationToken = default) => throw NotConnected();
 		public event Action<string>? MySettingsChanged { add { } remove { } }
+		public Task<MySongSetting> GetMySongSettingAsync(Guid songId, CancellationToken cancellationToken = default) => Task.FromResult(MySongSetting.None);
+		public Task SaveMySongSettingAsync(Guid songId, MySongSetting setting, CancellationToken cancellationToken = default) => throw NotConnected();
+		public event Action<Guid>? MySongSettingChanged { add { } remove { } }
+		public Task<IReadOnlyList<MemberLyrics>> GetMembersLyricsAsync(Guid groupId, Guid songId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MemberLyrics>>([]);
+		public Task SaveMemberLyricsAsync(Guid songId, Guid memberId, string lyrics, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteGroupAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();

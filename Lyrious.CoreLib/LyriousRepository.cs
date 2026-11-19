@@ -286,6 +286,8 @@ public class LyriousRepository(LyriousContext context)
 			Role => true,
 			// Only bands they're in (a member removed from their joined band no longer sees it).
 			Group group => IsMemberOf(group.Id),
+			// A member's own song settings: theirs, and seen by the admins of the song's band too.
+			SongSetting setting => CanSeeSongSetting(setting),
 			_ => IsMemberOf(GroupIdOf(entity))
 		};
 	}
@@ -301,6 +303,10 @@ public class LyriousRepository(LyriousContext context)
 			return false;
 
 		// A band's MIDI settings are stored only in their form (see Group.MidiExpressions and Group.MidiCommands).
+		// A member's song settings: a transpose within an octave, lyrics no longer than a song's.
+		if (entity is SongSetting songSetting && (songSetting.Transpose is < SongSetting.MinTranspose or > SongSetting.MaxTranspose || (songSetting.Lyrics?.Length ?? 0) > SongSetting.MaxLyricsLength))
+			return false;
+
 		if (entity is Group midiBand && (!Group.IsValidMidiExpressions(midiBand.MidiExpressions) || !Group.IsValidMidiCommands(midiBand.MidiCommands)))
 			return false;
 
@@ -457,6 +463,7 @@ public class LyriousRepository(LyriousContext context)
 			Role => false,
 			SetlistItem item => IsMemberOf(GroupIdOf(item)) && IsMemberOf(SongGroupId(item.SongId)),
 			Play play => IsMemberOf(GroupIdOf(play)) && IsMemberOf(SongGroupId(play.SongId)),
+			SongSetting setting => CanSeeSongSetting(setting) && IsInGroup(setting.MemberId, SongGroupId(setting.SongId)),
 			_ => IsMemberOf(GroupIdOf(entity))
 		};
 	}
@@ -477,8 +484,29 @@ public class LyriousRepository(LyriousContext context)
 			Song song => context.Songbooks.Where(o => o.Id == song.SongbookId).Select(o => o.GroupId).FirstOrDefault(),
 			SetlistItem item => context.Setlists.Where(o => o.Id == item.SetlistId).Select(o => (Guid?)o.GroupId).FirstOrDefault(),
 			Play play => context.Playlogs.Where(o => o.Id == play.PlaylogId).Select(o => (Guid?)o.GroupId).FirstOrDefault(),
+			SongSetting setting => SongGroupId(setting.SongId),
 			_ => null
 		};
+	}
+
+	/// <summary>A member's song settings: their own, or any member's of a band the caller is an admin of.</summary>
+	private bool CanSeeSongSetting(SongSetting setting)
+	{
+		var groupId = SongGroupId(setting.SongId);
+		return IsMemberOf(groupId) && (setting.MemberId == Me!.Id || IsAdminOf(groupId));
+	}
+
+	private bool IsInGroup(Guid memberId, Guid? groupId)
+		=> groupId != null && context.Memberships.Any(m => m.GroupId == groupId && m.MemberId == memberId && !m.Removed);
+
+	/// <summary>Who gets a member's song settings when they change: that member, and the admins of the song's band.</summary>
+	public Guid[] SongSettingAudience(SongSetting setting)
+	{
+		var groupId = SongGroupId(setting.SongId);
+		var admins = groupId == null
+			? []
+			: context.Memberships.Where(m => m.GroupId == groupId && !m.Removed && m.RoleEnum == RoleEnum.Admin).Select(m => m.MemberId).ToArray();
+		return admins.Append(setting.MemberId).Distinct().ToArray();
 	}
 
 	private Guid? SongGroupId(Guid songId)

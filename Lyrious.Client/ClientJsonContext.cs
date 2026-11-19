@@ -69,6 +69,11 @@ internal sealed record PlayDto(
     System.Guid Id, System.Guid PlaylogId, System.Guid SongId, System.Guid ConductorId,
     string? KeyString, float Tempo, int DurationMilliSeconds, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum = 0);
 
+/// <summary>A member's own settings for a song (their transpose and lyrics).</summary>
+internal sealed record SongSettingDto(
+    System.Guid Id, System.Guid MemberId, System.Guid SongId, int Transpose, string? Lyrics,
+    System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum = 0, bool TransposeOff = false);
+
 internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int MembershipStatusEnum, System.Guid GroupId, System.Guid MemberId, bool Removed);
 
 /// <summary>
@@ -107,4 +112,5 @@ internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int Membershi
 [JsonSerializable(typeof(LrclibTrack[]))]
 [JsonSerializable(typeof(PlaylogDto))]
 [JsonSerializable(typeof(PlayDto))]
+[JsonSerializable(typeof(SongSettingDto))]
 internal sealed partial class ClientJsonContext : JsonSerializerContext;

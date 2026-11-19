@@ -73,6 +73,8 @@ public sealed class HttpSetlistService : ISetlistService
 
     public event Action<string>? MySettingsChanged;
 
+    public event Action<Guid>? MySongSettingChanged;
+
     public event Action? StatusChanged;
 
     public SyncStatus Status => new(engine.Online, cache?.PendingCount ?? 0, cache?.LastSynced, engine.Problem);
@@ -434,6 +436,10 @@ public sealed class HttpSetlistService : ISetlistService
         {
             FollowJoinedGroup(current);
         }
+        else if (type == "songsetting" && current.Find("songsetting", id) is { } setting)
+        {
+            MySongSettingChanged?.Invoke(As(setting, ClientJsonContext.Default.SongSettingDto).SongId);
+        }
 
         if (type is "member" or "membership")
         {
@@ -461,6 +467,13 @@ public sealed class HttpSetlistService : ISetlistService
         else if (type == "member")
         {
             FollowJoinedGroup(current);
+        }
+        else if (type == "songsetting")
+        {
+            foreach (var setting in shown)
+            {
+                MySongSettingChanged?.Invoke(As(setting, ClientJsonContext.Default.SongSettingDto).SongId);
+            }
         }
 
         if (type is "member" or "membership")
@@ -712,6 +725,97 @@ public sealed class HttpSetlistService : ISetlistService
         current.Update("play", playId, new JsonObject { ["durationMilliSeconds"] = (int)Math.Min(total, int.MaxValue) });
         Queued(current);
     }
+
+    public async Task<MySongSetting> GetMySongSettingAsync(Guid songId, CancellationToken cancellationToken = default)
+    {
+        if (auth.MemberId is not { } memberId)
+        {
+            return MySongSetting.None;
+        }
+
+        var current = await CacheAsync();
+        return MySetting(current, memberId, songId) is { } setting
+            ? new MySongSetting(Math.Clamp(setting.Transpose, MySongSetting.MinTranspose, MySongSetting.MaxTranspose), setting.Lyrics ?? "", setting.TransposeOff)
+            : MySongSetting.None;
+    }
+
+    public async Task SaveMySongSettingAsync(Guid songId, MySongSetting setting, CancellationToken cancellationToken = default)
+    {
+        var memberId = auth.MemberId ?? throw new InvalidOperationException(L.T("You're not logged in."));
+        var transpose = Math.Clamp(setting.Transpose, MySongSetting.MinTranspose, MySongSetting.MaxTranspose);
+        var lyrics = setting.Lyrics ?? "";
+        var current = await CacheAsync();
+        if (MySetting(current, memberId, songId) is { } stored)
+        {
+            if (stored.Transpose == transpose && (stored.Lyrics ?? "") == lyrics && stored.TransposeOff == setting.TransposeOff)
+            {
+                return;
+            }
+
+            current.Update("songsetting", stored.Id, new JsonObject { ["transpose"] = transpose, ["lyrics"] = lyrics, ["transposeOff"] = setting.TransposeOff });
+        }
+        else
+        {
+            var now = DateTime.Now;
+            current.Create("songsetting", Node(new SongSettingDto(Guid.NewGuid(), memberId, songId, transpose, lyrics, now, now, Removed: false, TransposeOff: setting.TransposeOff), ClientJsonContext.Default.SongSettingDto));
+        }
+
+        Queued(current);
+    }
+
+    public async Task<IReadOnlyList<MemberLyrics>> GetMembersLyricsAsync(Guid groupId, Guid songId, CancellationToken cancellationToken = default)
+    {
+        if (auth.MemberId is not { } me)
+        {
+            return [];
+        }
+
+        var members = (await GetGroupMembersAsync(cancellationToken)).GetValueOrDefault(groupId) ?? [];
+        if (!members.Any(member => member.IsMe && member.Role == GroupRole.Admin))
+        {
+            return [];
+        }
+
+        var current = await CacheAsync();
+        return members
+            .Where(member => !member.IsMe && member.Approved)
+            .OrderBy(member => member.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(member => new MemberLyrics(member.MemberId, member.Name, MySetting(current, member.MemberId, songId)?.Lyrics ?? ""))
+            .ToArray();
+    }
+
+    public async Task SaveMemberLyricsAsync(Guid songId, Guid memberId, string lyrics, CancellationToken cancellationToken = default)
+    {
+        _ = auth.MemberId ?? throw new InvalidOperationException(L.T("You're not logged in."));
+        var current = await CacheAsync();
+        if (MySetting(current, memberId, songId) is { } stored)
+        {
+            if ((stored.Lyrics ?? "") == lyrics)
+            {
+                return;
+            }
+
+            // Only the lyrics: their transpose stays theirs.
+            current.Update("songsetting", stored.Id, new JsonObject { ["lyrics"] = lyrics });
+        }
+        else if (lyrics.Length > 0)
+        {
+            var now = DateTime.Now;
+            current.Create("songsetting", Node(new SongSettingDto(Guid.NewGuid(), memberId, songId, 0, lyrics, now, now, Removed: false), ClientJsonContext.Default.SongSettingDto));
+        }
+        else
+        {
+            return;
+        }
+
+        Queued(current);
+    }
+
+    /// <summary>The member's own settings for the song (the latest, should two devices have made one each offline).</summary>
+    private static SongSettingDto? MySetting(EntityCache current, Guid memberId, Guid songId) =>
+        Live(current, "songsetting", ClientJsonContext.Default.SongSettingDto)
+            .Where(o => o.MemberId == memberId && o.SongId == songId)
+            .MaxBy(o => o.ChangedAt);
 
     private static JsonObject Node<T>(T value, JsonTypeInfo<T> type) => (JsonObject)JsonSerializer.SerializeToNode(value, type)!;
 

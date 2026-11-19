@@ -49,7 +49,7 @@ namespace Lyrious.UILib.Setlists
 
 		private readonly ISetlistService service;
 		private readonly TextBlock groupName = new() { Text = L.T("Choose a band"), FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
-		private readonly TextBlock setlistTitle = new() { Text = L.T("Setlist"), FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+		private readonly TextBlock setlistTitle = new() { Text = L.T("Setlist"), FontSize = 20, FontWeight = FontWeight.Bold, TextTrimming = TextTrimming.CharacterEllipsis, Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Center };
 		private readonly ContentControl setlistDrawerBody = new();
 		private readonly TextBlock currentSetlistName = new() { Text = L.T("Choose a setlist"), FontSize = 18, FontWeight = FontWeight.Normal, FontStyle = FontStyle.Italic, TextTrimming = TextTrimming.CharacterEllipsis };
 		private readonly TextBlock currentSongName = new() { Text = NoSong, FontSize = 18, FontWeight = FontWeight.Normal, FontStyle = FontStyle.Italic, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -207,7 +207,7 @@ namespace Lyrious.UILib.Setlists
 			topRow = new Grid { Margin = new Thickness(4), VerticalAlignment = VerticalAlignment.Top, Children = { menuButton, setlistButton } };
 			page.Margin = PageMargin;
 
-			setlistDrawer = Drawer(SplitViewPanePlacement.Right, 320);
+			setlistDrawer = Drawer(SplitViewPanePlacement.Right, 280);
 			// The playback toolbar sits under the lyrics page, also in focus mode.
 			DockPanel.SetDock(playbackBar, Dock.Bottom);
 			notice = new Border
@@ -400,6 +400,7 @@ namespace Lyrious.UILib.Setlists
 			service.MembersChanged += OnMembersChanged;
 			service.StatusChanged += OnStatusChanged;
 			service.JoinedGroupChanged += OnJoinedGroupChanged;
+			service.MySongSettingChanged += OnMySongSettingChanged;
 			// The user's colours, the same on all their devices.
 			UserSettings.Attach(service, user.UserName);
 			OnStatusChanged();
@@ -435,6 +436,7 @@ namespace Lyrious.UILib.Setlists
 			service.MembersChanged -= OnMembersChanged;
 			service.StatusChanged -= OnStatusChanged;
 			service.JoinedGroupChanged -= OnJoinedGroupChanged;
+			service.MySongSettingChanged -= OnMySongSettingChanged;
 			UserSettings.Detach();
 			_ = service.StopLiveUpdatesAsync();
 		}
@@ -913,6 +915,36 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>A member or membership changed (a name, the band someone has joined): who's there may have too.</summary>
 		private void OnMembersChanged() => Dispatcher.UIThread.Post(() => _ = ShowPresentMembersAsync());
+
+		/// <summary>The member's own settings for a song changed on another of their devices: the lyrics showing it follow.</summary>
+		private void OnMySongSettingChanged(Guid songId) => Dispatcher.UIThread.Post(async () =>
+		{
+			if (page.Content is LyricScrollView lyrics && lyrics.SongId == songId && !lyrics.IsEditing)
+			{
+				try
+				{
+					var setting = await service.GetMySongSettingAsync(songId);
+					if (page.Content == lyrics && !lyrics.IsEditing)
+					{
+						lyrics.MySetting = setting;
+					}
+				}
+				catch (Exception ex)
+				{
+					System.Diagnostics.Debug.WriteLine($"Couldn't read the member's own song settings: {ex.Message}");
+				}
+			}
+		});
+
+		/// <summary>Gives the lyrics page the member's own transpose and lyrics for the song.</summary>
+		private void UseMySetting(LyricScrollView view, Guid groupId, Guid songId)
+		{
+			// The band's admins also see, change and add the other members' own lyrics.
+			view.LoadMembersLyrics = () => service.GetMembersLyricsAsync(groupId, songId);
+			view.SaveMemberLyrics = (memberId, lyrics) => service.SaveMemberLyricsAsync(songId, memberId, lyrics);
+
+			view.UseMySetting(() => service.GetMySongSettingAsync(songId), setting => service.SaveMySongSettingAsync(songId, setting));
+		}
 
 		private int presentMembersLoad;
 
@@ -1516,19 +1548,15 @@ namespace Lyrious.UILib.Setlists
 			var addMenuOpen = false;
 			var addMenuJustClosed = false;
 			var pressClosesMenu = false;
-			addSongsButton.Flyout.Opened += (_, _) => { addMenuOpen = true; Console.WriteLine("[drawer-trace] menu opened"); };
+			addSongsButton.Flyout.Opened += (_, _) => addMenuOpen = true;
 			addSongsButton.Flyout.Closed += (_, _) =>
 			{
 				addMenuOpen = false;
 				addMenuJustClosed = true;
-				Console.WriteLine("[drawer-trace] menu closed");
 				Dispatcher.UIThread.Post(() => addMenuJustClosed = false, DispatcherPriority.Background);
 			};
-			AddHandler(PointerPressedEvent, (_, _) =>
-			{
-				pressClosesMenu = addMenuOpen || addMenuJustClosed;
-				Console.WriteLine($"[drawer-trace] press, keep drawer: {pressClosesMenu}");
-			}, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+			AddHandler(PointerPressedEvent, (_, _) => pressClosesMenu = addMenuOpen || addMenuJustClosed,
+				Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 			AddHandler(PointerReleasedEvent, (_, _) =>
 			{
 				if (pressClosesMenu)
@@ -1539,7 +1567,6 @@ namespace Lyrious.UILib.Setlists
 			}, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 			setlistDrawer.PaneClosing += (_, e) =>
 			{
-				Console.WriteLine($"[drawer-trace] drawer closing, cancel: {pressClosesMenu}");
 				if (pressClosesMenu)
 				{
 					e.Cancel = true;
@@ -1622,6 +1649,65 @@ namespace Lyrious.UILib.Setlists
 			setlistDrawer.PaneClosed += (_, _) => drawerStayTimer.Stop();
 			// A drawer that slid away opens without a search the next time.
 			setlistDrawer.PaneClosed += (_, _) => ShowSearch(false);
+
+			// A name cut short (…) is shown whole while hovered with a mouse or pen, or after a tap on a
+			// touch screen until the next tap: the tools but ✕ step aside for it.
+			var hiddenForTitle = new List<Control>();
+
+			void ShowWholeTitle()
+			{
+				if (hiddenForTitle.Count > 0 || setlistTitle.TextLayout?.TextLines.Any(line => line.HasCollapsed) != true)
+				{
+					return;
+				}
+
+				foreach (var tool in buttons.Children.Take(buttons.Children.Count - 1).Where(tool => tool.IsVisible).ToList())
+				{
+					tool.IsVisible = false;
+					hiddenForTitle.Add(tool);
+				}
+			}
+
+			void ShowTools()
+			{
+				foreach (var tool in hiddenForTitle)
+				{
+					tool.IsVisible = true;
+				}
+
+				hiddenForTitle.Clear();
+			}
+
+			setlistTitle.PointerEntered += (_, e) =>
+			{
+				if (e.Pointer.Type != Avalonia.Input.PointerType.Touch)
+				{
+					ShowWholeTitle();
+				}
+			};
+			setlistTitle.PointerExited += (_, e) =>
+			{
+				if (e.Pointer.Type != Avalonia.Input.PointerType.Touch)
+				{
+					ShowTools();
+				}
+			};
+			setlistTitle.PointerReleased += (_, e) =>
+			{
+				if (e.Pointer.Type == Avalonia.Input.PointerType.Touch)
+				{
+					if (hiddenForTitle.Count > 0)
+					{
+						ShowTools();
+					}
+					else
+					{
+						ShowWholeTitle();
+					}
+				}
+			};
+			// The tools are back when the drawer opens again.
+			setlistDrawer.PaneClosed += (_, _) => ShowTools();
 
 			Grid.SetColumn(buttons, 1);
 			Grid.SetColumn(endSearchButton, 1);
@@ -2511,6 +2597,7 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var view = new LyricScrollView(entry.Song, edited => service.UpdateSongAsync(edited));
+			UseMySetting(view, group.Id, entry.Song.Id);
 			ShowMidiProblems(view, group.Id);
 			ShowLyricsPage(view, group.Id);
 			// The song's MIDI tags set the instruments, effects and lights for it.
@@ -2667,6 +2754,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			// The same editor as the pencil on a song's lyrics.
 			var view = new LyricScrollView(song, edited => service.UpdateSongAsync(edited), startEditing: true) { EditorOnly = true };
+			UseMySetting(view, group.Id, song.Id);
 			ShowMidiProblems(view, group.Id);
 			// Back to the songbook it was opened from (nothing changed), which ✕ then leaves as usual.
 			view.EditCancelled += GoBack;
@@ -2726,6 +2814,7 @@ namespace Lyrious.UILib.Setlists
 			SetCurrentSong(song, null);
 
 			var view = new LyricScrollView(song, edited => service.UpdateSongAsync(edited), startEditing);
+			UseMySetting(view, group.Id, song.Id);
 			ShowMidiProblems(view, group.Id);
 			ShowLyricsPage(view, group.Id);
 			if (!startEditing)

@@ -23,6 +23,14 @@ public sealed class ChangeNotifier(IHubContext<LyriousHub> hub, LyriousRepositor
 			foreach (var entity in storedEntities)
 			{
 				var payload = ToPayload(entity);
+				if (entity is SongSetting setting)
+				{
+					// A member's own song settings go to their own devices and the band's admins only, never to the band.
+					var audience = repo.SongSettingAudience(setting).Select(id => id.ToString()).ToArray();
+					await hub.Clients.Users(audience).SendAsync(method, new[] { payload });
+					continue;
+				}
+
 				foreach (var groupId in repo.GroupIdsOf(entity))
 				{
 					if (!byGroup.TryGetValue(groupId, out var list))

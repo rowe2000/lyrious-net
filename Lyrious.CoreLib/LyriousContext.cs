@@ -24,6 +24,7 @@ public class LyriousContext : LocalContext<Member, Role>
 	public DbSet<SetlistItem> SetlistItems { get; set; }
 	public DbSet<Song> Songs { get; set; }
 	public DbSet<Songbook> Songbooks { get; set; }
+	public DbSet<SongSetting> SongSettings { get; set; }
 
 	/// <summary>
 	/// Creates the database if there is none, and brings an existing one up to date: EnsureCreated
@@ -45,6 +46,8 @@ public class LyriousContext : LocalContext<Member, Role>
 			AddColumnIfMissing(nameof(Groups), nameof(Group.IsPrivate), sqlite ? "INTEGER NOT NULL DEFAULT 0" : "bit NOT NULL DEFAULT 0");
 			AddColumnIfMissing(nameof(Groups), nameof(Group.MidiCommands), sqlite ? "TEXT NULL" : $"{NVarChar(Group.MaxMidiCommandsLength)} NULL");
 			AddColumnIfMissing(nameof(Groups), nameof(Group.MidiExpressions), sqlite ? "TEXT NULL" : $"{NVarChar(Group.MaxMidiExpressionsLength)} NULL");
+			CreateSongSettingsIfMissing(sqlite);
+			AddColumnIfMissing(nameof(SongSettings), nameof(SongSetting.TransposeOff), sqlite ? "INTEGER NOT NULL DEFAULT 0" : "bit NOT NULL DEFAULT 0");
 			AddColumnIfMissing(nameof(Members), nameof(Member.Settings), sqlite ? "TEXT NULL" : $"{NVarChar(Member.MaxSettingsLength)} NULL");
 		}
 
@@ -56,6 +59,52 @@ public class LyriousContext : LocalContext<Member, Role>
 	/// longer limit is nvarchar(max) (as Entity Framework makes it when it creates the database).
 	/// </summary>
 	private static string NVarChar(int length) => length > 4000 ? "nvarchar(max)" : $"nvarchar({length})";
+
+	/// <summary>The members' own song settings (added after the first databases were made).</summary>
+	private void CreateSongSettingsIfMissing(bool sqlite)
+	{
+		var sql = sqlite
+			? """
+			  CREATE TABLE IF NOT EXISTS "SongSettings" (
+			    "Id" TEXT NOT NULL CONSTRAINT "PK_SongSettings" PRIMARY KEY,
+			    "MemberId" TEXT NOT NULL, "SongId" TEXT NOT NULL,
+			    "Transpose" INTEGER NOT NULL DEFAULT 0, "Lyrics" TEXT NOT NULL DEFAULT '',
+			    "CreatedAt" TEXT NOT NULL, "ChangedAt" TEXT NOT NULL,
+			    "Removed" INTEGER NOT NULL DEFAULT 0, "Checksum" INTEGER NOT NULL DEFAULT 0)
+			  """
+			: $"""
+			  IF OBJECT_ID('SongSettings') IS NULL
+			  BEGIN
+			    CREATE TABLE [SongSettings] (
+			      [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_SongSettings] PRIMARY KEY,
+			      [MemberId] uniqueidentifier NOT NULL, [SongId] uniqueidentifier NOT NULL,
+			      [Transpose] int NOT NULL DEFAULT 0, [Lyrics] {NVarChar(SongSetting.MaxLyricsLength)} NOT NULL DEFAULT '',
+			      [CreatedAt] datetime2 NOT NULL, [ChangedAt] datetime2 NOT NULL,
+			      [Removed] bit NOT NULL DEFAULT 0, [Checksum] bigint NOT NULL DEFAULT 0);
+			    PRINT 'created'
+			  END
+			  """;
+		var connection = Database.GetDbConnection();
+		var wasClosed = connection.State != System.Data.ConnectionState.Open;
+		if (wasClosed)
+		{
+			connection.Open();
+		}
+
+		try
+		{
+			using var command = connection.CreateCommand();
+			command.CommandText = sql;
+			command.ExecuteNonQuery();
+		}
+		finally
+		{
+			if (wasClosed)
+			{
+				connection.Close();
+			}
+		}
+	}
 
 	private void AddColumnIfMissing(string table, string column, string definition)
 	{

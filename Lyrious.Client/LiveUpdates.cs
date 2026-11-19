@@ -23,7 +23,7 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
     [
         ("Group", "group"), ("Member", "member"), ("Membership", "membership"), ("Songbook", "songbook"),
         ("Song", "song"), ("Setlist", "setlist"), ("SetlistItem", "setlistitem"),
-        ("Playlog", "playlog"), ("Play", "play"),
+        ("Playlog", "playlog"), ("Play", "play"), ("SongSetting", "songsetting"),
     ];
 
     private HubConnection? connection;
