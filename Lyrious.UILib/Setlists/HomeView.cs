@@ -1868,11 +1868,16 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>After login: the start page, with the screen of what's new since the last visit over it.</summary>
-		private Task StartAsync() => RunAsync(async () =>
+		private Task StartAsync()
 		{
-			await OpenStartPageAsync();
-			await ShowOnboardingAsync();
-		});
+			// The singer while the bands are fetched (the first sync after login), until the start page.
+			page.Content = new SplashView("Getting your songs and setlists…");
+			return RunAsync(async () =>
+			{
+				await OpenStartPageAsync();
+				await ShowOnboardingAsync();
+			});
+		}
 
 		/// <summary>
 		/// Shows what changed since the member's last visit on this device, and the release notes since
@@ -3055,7 +3060,8 @@ namespace Lyrious.UILib.Setlists
 			try
 			{
 				var task = action();
-				if (await Task.WhenAny(task, Task.Delay(LoadingDelay)) != task && page.Content == previous)
+				// (The splash at start already says the app is busy.)
+				if (await Task.WhenAny(task, Task.Delay(LoadingDelay)) != task && page.Content == previous && previous is not SplashView)
 				{
 					page.Content = new ProgressBar { IsIndeterminate = true, Width = 200, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
 				}
@@ -3065,7 +3071,7 @@ namespace Lyrious.UILib.Setlists
 			catch (Exception ex)
 			{
 				var retry = new Button { Content = "Try again", HorizontalAlignment = HorizontalAlignment.Center };
-				retry.Click += (_, _) => _ = previous == null ? StartAsync() : RunAsync(action);
+				retry.Click += (_, _) => _ = previous is null or SplashView ? StartAsync() : RunAsync(action);
 				ShowMessage($"Something went wrong. {ex.Message}", retry);
 			}
 		}

@@ -48,7 +48,27 @@
 .avalonia-splash a {
     text-decoration: none;
     font-size: 2.5rem;
-    display: block;   
+    display: block;
+}
+
+/* The singer above the app's name. */
+.avalonia-splash .splash-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.avalonia-splash .splash-logo {
+    width: min(220px, 45vw);
+    height: auto;
+}
+
+.avalonia-splash .splash-content h2 {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
 }
 
 .avalonia-splash.splash-close {

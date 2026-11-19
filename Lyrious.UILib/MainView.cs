@@ -75,17 +75,7 @@ namespace Lyrious.UILib
 			login.ShowError($"Couldn't log in with the saved password. {error}");
 		}
 
-		private static Control Splash(string text) => new StackPanel
-		{
-			Spacing = 12,
-			HorizontalAlignment = HorizontalAlignment.Center,
-			VerticalAlignment = VerticalAlignment.Center,
-			Children =
-			{
-				new TextBlock { Text = text, FontSize = 18, HorizontalAlignment = HorizontalAlignment.Center },
-				new ProgressBar { IsIndeterminate = true, Width = 200 },
-			},
-		};
+		private static Control Splash(string text) => new SplashView(text);
 
 		private void ShowLogin() => ShowLogin(null, null);
 
