@@ -12,9 +12,10 @@ namespace Lyrious.Desktop;
 
 /// <summary>
 /// Sound files for songs' media links, in the "sounds" folder next to the settings (in the user's
-/// application data folder). On Windows they're played in the app (NAudio), through SoundTouch,
-/// so the speed and the pitch can each be changed without the other. Elsewhere, and for a file
-/// Windows can't decode, the computer's own player for the file type plays it.
+/// application data folder). They're played in the app, so the speed and the pitch can each be
+/// changed without the other: on Windows through NAudio and SoundTouch, on macOS through its audio
+/// engine (<see cref="MacSoundPlayer"/>). Elsewhere, and for a file the computer can't decode, the
+/// computer's own player for the file type plays it.
 /// </summary>
 internal sealed class FileSoundStore : ISoundStore
 {
@@ -26,6 +27,7 @@ internal sealed class FileSoundStore : ISoundStore
     private WaveOutEvent? output;
     private MediaFoundationReader? reader;
     private Stretched? stretch;
+    private MacSoundPlayer? mac;
     private string? playing;
     private double speed = 1;
     private double pitch;
@@ -43,9 +45,9 @@ internal sealed class FileSoundStore : ISoundStore
 
     public event Action? PlayingChanged;
 
-    public bool CanChangeSpeed => OperatingSystem.IsWindows();
+    public bool CanChangeSpeed => OperatingSystem.IsWindows() || (OperatingSystem.IsMacOS() && MacSoundPlayer.IsAvailable);
 
-    public bool CanChangePitch => OperatingSystem.IsWindows();
+    public bool CanChangePitch => CanChangeSpeed;
 
     public double Speed
     {
@@ -58,6 +60,11 @@ internal sealed class FileSoundStore : ISoundStore
                 if (stretch != null)
                 {
                     stretch.Processor.Tempo = speed;
+                }
+
+                if (OperatingSystem.IsMacOS())
+                {
+                    mac?.SetSpeed(speed);
                 }
             }
         }
@@ -74,6 +81,11 @@ internal sealed class FileSoundStore : ISoundStore
                 if (stretch != null)
                 {
                     stretch.Processor.PitchSemiTones = pitch;
+                }
+
+                if (OperatingSystem.IsMacOS())
+                {
+                    mac?.SetPitch(pitch);
                 }
             }
         }
@@ -143,6 +155,11 @@ internal sealed class FileSoundStore : ISoundStore
             return Task.FromResult(true);
         }
 
+        if (OperatingSystem.IsMacOS() && MacSoundPlayer.IsAvailable && TryPlayOnMac(id, path))
+        {
+            return Task.FromResult(true);
+        }
+
         // The player the computer opens this kind of file with.
         using var player = Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         return Task.FromResult(true);
@@ -198,12 +215,73 @@ internal sealed class FileSoundStore : ISoundStore
         }
     }
 
+    /// <summary>Plays the file in the app on macOS; false when macOS can't decode it.</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("macos")]
+    private bool TryPlayOnMac(string id, string path)
+    {
+        try
+        {
+            MacSoundPlayer sound;
+            lock (gate)
+            {
+                sound = MacSoundPlayer.Play(path, speed, pitch);
+                mac = sound;
+                playing = id;
+            }
+
+            sound.Ended += () =>
+            {
+                // Played to the end: only for the sound that's still the one playing.
+                if (ReleaseMac(sound))
+                {
+                    PlayingChanged?.Invoke();
+                }
+            };
+            PlayingChanged?.Invoke();
+            return true;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Debug.WriteLine($"Couldn't play the sound in the app: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>Lets go of the macOS sound if it's still the one playing; true when it was.</summary>
+    private bool ReleaseMac(MacSoundPlayer sound)
+    {
+        lock (gate)
+        {
+            if (mac != sound)
+            {
+                return false;
+            }
+
+            mac = null;
+            playing = null;
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            sound.Dispose();
+        }
+
+        return true;
+    }
+
     public void Stop()
     {
         WaveOutEvent? device;
+        MacSoundPlayer? macSound;
         lock (gate)
         {
             device = output;
+            macSound = mac;
+        }
+
+        if (macSound != null && ReleaseMac(macSound))
+        {
+            PlayingChanged?.Invoke();
         }
 
         // Raises PlaybackStopped, which releases it.
