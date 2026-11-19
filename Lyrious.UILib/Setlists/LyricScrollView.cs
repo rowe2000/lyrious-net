@@ -1088,6 +1088,13 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private const double PinchDamping = 0.6;
 
+		/// <summary>The longest pause (ms) between wheel steps of one gesture (a scroll with its inertia, or a zoom).</summary>
+		private const ulong WheelGestureGap = 200;
+
+		// The wheel gesture going on: when its last step came, and whether it zooms (else it scrolls).
+		private ulong lastWheelTimestamp;
+		private bool wheelZooms;
+
 		/// <summary>Pinch (touch screen or touchpad) and Ctrl/⌘ + mouse wheel zoom the lyrics.</summary>
 		private void AddZoomGestures(ScrollViewer viewer)
 		{
@@ -1110,10 +1117,19 @@ namespace Lyrious.UILib.Setlists
 				e.Handled = true;
 				RequestZoom((pendingZoom ?? zoom) * Math.Pow(1 + e.Delta.X, PinchDamping), e.GetPosition(viewer).Y);
 			});
-			// Before the scroll viewer scrolls with it.
+			// Before the scroll viewer scrolls with it. Zoom or scroll is decided once per wheel gesture
+			// (wheel steps close together): by Ctrl/⌘ at its first step. So a quick scroll's inertia that
+			// goes on after Ctrl/⌘ is pressed keeps scrolling, and a zoom keeps zooming to its end.
 			viewer.AddHandler(PointerWheelChangedEvent, (_, e) =>
 			{
-				if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0 || e.Delta.Y == 0)
+				var newGesture = e.Timestamp - lastWheelTimestamp > WheelGestureGap;
+				lastWheelTimestamp = e.Timestamp;
+				if (newGesture)
+				{
+					wheelZooms = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+				}
+
+				if (!wheelZooms || e.Delta.Y == 0)
 				{
 					return;
 				}
