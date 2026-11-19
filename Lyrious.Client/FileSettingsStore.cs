@@ -4,16 +4,17 @@ using System.IO;
 using System.Text.Json;
 using Lyrious.UILib;
 
-namespace Lyrious.Desktop;
+namespace Lyrious.Client;
 
 /// <summary>
 /// Settings in a JSON file in the user's application data folder (on macOS
-/// ~/Library/Application Support/Lyrious/). A missing or unreadable file means no settings.
+/// ~/Library/Application Support/Lyrious/; on iOS the app's own Library folder). Used by the
+/// desktop and mobile apps. A missing or unreadable file means no settings.
 /// Thread-safe (the offline cache is saved in the background): one read or write of a file at a
 /// time, and a write replaces the file whole, so it's never seen half written.
 /// </summary>
 /// <param name="fileName">E.g. settings.json, or offline.json for the offline cache and logins.</param>
-internal sealed class FileSettingsStore(string fileName = "settings.json") : ISettingsStore
+public sealed class FileSettingsStore(string fileName = "settings.json") : ISettingsStore
 {
     private readonly string path = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Lyrious", fileName);

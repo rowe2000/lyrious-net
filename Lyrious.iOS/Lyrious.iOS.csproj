@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-ios</TargetFramework>
-    <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
@@ -13,5 +13,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Lyrious.UILib\Lyrious.UILib.csproj" />
+    <ProjectReference Include="..\Lyrious.Client\Lyrious.Client.csproj" />
   </ItemGroup>
 </Project>
