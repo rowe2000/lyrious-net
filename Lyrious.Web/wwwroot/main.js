@@ -415,14 +415,36 @@ globalThis.lyriousSounds = (() => {
 // The installed web app (PWA, see manifest.webmanifest): the service worker keeps a copy of the
 // app's files, so it starts without a connection. Service workers need a secure context (https,
 // or http://localhost); elsewhere the app simply isn't installable.
-const serviceWorker = "serviceWorker" in navigator
+// "?nosw" in the address leaves it out (and removes one installed before), e.g. while developing.
+const noServiceWorker = new URLSearchParams(location.search).has("nosw");
+if (noServiceWorker && "serviceWorker" in navigator) {
+    for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
+}
+const serviceWorker = "serviceWorker" in navigator && !noServiceWorker
     ? navigator.serviceWorker.register("./service-worker.js").catch(() => null)
     : null;
+// Whether the address the page came from is a Lyrious server itself (it answers "Pong"): the API
+// serving the web app, or a desktop app sharing it on the network, which passes everything on to
+// its server. Then the web app talks to that address, whatever host was saved here before (see
+// Program.cs). Not the dev server, which only serves the app's files. Asked while the app loads.
+const ownServer = (async () => {
+    try {
+        const response = await fetch("./api/ping", { method: "POST", cache: "no-store", signal: AbortSignal.timeout(3000) });
+        return response.ok && (await response.text()).includes("Pong");
+    } catch {
+        return false;
+    }
+})();
+
 // Room for all the app's files in the list of what the page loaded (250 by default).
 performance.setResourceTimingBufferSize?.(3000);
 
 const dotnetRuntime = await dotnet
     .withDiagnosticTracing(false)
+    // No debug symbols (.pdb): they're only for stepping through C# in the browser's developer
+    // tools, and the dev server sometimes answers "not found" for them while the page loads, which
+    // stopped the app from starting (stuck at the splash). A published app has none anyway.
+    .withConfig({ debugLevel: 0 })
     .withApplicationArgumentsFromQuery()
     .create();
 
@@ -440,4 +462,4 @@ const config = dotnetRuntime.getConfig();
 
 await settingsLoaded;
 
-await dotnetRuntime.runMain(config.mainAssemblyName, [globalThis.location.href]);
+await dotnetRuntime.runMain(config.mainAssemblyName, [globalThis.location.href, (await ownServer) ? "own-server" : ""]);

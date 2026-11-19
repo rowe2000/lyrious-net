@@ -38,18 +38,24 @@ public class LyriousContext : LocalContext<Member, Role>
 		{
 			var sqlite = Database.IsSqlite();
 			AddColumnIfMissing(nameof(Songs), nameof(Song.MediaLink), sqlite ? "TEXT NOT NULL DEFAULT ''" : "nvarchar(500) NOT NULL DEFAULT ''");
-			AddColumnIfMissing(nameof(Songs), nameof(Song.Tags), sqlite ? "TEXT NOT NULL DEFAULT ''" : $"nvarchar({Song.MaxTagsLength}) NOT NULL DEFAULT ''");
+			AddColumnIfMissing(nameof(Songs), nameof(Song.Tags), sqlite ? "TEXT NOT NULL DEFAULT ''" : $"{NVarChar(Song.MaxTagsLength)} NOT NULL DEFAULT ''");
 			AddColumnIfMissing(nameof(Songs), nameof(Song.OriginalKey), sqlite ? "TEXT NOT NULL DEFAULT ''" : "nvarchar(10) NOT NULL DEFAULT ''");
 			AddColumnIfMissing(nameof(Songs), nameof(Song.Artist), sqlite ? "TEXT NOT NULL DEFAULT ''" : "nvarchar(100) NOT NULL DEFAULT ''");
 			AddColumnIfMissing(nameof(Members), nameof(Member.LastLoginAt), sqlite ? "TEXT NULL" : "datetime2 NULL");
 			AddColumnIfMissing(nameof(Groups), nameof(Group.IsPrivate), sqlite ? "INTEGER NOT NULL DEFAULT 0" : "bit NOT NULL DEFAULT 0");
-			AddColumnIfMissing(nameof(Groups), nameof(Group.MidiCommands), sqlite ? "TEXT NULL" : $"nvarchar({Group.MaxMidiCommandsLength}) NULL");
-			AddColumnIfMissing(nameof(Groups), nameof(Group.MidiExpressions), sqlite ? "TEXT NULL" : $"nvarchar({Group.MaxMidiExpressionsLength}) NULL");
-			AddColumnIfMissing(nameof(Members), nameof(Member.Settings), sqlite ? "TEXT NULL" : $"nvarchar({Member.MaxSettingsLength}) NULL");
+			AddColumnIfMissing(nameof(Groups), nameof(Group.MidiCommands), sqlite ? "TEXT NULL" : $"{NVarChar(Group.MaxMidiCommandsLength)} NULL");
+			AddColumnIfMissing(nameof(Groups), nameof(Group.MidiExpressions), sqlite ? "TEXT NULL" : $"{NVarChar(Group.MaxMidiExpressionsLength)} NULL");
+			AddColumnIfMissing(nameof(Members), nameof(Member.Settings), sqlite ? "TEXT NULL" : $"{NVarChar(Member.MaxSettingsLength)} NULL");
 		}
 
 		return created;
 	}
+
+	/// <summary>
+	/// SQL Server's text type for at most that many characters: nvarchar(n) holds up to 4000, so a
+	/// longer limit is nvarchar(max) (as Entity Framework makes it when it creates the database).
+	/// </summary>
+	private static string NVarChar(int length) => length > 4000 ? "nvarchar(max)" : $"nvarchar({length})";
 
 	private void AddColumnIfMissing(string table, string column, string definition)
 	{

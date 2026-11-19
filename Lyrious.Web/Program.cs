@@ -19,15 +19,23 @@ internal sealed partial class Program
     private const string DefaultApiBaseUrl = "http://localhost:5180/";
 
     /// <param name="args">
-    /// [0] is the page URL (see wwwroot/main.js); <c>?api=...</c> sets the API address. Else the
-    /// host chosen on the Sync page last time (in the browser's IndexedDB), else where the page
-    /// itself comes from: the API serves the web app, on the same address.
+    /// [0] is the page URL (see wwwroot/main.js); <c>?api=...</c> sets the API address. [1] is
+    /// "own-server" when the page's address is a Lyrious server itself (the API serving the web app,
+    /// or a desktop app sharing it on the network): then that address is used, whatever host was
+    /// saved. Else the host chosen on the Sync page last time (in the browser's IndexedDB), else
+    /// where the page itself comes from.
     /// </param>
     private static Task Main(string[] args)
     {
         var settings = new BrowserSettingsStore();
         App.Settings = settings;
-        var apiBaseUrl = GetApiBaseUrl(args.FirstOrDefault(), settings.Get(SettingKeys.Host));
+        var ownServer = args.Length > 1 && args[1] == "own-server";
+        var apiBaseUrl = GetApiBaseUrl(args.FirstOrDefault(), ownServer ? null : settings.Get(SettingKeys.Host), out var fromQuery);
+        if (fromQuery)
+        {
+            // Given in the address: remembered as the host, so it's needed only once.
+            settings.Set(SettingKeys.Host, apiBaseUrl.AbsoluteUri.TrimEnd('/'));
+        }
         // The offline cache and offline logins, kept apart from the settings.
         var offline = new BrowserSettingsStore("lyrious.offline.");
         var auth = new HttpAuthService(new HttpClient { BaseAddress = apiBaseUrl }, offline, new BrowserPasswordHasher());
@@ -48,8 +56,10 @@ internal sealed partial class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>();
 
-    private static Uri GetApiBaseUrl(string? pageUrl, string? savedHost)
+    /// <param name="fromQuery">Whether the address came from <c>?api=...</c>.</param>
+    private static Uri GetApiBaseUrl(string? pageUrl, string? savedHost, out bool fromQuery)
     {
+        fromQuery = false;
         var query = Uri.TryCreate(pageUrl, UriKind.Absolute, out var page) ? page.Query.TrimStart('?') : "";
         var api = query.Split('&')
             .Select(part => part.Split('=', 2))
@@ -58,7 +68,13 @@ internal sealed partial class Program
             .FirstOrDefault();
 
         // Relative API paths ("api/auth/login") resolve under the base address, so it must end with '/'.
-        if (Uri.TryCreate(api, UriKind.Absolute, out var uri) || Uri.TryCreate(savedHost, UriKind.Absolute, out uri))
+        if (Uri.TryCreate(api, UriKind.Absolute, out var uri))
+        {
+            fromQuery = true;
+            return new Uri(uri.AbsoluteUri.TrimEnd('/') + "/");
+        }
+
+        if (Uri.TryCreate(savedHost, UriKind.Absolute, out uri))
         {
             return new Uri(uri.AbsoluteUri.TrimEnd('/') + "/");
         }

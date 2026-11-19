@@ -261,7 +261,9 @@ namespace Lyrious.UILib
 			{
 				if (SameHost(address, current))
 				{
-					Content = home; // Unchanged.
+					// Unchanged, but remembered: it may only have come from the page's address (Web's ?api=).
+					App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
+					Content = home;
 					return;
 				}
 
@@ -289,6 +291,8 @@ namespace Lyrious.UILib
 			{
 				if (SameHost(address, current))
 				{
+					// The same server, but remembered: it may only have come from the page's address (Web's ?api=).
+					App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
 					ShowLogin();
 					return;
 				}
