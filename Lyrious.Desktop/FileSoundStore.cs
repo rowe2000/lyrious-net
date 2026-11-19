@@ -91,6 +91,63 @@ internal sealed class FileSoundStore : ISoundStore
         }
     }
 
+    public TimeSpan? Position
+    {
+        get
+        {
+            MacSoundPlayer? macSound;
+            lock (gate)
+            {
+                if (reader != null)
+                {
+                    return reader.CurrentTime;
+                }
+
+                macSound = mac;
+            }
+
+            return OperatingSystem.IsMacOS() ? macSound?.Position : null;
+        }
+    }
+
+    public TimeSpan? Duration
+    {
+        get
+        {
+            lock (gate)
+            {
+                if (reader != null)
+                {
+                    return reader.TotalTime;
+                }
+
+                return OperatingSystem.IsMacOS() ? mac?.Duration : null;
+            }
+        }
+    }
+
+    public void Seek(TimeSpan position)
+    {
+        MacSoundPlayer? macSound;
+        lock (gate)
+        {
+            if (reader != null && stretch != null)
+            {
+                // Read under the lock too: SoundTouch drops what it holds of the old place.
+                reader.CurrentTime = position < TimeSpan.Zero ? TimeSpan.Zero : position > reader.TotalTime ? reader.TotalTime : position;
+                stretch.Restart();
+                return;
+            }
+
+            macSound = mac;
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            macSound?.Seek(position);
+        }
+    }
+
     public async Task SaveAsync(string id, Stream content)
     {
         Directory.CreateDirectory(folder);
@@ -341,6 +398,13 @@ internal sealed class FileSoundStore : ISoundStore
         }
 
         public SoundTouchProcessor Processor { get; }
+
+        /// <summary>After the file moved (a seek, under the lock): what SoundTouch holds is dropped, and the file goes on from there.</summary>
+        public void Restart()
+        {
+            Processor.Clear();
+            ended = false;
+        }
 
         public WaveFormat WaveFormat => source.WaveFormat;
 

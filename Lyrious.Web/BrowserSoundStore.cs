@@ -107,6 +107,12 @@ internal sealed partial class BrowserSoundStore : ISoundStore
         PlayingChanged?.Invoke();
     }
 
+    public TimeSpan? Position => GetPosition() is var seconds and >= 0 ? TimeSpan.FromSeconds(seconds) : null;
+
+    public TimeSpan? Duration => GetDuration() is var seconds and > 0 ? TimeSpan.FromSeconds(seconds) : null;
+
+    public void Seek(TimeSpan position) => SeekNow(position.TotalSeconds);
+
     private static string MimeTypeOf(string id) => Path.GetExtension(id).ToLowerInvariant() switch
     {
         ".mp3" => "audio/mpeg",
@@ -145,6 +151,15 @@ internal sealed partial class BrowserSoundStore : ISoundStore
 
     [JSImport("globalThis.lyriousSounds.playing")]
     private static partial string? GetPlaying();
+
+    [JSImport("globalThis.lyriousSounds.position")]
+    private static partial double GetPosition();
+
+    [JSImport("globalThis.lyriousSounds.duration")]
+    private static partial double GetDuration();
+
+    [JSImport("globalThis.lyriousSounds.seek")]
+    private static partial void SeekNow(double seconds);
 
     [JSImport("globalThis.lyriousSounds.canChangePitch")]
     private static partial bool GetCanChangePitch();

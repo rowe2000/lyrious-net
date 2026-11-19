@@ -82,20 +82,18 @@ namespace Lyrious.UILib.Setlists
 				{
 					foreach (var song in await service.GetSongbookSongsAsync(group.Id))
 					{
-						if (MediaLinks.SoundOf(song.MediaLink) is not { } sound)
+						foreach (var sound in MediaLinks.SoundsOf(song.MediaLink))
 						{
-							continue;
-						}
+							if (!bySound.TryGetValue(sound.Id, out var entry))
+							{
+								entry = (sound.Name, new List<string>());
+								bySound[sound.Id] = entry;
+							}
 
-						if (!bySound.TryGetValue(sound.Id, out var entry))
-						{
-							entry = (sound.Name, new List<string>());
-							bySound[sound.Id] = entry;
-						}
-
-						if (!entry.Songs.Contains(song.Name))
-						{
-							entry.Songs.Add(song.Name);
+							if (!entry.Songs.Contains(song.Name))
+							{
+								entry.Songs.Add(song.Name);
+							}
 						}
 					}
 				}

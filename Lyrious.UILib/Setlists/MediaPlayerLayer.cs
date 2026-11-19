@@ -40,6 +40,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Whether the player shows (under its media button).</summary>
 		public bool IsShown { get; private set; }
 
+		/// <summary>The embed player's address playing now (shown or not); null when none plays.</summary>
+		public Uri? Source => web != null ? source : null;
+
 		/// <summary>The song whose link is playing; null when nothing plays.</summary>
 		public Guid? SongId { get; private set; }
 

@@ -21,6 +21,9 @@ internal sealed class MacSoundPlayer : IDisposable
     private readonly IntPtr timePitch;
     private readonly IntPtr file;
     private readonly long length;
+    private readonly double sampleRate;
+    // Where the player was last scheduled from (a seek): its own time counts from there.
+    private long startFrame;
     private readonly Timer endWatch;
     // The native objects are used and released under this, from any thread.
     private readonly object gate = new();
@@ -32,8 +35,9 @@ internal sealed class MacSoundPlayer : IDisposable
     /// <summary>Raised once, when the file has played to its end (not when stopped).</summary>
     public event Action? Ended;
 
-    private MacSoundPlayer(IntPtr engine, IntPtr player, IntPtr timePitch, IntPtr file, long length)
+    private MacSoundPlayer(IntPtr engine, IntPtr player, IntPtr timePitch, IntPtr file, long length, double sampleRate)
     {
+        this.sampleRate = sampleRate > 0 ? sampleRate : 44100;
         this.engine = engine;
         this.player = player;
         this.timePitch = timePitch;
@@ -79,7 +83,7 @@ internal sealed class MacSoundPlayer : IDisposable
                 throw new InvalidOperationException($"The sound couldn't start. {Describe(error)}");
             }
 
-            var sound = new MacSoundPlayer(engine, player, timePitch, file, length);
+            var sound = new MacSoundPlayer(engine, player, timePitch, file, length, SendDouble(format, Sel("sampleRate")));
             sound.SetSpeed(speed);
             sound.SetPitch(pitch);
             Send(player, Sel("play"));
@@ -125,6 +129,69 @@ internal sealed class MacSoundPlayer : IDisposable
                 SendFloat(timePitch, Sel("setPitch:"), (float)Math.Clamp(semitones * 100, -2400, 2400));
             }
         }
+    }
+
+    /// <summary>How long the file is.</summary>
+    public TimeSpan Duration => TimeSpan.FromSeconds(length / sampleRate);
+
+    /// <summary>Where in the file it plays now (in the recording's time); null once it's let go of.</summary>
+    public TimeSpan? Position
+    {
+        get
+        {
+            lock (gate)
+            {
+                if (released)
+                {
+                    return null;
+                }
+
+                var pool = objc_autoreleasePoolPush();
+                try
+                {
+                    return TimeSpan.FromSeconds(Math.Min(PlayedFrame(), length) / sampleRate);
+                }
+                finally
+                {
+                    objc_autoreleasePoolPop(pool);
+                }
+            }
+        }
+    }
+
+    /// <summary>Plays on from <paramref name="position"/> in the file.</summary>
+    public void Seek(TimeSpan position)
+    {
+        lock (gate)
+        {
+            if (released || length <= 0)
+            {
+                return;
+            }
+
+            var frame = Math.Clamp((long)(position.TotalSeconds * sampleRate), 0, length - 1);
+            var pool = objc_autoreleasePoolPush();
+            try
+            {
+                // Stopping empties what's scheduled and sets the player's own time back to 0.
+                Send(player, Sel("stop"));
+                startFrame = frame;
+                SendSchedule(player, Sel("scheduleSegment:startingFrame:frameCount:atTime:completionHandler:"), file, frame, (uint)Math.Min(length - frame, uint.MaxValue), 0, 0);
+                Send(player, Sel("play"));
+            }
+            finally
+            {
+                objc_autoreleasePoolPop(pool);
+            }
+        }
+    }
+
+    /// <summary>The frame of the file played now: where it was scheduled from, plus the player's own time (under the lock, in a pool).</summary>
+    private long PlayedFrame()
+    {
+        var nodeTime = Send(player, Sel("lastRenderTime"));
+        var playerTime = nodeTime == 0 ? 0 : Send(player, Sel("playerTimeForNodeTime:"), nodeTime);
+        return startFrame + (playerTime == 0 ? 0 : Math.Max(0, SendLong(playerTime, Sel("sampleTime"))));
     }
 
     /// <summary>The output's volume, 0 to 1.</summary>
@@ -187,9 +254,7 @@ internal sealed class MacSoundPlayer : IDisposable
             var pool = objc_autoreleasePoolPush();
             try
             {
-                var nodeTime = Send(player, Sel("lastRenderTime"));
-                var playerTime = nodeTime == 0 ? 0 : Send(player, Sel("playerTimeForNodeTime:"), nodeTime);
-                ended = playerTime != 0 && SendLong(playerTime, Sel("sampleTime")) >= length;
+                ended = PlayedFrame() >= length;
             }
             finally
             {
@@ -287,4 +352,11 @@ internal sealed class MacSoundPlayer : IDisposable
 
     [DllImport(ObjC, EntryPoint = "objc_msgSend")]
     private static extern void SendFloat(IntPtr receiver, IntPtr selector, float value);
+
+    [DllImport(ObjC, EntryPoint = "objc_msgSend")]
+    private static extern double SendDouble(IntPtr receiver, IntPtr selector);
+
+    // scheduleSegment:startingFrame:frameCount:atTime:completionHandler:
+    [DllImport(ObjC, EntryPoint = "objc_msgSend")]
+    private static extern void SendSchedule(IntPtr receiver, IntPtr selector, IntPtr file, long startingFrame, uint frameCount, IntPtr when, IntPtr completionHandler);
 }

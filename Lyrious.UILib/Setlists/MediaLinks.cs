@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -42,8 +43,72 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The media link of a sound file kept on the device, at most <paramref name="maxLength"/> long.</summary>
 		public static string SoundLink(SoundFile sound, int maxLength)
 		{
-			var link = $"{SoundPrefix}{sound.Id}/{sound.Name}";
+			// One link per line (see Split): a line break in the name would split it.
+			var link = $"{SoundPrefix}{sound.Id}/{sound.Name.ReplaceLineEndings(" ")}";
 			return link.Length > maxLength ? link[..maxLength] : link;
+		}
+
+		/// <summary>
+		/// A song's media links: its media link field holds one per line (a Spotify or YouTube link, a
+		/// sound file on the device, another web address), in the order they were added.
+		/// </summary>
+		public static IReadOnlyList<string> Split(string? mediaLink)
+			=> (mediaLink ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+		/// <summary>The links as a song's media link field: one per line.</summary>
+		public static string Join(IEnumerable<string> links) => string.Join('\n', links);
+
+		/// <summary>
+		/// The media link field with <paramref name="link"/> added at the end, if it isn't there yet;
+		/// null with the reason when it can't be (the field can't be longer than <paramref name="maxLength"/>).
+		/// </summary>
+		public static string? With(string? mediaLink, string link, int maxLength, out string? problem)
+		{
+			problem = null;
+			var links = Split(mediaLink).ToList();
+			var added = link.Trim();
+			if (links.Contains(added, StringComparer.Ordinal))
+			{
+				return Join(links);
+			}
+
+			links.Add(added);
+			var joined = Join(links);
+			if (joined.Length > maxLength)
+			{
+				problem = "There's no room for another media link on the song; remove one first.";
+				return null;
+			}
+
+			return joined;
+		}
+
+		/// <summary>The media link field without <paramref name="link"/>.</summary>
+		public static string Without(string? mediaLink, string link)
+			=> Join(Split(mediaLink).Where(other => other != link.Trim()));
+
+		/// <summary>The sound files the media link field names.</summary>
+		public static IEnumerable<SoundFile> SoundsOf(string? mediaLink)
+			=> Split(mediaLink).Select(SoundOf).OfType<SoundFile>();
+
+		/// <summary>
+		/// Whether pasted or dropped text is a media link: a sound file's link, a web address (with
+		/// http:// or https://), a spotify: link, or a Spotify or YouTube address without its https://.
+		/// </summary>
+		public static bool IsMediaLink(string? text)
+		{
+			var trimmed = text?.Trim();
+			if (string.IsNullOrEmpty(trimmed) || trimmed.Contains('\n') || trimmed.Contains(' '))
+			{
+				return SoundOf(trimmed) != null;
+			}
+
+			return SoundOf(trimmed) != null
+			       || (Parse(trimmed) is { } uri
+			           && (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+			               || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+			               || trimmed.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase)
+			               || SiteOf(uri) is MediaSite.Spotify or MediaSite.YouTube));
 		}
 
 		/// <summary>The sound file the link names; null when it's not one.</summary>

@@ -217,7 +217,7 @@ namespace Lyrious.UILib.Setlists
 			MediaPlayerLayer.Current = mediaPlayer;
 			mediaPlayer.PlayingChanged += OnMediaPlayingChanged;
 			setlistDrawer.Content = new Grid { Children = { new DockPanel { Children = { playbackBar, page } }, mediaPlayer, topRow, notice } };
-			playbackBar.PlayPauseRequested += PlayPause;
+			playbackBar.PlayPauseRequested += () => PlayPause();
 			playbackBar.RestartRequested += () => (page.Content as LyricScrollView)?.ScrollToStart();
 			playbackBar.NextRequested += NextSong;
 			playbackBar.SetBandSync(bandSync);
@@ -536,6 +536,7 @@ namespace Lyrious.UILib.Setlists
 			keyWindow?.AddHandler(KeyDownEvent, OnLyricsKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 			// Bubbling: after everything else had its go at the key (see OnLyricsEscape).
 			keyWindow?.AddHandler(KeyDownEvent, OnLyricsEscape, Avalonia.Interactivity.RoutingStrategies.Bubble);
+			keyWindow?.AddHandler(KeyDownEvent, OnLyricsPaste, Avalonia.Interactivity.RoutingStrategies.Bubble);
 		}
 
 		/// <summary>
@@ -553,11 +554,26 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		/// <summary>
+		/// Ctrl/⌘+V on the lyrics page (not while editing), when nothing else used it (a text box pastes
+		/// its own): a link or sound files on the clipboard are added to the song's media links.
+		/// </summary>
+		private void OnLyricsPaste(object? sender, Avalonia.Input.KeyEventArgs e)
+		{
+			var command = e.KeyModifiers == Avalonia.Input.KeyModifiers.Control || e.KeyModifiers == Avalonia.Input.KeyModifiers.Meta;
+			if (e.Key == Avalonia.Input.Key.V && command && !e.Handled && page.Content is LyricScrollView { IsEditing: false } lyrics)
+			{
+				e.Handled = true;
+				_ = lyrics.PasteMediaAsync();
+			}
+		}
+
 		protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
 		{
 			base.OnDetachedFromVisualTree(e);
 			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsKey);
 			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsEscape);
+			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsPaste);
 			keyWindow = null;
 			if (App.LanSharing is { } sharing)
 			{
@@ -726,13 +742,24 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
-		private void PlayPause()
+		/// <param name="goOnAtEnd">Stopping at the very end may go on to the next song (not when a media file ended by itself).</param>
+		private void PlayPause(bool goOnAtEnd = true)
 		{
 			if (page.Content is LyricScrollView lyrics)
 			{
 				var stopping = lyrics.IsAutoScrolling;
 				var atEnd = lyrics.IsAtEnd;
 				lyrics.SetAutoScroll(!stopping);
+
+				// The song's sound file (if it has one) starts and stops with it; the lyrics then follow it.
+				if (lyrics.IsAutoScrolling)
+				{
+					_ = lyrics.StartMediaAsync();
+				}
+				else
+				{
+					lyrics.StopMedia();
+				}
 
 				// The other members that have joined the band start or stop too (sent first, before
 				// the playlog is written).
@@ -743,7 +770,7 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				// Stopping at the very end of the lyrics goes on to the next song (a setting, on by default).
-				if (stopping && atEnd && PlaybackSettings.NextSongOnStopAtEnd)
+				if (goOnAtEnd && stopping && atEnd && PlaybackSettings.NextSongOnStopAtEnd)
 				{
 					NextSong();
 				}
@@ -2318,6 +2345,24 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 			view.SetFocusMode(focusMode);
+			// The song's media file playing or stopping starts or stops the scrolling too, as play/pause
+			// does (band sync, the playlog and the band's MIDI included).
+			// The media player on or off (or another sound picked): the toolbar shows its progress or not.
+			view.MediaChanged += () =>
+			{
+				if (page.Content == view)
+				{
+					playbackBar.SetMediaOn(view.ActiveSound != null);
+				}
+			};
+			playbackBar.SetMediaOn(view.ActiveSound != null);
+			view.MediaPlayingChanged += playing =>
+			{
+				if (page.Content == view && !view.IsEditing && playing != view.IsAutoScrolling)
+				{
+					PlayPause(goOnAtEnd: false);
+				}
+			};
 			view.SongSaved += saved =>
 			{
 				SongEdited(saved);

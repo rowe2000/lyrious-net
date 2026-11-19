@@ -393,6 +393,12 @@ globalThis.lyriousSounds = (() => {
         },
         stop,
         playing: () => playingId,
+        // Seconds from the sound's start, and its length; -1 when none plays or it isn't known yet.
+        position: () => audio ? audio.currentTime : -1,
+        duration: () => audio && Number.isFinite(audio.duration) ? audio.duration : -1,
+        seek: seconds => {
+            if (audio && Number.isFinite(audio.duration)) audio.currentTime = Math.min(Math.max(seconds, 0), audio.duration);
+        },
         onChanged: callback => { changed = callback; },
         canChangePitch: () => canShiftPitch,
         setSpeed: value => {

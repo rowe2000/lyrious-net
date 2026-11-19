@@ -56,6 +56,20 @@ namespace Lyrious.UILib
 		/// play along in another key). Applies at once to the sound playing, and to those played after.
 		/// </summary>
 		double Pitch { get; set; }
+
+		/// <summary>
+		/// Where the sound playing in the app is, from its start (in the recording's time, whatever the
+		/// speed); null when none plays or it isn't known here.
+		/// </summary>
+		TimeSpan? Position => null;
+
+		/// <summary>How long the sound playing in the app is; null when none plays or it isn't known (yet).</summary>
+		TimeSpan? Duration => null;
+
+		/// <summary>Moves the sound playing in the app to <paramref name="position"/> (from its start); nothing when none plays or it can't be moved here.</summary>
+		void Seek(TimeSpan position)
+		{
+		}
 	}
 
 	/// <summary>A sound kept on this device: its id (see <see cref="Setlists.SoundFile"/>) and its size in bytes.</summary>
