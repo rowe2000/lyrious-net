@@ -172,7 +172,8 @@ namespace Lyrious.UILib.Login
 				"Sync",
 				scroller,
 				subtitle: "The Lyrious server this app syncs with",
-				titleAction: new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { saveButton, cancelButton } });
+				titleAction: new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { saveButton, cancelButton } },
+				icon: AppIcons.Sync);
 		}
 
 		/// <summary>

@@ -159,7 +159,7 @@ namespace Lyrious.UILib.Setlists
 			// Scrolls when the settings don't fit (a short window or a large interface size).
 			form.Margin = new Thickness(0, 0, 0, 16);
 			var scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-			Content = PageLayout.Page("Settings", scroller, subtitle: "Kept on this device", closable: true);
+			Content = PageLayout.Page("Settings", scroller, subtitle: "Kept on this device", closable: true, icon: AppIcons.Settings);
 		}
 
 		/// <summary>

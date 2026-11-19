@@ -66,7 +66,8 @@ namespace Lyrious.UILib.Setlists
 				"Find song online",
 				new DockPanel { Children = { searchRow, ultimateGuitarButton, results } },
 				subtitle: "Lyrics from LRCLIB (lrclib.net)",
-				closable: true);
+				closable: true,
+				icon: AppIcons.FindOnline);
 			Content = searchPage;
 		}
 

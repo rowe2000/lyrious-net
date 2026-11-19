@@ -60,7 +60,7 @@ namespace Lyrious.UILib.Setlists
 				Show(playlogs[0]);
 			}
 
-			Content = PageLayout.Page("Playlog", body, subtitle: $"{group.Name} · songs played", closable: true);
+			Content = PageLayout.Page("Playlog", body, subtitle: $"{group.Name} · songs played", closable: true, icon: AppIcons.Playlog);
 		}
 
 		/// <summary>Shows the playlog's songs at the top, and highlights its row in the list.</summary>

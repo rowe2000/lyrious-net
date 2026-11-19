@@ -28,8 +28,9 @@ namespace Lyrious.UILib.Setlists
 		/// <paramref name="titleAction"/> is a control (e.g. an add button) shown at the right of the title.
 		/// <paramref name="closable"/> adds a ✕ at the far right that goes back to the page before.
 		/// </summary>
-		public static Control Page(string title, Control content, string? backText = null, Action? back = null, string? subtitle = null, Control? titleAction = null, bool closable = false)
-			=> Page(title, content, backText != null && back != null ? BackLink(backText, back) : null, subtitle, WithClose(titleAction, closable));
+		/// <paramref name="icon"/> (see <see cref="AppIcons"/>) is drawn before the title, as on the left drawer's item for the page.
+		public static Control Page(string title, Control content, string? backText = null, Action? back = null, string? subtitle = null, Control? titleAction = null, bool closable = false, string? icon = null)
+			=> Page(title, content, backText != null && back != null ? BackLink(backText, back) : null, subtitle, WithClose(titleAction, closable), icon);
 
 		/// <summary>The title's action with a ✕ after it (raising <see cref="CloseRequestedEvent"/>), when closable.</summary>
 		private static Control? WithClose(Control? titleAction, bool closable)
@@ -58,11 +59,12 @@ namespace Lyrious.UILib.Setlists
 		/// from the top). The title shares that row; with a back link, the link does and the title
 		/// comes under it.
 		/// </summary>
-		private static Control Page(string title, Control content, Control? backLink, string? subtitle = null, Control? titleAction = null)
+		private static Control Page(string title, Control content, Control? backLink, string? subtitle = null, Control? titleAction = null, string? icon = null)
 		{
 			var column = new DockPanel { MaxWidth = 640, Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Stretch };
 
-			var header = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 4) };
+			// A header with an icon (a page from the left drawer) has 4px more room below it.
+			var header = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, icon != null ? 8 : 4) };
 			var titleText = new TextBlock { Text = title, FontSize = 28, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
 
 			// As tall as the drawer buttons even without actions, so titles sit at the same height on every page.
@@ -74,17 +76,26 @@ namespace Lyrious.UILib.Setlists
 				firstRow.Children.Add(titleAction);
 			}
 
+			// The page's icon (its left drawer item's) before the title.
+			Control titled = titleText;
+			if (icon != null)
+			{
+				var iconPath = AppIcons.Create(icon, 24, 2);
+				iconPath.Margin = new Thickness(0, 0, 12, 0);
+				titled = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { iconPath, titleText } };
+			}
+
 			header.Children.Add(firstRow);
 			if (backLink != null)
 			{
 				backLink.VerticalAlignment = VerticalAlignment.Center;
 				backLink.HorizontalAlignment = HorizontalAlignment.Left;
 				firstRow.Children.Add(backLink);
-				header.Children.Add(titleText);
+				header.Children.Add(titled);
 			}
 			else
 			{
-				firstRow.Children.Add(titleText);
+				firstRow.Children.Add(titled);
 			}
 
 			if (!string.IsNullOrEmpty(subtitle))
@@ -267,7 +278,7 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="closeOnAdd">Hides the row (and empties the box) after Add, for a page that stays.</param>
 		public static (Control Row, Action Show) NameRow(string placeholder, Action<string> add, bool closeOnAdd = false)
 		{
-			var nameBox = new TextBox { PlaceholderText = placeholder };
+			var nameBox = new TextBox { PlaceholderText = placeholder, VerticalContentAlignment = VerticalAlignment.Center };
 			var confirm = OkButton("Add");
 			confirm.IsEnabled = false;
 			var cancel = CancelButton("Cancel");

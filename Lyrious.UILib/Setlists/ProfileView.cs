@@ -65,7 +65,7 @@ namespace Lyrious.UILib.Setlists
 
 			form.Margin = new Thickness(0, 0, 0, 16);
 			var scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-			Content = PageLayout.Page("Profile", scroller, subtitle: user.UserName, closable: true);
+			Content = PageLayout.Page("Profile", scroller, subtitle: user.UserName, closable: true, icon: AppIcons.Profile);
 		}
 
 		private Control NameSection(AuthenticatedUser user, ISetlistService service)

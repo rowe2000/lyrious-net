@@ -186,7 +186,7 @@ namespace Lyrious.UILib.Setlists
 				var popup = new Flyout { Placement = PlacementMode.BottomEdgeAlignedRight };
 
 				// Play: shown as the setlist in the right drawer, not saved.
-				var play = PopupItem("Play them", PlayIcon);
+				var play = PopupItem("Just play them", PlayIcon);
 				play.IsEnabled = chosen.Count > 0;
 				play.Click += (_, _) =>
 				{
@@ -194,19 +194,28 @@ namespace Lyrious.UILib.Setlists
 					ShowAsSetlistRequested?.Invoke(chosen);
 				};
 
-				// A new setlist: "Create a setlist" shows its name box, then ✓ (or Enter) makes it and
-				// ✕ hides the box again; the popup stays open until it's made.
-				var name = new TextBox { PlaceholderText = "Name of the new setlist", MinWidth = 200 };
+				// A new setlist: "Create a setlist" shows its name box, then ✓ (or Enter) makes it; the
+				// popup stays open until it's made (or closed with its ✕, Escape or a click outside).
+				// As tall as the ✓ and ✕ beside it, with its text in the middle.
+				var name = new TextBox { PlaceholderText = "Name of the new setlist", MinWidth = 200, VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center };
 				var ok = PageLayout.OkButton("Create the setlist");
 				ok.IsEnabled = false;
-				var cancel = PageLayout.CancelButton("Cancel");
-				var buttons = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Margin = new Avalonia.Thickness(8, 0, 0, 0), Children = { ok, cancel } };
-				DockPanel.SetDock(buttons, Dock.Right);
-				var nameRow = new DockPanel { IsVisible = false, Children = { buttons, name } };
+				// The popup's ✕, at its top right: closes it.
+				var close = PageLayout.CancelButton("Close");
+				ok.Margin = new Avalonia.Thickness(8, 0, 0, 0);
+				DockPanel.SetDock(ok, Dock.Right);
+				var nameRow = new DockPanel { IsVisible = false, Children = { ok, name } };
 				var create = PopupItem("Create a setlist", NewSetlistIcon);
 				create.IsEnabled = chosen.Count > 0;
+				// The name box takes the button's place, with its icon at the left in the box.
+				var nameIcon = LineIcon(NewSetlistIcon, 18);
+				nameIcon.Margin = new Avalonia.Thickness(10, 0, 0, 0);
+				nameIcon.Opacity = 0.7;
+				nameIcon.IsHitTestVisible = false;
+				name.InnerLeftContent = nameIcon;
 				create.Click += (_, _) =>
 				{
+					create.IsVisible = false;
 					nameRow.IsVisible = true;
 					Avalonia.Threading.Dispatcher.UIThread.Post(() => name.Focus(), Avalonia.Threading.DispatcherPriority.Background);
 				};
@@ -246,20 +255,24 @@ namespace Lyrious.UILib.Setlists
 					}
 				};
 				ok.Click += (_, _) => Create();
-				cancel.Click += (_, _) =>
-				{
-					nameRow.IsVisible = false;
-					name.Text = string.Empty;
-				};
+				close.Click += (_, _) => popup.Hide();
+				DockPanel.SetDock(close, Dock.Right);
 
 				var panel = new StackPanel
 				{
 					Spacing = 6,
-					MinWidth = 300,
+					MinWidth = 256,
 					Children =
 					{
-						// Which songs: all, the listed ones, or the checked ones.
-						new TextBlock { Text = which, Opacity = 0.8, Margin = new Avalonia.Thickness(10, 2, 0, 2) },
+						// Which songs (all, the listed ones, or the checked ones), and the ✕ at the right.
+						new DockPanel
+						{
+							Children =
+							{
+								close,
+								new TextBlock { Text = which, Opacity = 0.8, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Avalonia.Thickness(10, 0, 0, 0) },
+							},
+						},
 						play,
 						create,
 						nameRow,
@@ -292,8 +305,8 @@ namespace Lyrious.UILib.Setlists
 					: selected != null ? [selected] : [];
 				if (toDelete.Count > 0)
 				{
-					var what = toDelete.Count == 1 ? $"\"{toDelete[0].Name}\"" : $"the {toDelete.Count} checked songs";
-					var delete = PopupItem(toDelete.Count == 1 ? $"Delete {toDelete[0].Name}…" : $"Delete the {toDelete.Count} checked songs…", TrashIcon);
+					var what = toDelete.Count == 1 ? $"'{toDelete[0].Name}'" : $"the {toDelete.Count} checked songs";
+					var delete = PopupItem(toDelete.Count == 1 ? $"Delete '{toDelete[0].Name}'…" : $"Delete the {toDelete.Count} checked songs…", TrashIcon);
 					PageLayout.RedOnHover(delete);
 					var confirm = PageLayout.DangerButton("Delete");
 					var keep = PageLayout.CancelButton("Don't delete");
@@ -352,7 +365,8 @@ namespace Lyrious.UILib.Setlists
 				"Songbook",
 				new DockPanel { Children = { SongbookChooser(group, songbooks ?? [], playingSongbookId), nameRow, status, search, tagFilter, list } },
 				titleAction: new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Children = { asSetlistButton, addButton } },
-				closable: true);
+				closable: true,
+				icon: AppIcons.Songbook);
 		}
 
 		/// <summary>
@@ -543,7 +557,7 @@ namespace Lyrious.UILib.Setlists
 
 			yield return AddToSetlistButton(song);
 			yield return PageLayout.EditButton($"Edit {song.Name}", () => SongEditRequested?.Invoke(song));
-			yield return PageLayout.DeleteButton($"Delete {song.Name}", $"Delete \"{song.Name}\"? It's also removed from every setlist it's in.", () => SongDeleteRequested?.Invoke(song));
+			yield return PageLayout.DeleteButton($"Delete '{song.Name}'", $"Delete '{song.Name}'? It's also removed from every setlist it's in.", () => SongDeleteRequested?.Invoke(song));
 		}
 
 		/// <summary>

@@ -91,7 +91,8 @@ namespace Lyrious.UILib.Setlists
 				new ScrollViewer { Content = column, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
 				subtitle: current == null ? "Choose a band" : null,
 				titleAction: addButton,
-				closable: true);
+				closable: true,
+				icon: AppIcons.Band);
 		}
 
 		private IReadOnlyList<GroupMember> MembersOf(GroupSummary group) => members.GetValueOrDefault(group.Id) ?? [];

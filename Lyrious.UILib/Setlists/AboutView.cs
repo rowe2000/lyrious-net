@@ -33,7 +33,8 @@ namespace Lyrious.UILib.Setlists
 			Content = PageLayout.Page(
 				"About",
 				new ScrollViewer { Content = column, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
-				closable: true);
+				closable: true,
+				icon: AppIcons.About);
 		}
 	}
 }

@@ -86,7 +86,8 @@ namespace Lyrious.UILib.Setlists
 				"Setlist",
 				new ScrollViewer { Content = column, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
 				titleAction: addButton,
-				closable: true);
+				closable: true,
+				icon: AppIcons.Setlist);
 		}
 
 		/// <summary>

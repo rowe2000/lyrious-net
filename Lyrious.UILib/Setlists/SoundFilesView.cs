@@ -37,7 +37,7 @@ namespace Lyrious.UILib.Setlists
 			var top = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 4), Children = { summary, problem } };
 			DockPanel.SetDock(top, Dock.Top);
 			body.Content = new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 8) };
-			Content = PageLayout.Page("Sound files", new DockPanel { Children = { top, body } }, subtitle: "Kept on this device", closable: true);
+			Content = PageLayout.Page("Sound files", new DockPanel { Children = { top, body } }, subtitle: "Kept on this device", closable: true, icon: AppIcons.SoundFiles);
 
 			// The marks follow when a file reaches the server.
 			void OnPendingChanged() => Dispatcher.UIThread.Post(() => _ = LoadAsync());
