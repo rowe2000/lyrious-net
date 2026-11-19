@@ -268,11 +268,11 @@ namespace Lyrious.UILib.Setlists
 		public static (Control Row, Action Show) NameRow(string placeholder, Action<string> add, bool closeOnAdd = false)
 		{
 			var nameBox = new TextBox { PlaceholderText = placeholder };
-			var confirm = new Button { Content = "Add", IsEnabled = false };
-			confirm.Classes.Add("accent");
-			var cancel = new Button { Content = "Cancel" };
+			var confirm = OkButton("Add");
+			confirm.IsEnabled = false;
+			var cancel = CancelButton("Cancel");
 
-			var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(8, 0, 0, 0), Children = { confirm, cancel } };
+			var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(8, 0, 0, 0), Children = { confirm, cancel } };
 			DockPanel.SetDock(buttons, Dock.Right);
 			var row = new DockPanel { Margin = new Thickness(0, 0, 0, 16), IsVisible = false, Children = { buttons, nameBox } };
 			DockPanel.SetDock(row, Dock.Top);
@@ -320,6 +320,21 @@ namespace Lyrious.UILib.Setlists
 			cancel.Click += (_, _) => Close();
 			return (row, Show);
 		}
+
+		// A check (OK) and a cross (cancel).
+		private const string OkIcon = "M5,12 L10,17 L19,7";
+		private const string CancelIcon = "M6,6 L18,18 M18,6 L6,18";
+
+		/// <summary>An OK button: a check, highlighted (the accent colour), as every OK in the app is.</summary>
+		public static Button OkButton(string description)
+		{
+			var button = HomeView.IconButton(OkIcon, description);
+			button.Classes.Add("accent");
+			return button;
+		}
+
+		/// <summary>A cancel button: a cross, beside an <see cref="OkButton"/>.</summary>
+		public static Button CancelButton(string description) => HomeView.IconButton(CancelIcon, description);
 
 		/// <summary>A back link for a page header, e.g. "‹ Setlist 1".</summary>
 		private static HyperlinkButton BackLink(string text, Action back)

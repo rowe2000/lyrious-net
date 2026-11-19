@@ -165,24 +165,26 @@ namespace Lyrious.UILib.Setlists
 		public static async Task<SongbookProImportResult> ImportAsync(ISetlistService service, Guid groupId, SongbookProBackup backup)
 		{
 			var imported = new Dictionary<int, Guid>();
-			// The songbook's songs by name, exactly as written (case and spaces count): a song of the
-			// same name is overwritten rather than added again.
+			// The songbook's songs by name, exactly as written (case and spaces count) but for a ✓ in it:
+			// a song of the same name is overwritten rather than added again.
 			var byName = new Dictionary<string, SongDetails>(StringComparer.Ordinal);
 			foreach (var existing in await service.GetSongbookSongsAsync(groupId))
 			{
-				byName.TryAdd(existing.Name, existing);
+				byName.TryAdd(NameKey(existing.Name), existing);
 			}
 
 			var replaced = 0;
 			foreach (var song in backup.Songs)
 			{
 				SongDetails stored;
-				if (byName.TryGetValue(song.Name, out var existing))
+				if (byName.TryGetValue(NameKey(song.Name), out var existing))
 				{
 					// The backup's lyrics, key (as both the playing and the original key), tempo and beat; the song keeps its link when the backup
 					// has none, and its tags with the backup's added.
 					stored = await service.UpdateSongAsync(existing with
 					{
+						// The backup's name: the same but for a ✓ (which a converted import leaves out).
+						Name = song.Name,
 						Lyrics = song.Lyrics,
 						PlayingKey = song.Key,
 						OriginalKey = song.Key,
@@ -200,7 +202,7 @@ namespace Lyrious.UILib.Setlists
 					stored = await service.UpdateSongAsync(created with { PlayingKey = song.Key, OriginalKey = song.Key, Artist = song.Artist, Tempo = song.Tempo, Beat = song.Beat, MediaLink = song.MediaLink, Tags = song.Tags });
 				}
 
-				byName[song.Name] = stored;
+				byName[NameKey(song.Name)] = stored;
 				imported[song.SourceId] = stored.Id;
 			}
 
@@ -295,6 +297,12 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>The mark that, in a name or lyrics, becomes a tag of its own when the import converts.</summary>
 		private const string Check = "✓";
+
+		/// <summary>
+		/// A song's name as songs of the same name are found by: exactly as written, but without its ✓
+		/// (and the space before it), so "Go Your Own Way ✓" and "Go Your Own Way" are the same song.
+		/// </summary>
+		private static string NameKey(string name) => WithoutCheck(name).Trim();
 
 		/// <summary>The text without its ✓ marks, each with the space or tab before it (if any).</summary>
 		private static string WithoutCheck(string text) => CheckMark().Replace(text, "");

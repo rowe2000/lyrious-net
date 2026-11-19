@@ -31,7 +31,6 @@ namespace Lyrious.UILib.Setlists
 	{
 		// A pencil: the body, its tip, and the line where the tip meets the body.
 		private const string EditIcon = "M4,20 L8,19 L19,8 L16,5 L5,16 Z M14,7 L17,10";
-		private const string SaveIcon = "M5,12 L10,17 L19,7";
 		private const string CancelIcon = "M6,6 L18,18 M18,6 L6,18";
 		// A grid of three columns: the chord grid.
 		private const string ChordGridIcon = "M4,5 H20 V19 H4 Z M9.3,5 V19 M14.7,5 V19";
@@ -1902,7 +1901,7 @@ namespace Lyrious.UILib.Setlists
 				VerticalContentAlignment = VerticalAlignment.Top,
 				PlaceholderText = "Type or paste the lyrics",
 			};
-			var save = HomeView.IconButton(SaveIcon, "Save song");
+			var save = PageLayout.OkButton("Save song");
 			// Escape cancels too (before the page's ✕).
 			var cancel = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, "Cancel editing"), first: true);
 			var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Margin = new Thickness(0, 0, 0, 12) };

@@ -130,6 +130,8 @@ namespace Lyrious.UILib.Setlists
 		// (a song is listed when it has all of them).
 		private readonly WrapPanel drawerTagFilter = new() { Orientation = Orientation.Horizontal, ItemSpacing = 6, LineSpacing = 6, Margin = new Thickness(8, 0, 0, 8), IsVisible = false };
 		private readonly HashSet<string> drawerChosenTags = new(StringComparer.CurrentCultureIgnoreCase);
+		// And those longclicked: a song is listed when it has none of them.
+		private readonly HashSet<string> drawerWithoutTags = new(StringComparer.CurrentCultureIgnoreCase);
 		private int drawerLoad;
 
 		/// <summary>Raised with the new password once the user has changed it on the profile page.</summary>
@@ -269,10 +271,12 @@ namespace Lyrious.UILib.Setlists
 					return;
 				}
 
+				lastOpenedDrawer = menuDrawer;
 				menuDrawer.IsPaneOpen = true;
 			};
 			setlistButton.Click += (_, _) =>
 			{
+				lastOpenedDrawer = setlistDrawer;
 				setlistDrawer.IsPaneOpen = true;
 				_ = LoadSetlistDrawerAsync(centerSong: true);
 			};
@@ -290,6 +294,23 @@ namespace Lyrious.UILib.Setlists
 			};
 			// The computer may have changed networks since.
 			menuDrawer.PaneOpened += (_, _) => ShowSharingCode();
+			// Remembered for Escape, which opens the other drawer (see OnLyricsEscape).
+			// Only a drawer's own opening counts: the right drawer is inside the left one's content, so
+			// its opening reaches the left drawer too (the event goes up through it).
+			menuDrawer.PaneOpening += (_, e) =>
+			{
+				if (e.Source == menuDrawer)
+				{
+					lastOpenedDrawer = menuDrawer;
+				}
+			};
+			setlistDrawer.PaneOpening += (_, e) =>
+			{
+				if (e.Source == setlistDrawer)
+				{
+					lastOpenedDrawer = setlistDrawer;
+				}
+			};
 
 			Content = menuDrawer;
 
@@ -561,18 +582,36 @@ namespace Lyrious.UILib.Setlists
 			keyWindow?.AddHandler(KeyDownEvent, OnLyricsPaste, Avalonia.Interactivity.RoutingStrategies.Bubble);
 		}
 
+		// The drawer opened last (by its button, by Escape or otherwise): Escape opens the other one.
+		private SplitView? lastOpenedDrawer;
+
 		/// <summary>
 		/// Escape on the lyrics page, when nothing else used it (a close button on screen, see
-		/// <see cref="EscapeKey"/>, a text box, ending focus mode): opens the left drawer. There,
+		/// <see cref="EscapeKey"/>, a text box, ending focus mode): opens the drawer that wasn't
+		/// opened last (the left one the first time), so Escape takes turns between them. There,
 		/// Escape closes it again.
 		/// </summary>
 		private void OnLyricsEscape(object? sender, Avalonia.Input.KeyEventArgs e)
 		{
-			if (e.Key == Avalonia.Input.Key.Escape && e.KeyModifiers == Avalonia.Input.KeyModifiers.None && !e.Handled
-			    && !focusMode && !menuDrawer.IsPaneOpen && page.Content is LyricScrollView { IsEditing: false })
+			if (e.Key != Avalonia.Input.Key.Escape || e.KeyModifiers != Avalonia.Input.KeyModifiers.None || e.Handled
+			    || focusMode || page.Content is not LyricScrollView { IsEditing: false })
 			{
-				e.Handled = true;
-				menuDrawer.IsPaneOpen = true;
+				return;
+			}
+
+			var drawer = lastOpenedDrawer == menuDrawer ? setlistDrawer : menuDrawer;
+			if (drawer.IsPaneOpen)
+			{
+				return; // Open already (e.g. pinned).
+			}
+
+			e.Handled = true;
+			lastOpenedDrawer = drawer; // The next Escape opens the other one.
+			drawer.IsPaneOpen = true;
+			if (drawer == setlistDrawer)
+			{
+				// As its button does: the songs loaded, the current one in the middle.
+				_ = LoadSetlistDrawerAsync(centerSong: true);
 			}
 		}
 
@@ -1471,10 +1510,8 @@ namespace Lyrious.UILib.Setlists
 				{
 					// Every song is listed again.
 					drawerChosenTags.Clear();
-					foreach (var tag in drawerTagFilter.Children.OfType<ToggleButton>())
-					{
-						tag.IsChecked = false;
-					}
+					drawerWithoutTags.Clear();
+					ShowDrawerTagButtons();
 
 					setlistSearchBox.Text = string.Empty;
 					FilterDrawerSongs();
@@ -1662,48 +1699,54 @@ namespace Lyrious.UILib.Setlists
 			foreach (var row in drawerRows.Values)
 			{
 				row.IsVisible = row.Tag is not SongDetails song
-					|| ((text.Length == 0 || DrawerSongMatches(song, text)) && drawerChosenTags.All(tag => SongTags.Has(song, tag)));
+					|| ((text.Length == 0 || DrawerSongMatches(song, text)) && drawerChosenTags.All(tag => SongTags.Has(song, tag)) && !drawerWithoutTags.Any(tag => SongTags.Has(song, tag)));
 			}
 		}
 
 		/// <summary>
-		/// The tags of the setlist's songs as small toggle buttons under the drawer's search box (shown
-		/// while searching): each one chosen narrows the list to the songs that have it, and all the
-		/// others chosen. Tags chosen before that the songs still have stay chosen.
+		/// The tags of the setlist's songs as small buttons under the drawer's search box (shown
+		/// while searching), to narrow the list to the songs with (or without) them; see ShowDrawerTagButtons.
+		/// Tags chosen before that the songs still have stay chosen.
 		/// </summary>
 		private void ShowDrawerTags(IEnumerable<SongDetails> songs)
 		{
-			var tags = SongTags.AllOf(songs);
-			drawerChosenTags.IntersectWith(tags);
+			drawerTags = SongTags.AllOf(songs);
+			drawerChosenTags.IntersectWith(drawerTags);
+			drawerWithoutTags.IntersectWith(drawerTags);
+			ShowDrawerTagButtons();
+		}
+
+		// The tags of the right drawer's songs, for its tag buttons.
+		private IReadOnlyList<string> drawerTags = [];
+
+		/// <summary>
+		/// The drawer's tag buttons (see <see cref="TagFilterButton"/>): clicked, a tag lists only the
+		/// songs with it; longclicked, only those without it.
+		/// </summary>
+		private void ShowDrawerTagButtons()
+		{
 			drawerTagFilter.Children.Clear();
-			foreach (var tag in tags)
+			foreach (var tag in drawerTags)
 			{
-				var button = new ToggleButton
+				var state = drawerWithoutTags.Contains(tag) ? TagFilterState.Without : drawerChosenTags.Contains(tag) ? TagFilterState.With : TagFilterState.Off;
+				drawerTagFilter.Children.Add(TagFilterButton.Create(tag, state, 12, new Thickness(8, 1), next =>
 				{
-					Content = new TextBlock { Text = tag, FontSize = 12 },
-					Padding = new Thickness(8, 1),
-					MinHeight = 0,
-					CornerRadius = new CornerRadius(12),
-					IsChecked = drawerChosenTags.Contains(tag),
-				};
-				ToolTip.SetTip(button, $"Only songs tagged {tag}");
-				button.IsCheckedChanged += (_, _) =>
-				{
-					if (button.IsChecked == true)
+					drawerChosenTags.Remove(tag);
+					drawerWithoutTags.Remove(tag);
+					if (next == TagFilterState.With)
 					{
 						drawerChosenTags.Add(tag);
 					}
-					else
+					else if (next == TagFilterState.Without)
 					{
-						drawerChosenTags.Remove(tag);
+						drawerWithoutTags.Add(tag);
 					}
 
 					FilterDrawerSongs();
-				};
-				drawerTagFilter.Children.Add(button);
+				}));
 			}
 
-			drawerTagFilter.IsVisible = setlistSearchBox.IsVisible && tags.Count > 0;
+			drawerTagFilter.IsVisible = setlistSearchBox.IsVisible && drawerTags.Count > 0;
 		}
 
 		private static Control TopDocked(Control control)
@@ -2473,6 +2516,27 @@ namespace Lyrious.UILib.Setlists
 				// The setlist may have lost a song too.
 				playbackEntries = [];
 				RefreshSetlistDrawer(reload: true);
+				await ShowSongsAsync(group, replace: true);
+			});
+			// Several songs at once (the checked ones, from the setlist tool), as one above.
+			view.SongsDeleteRequested += songs => _ = RunAsync(async () =>
+			{
+				foreach (var song in songs)
+				{
+					await service.DeleteSongAsync(song.Id);
+				}
+
+				if (songs.Any(song => song.Id == currentSongId))
+				{
+					SetCurrentSong(null, null);
+				}
+
+				// The songbook played as the setlist holds its own copy of the songs.
+				var deleted = songs.Select(song => song.Id).ToHashSet();
+				songbookEntries = songbookEntries.Where(entry => !deleted.Contains(entry.Song.Id)).ToArray();
+				playbackEntries = [];
+				RefreshSetlistDrawer(reload: true);
+				ShowNotice($"Deleted {songs.Count} song{(songs.Count == 1 ? "" : "s")}");
 				await ShowSongsAsync(group, replace: true);
 			});
 			ShowPage(view, replace);

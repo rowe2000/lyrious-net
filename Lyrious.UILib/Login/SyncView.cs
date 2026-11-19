@@ -17,7 +17,6 @@ namespace Lyrious.UILib.Login
 	/// </summary>
 	public sealed class SyncView : UserControl
 	{
-		private const string SaveIcon = "M5,12 L10,17 L19,7";
 		private const string CancelIcon = "M6,6 L18,18 M18,6 L6,18";
 
 		private readonly TextBox host;
@@ -45,7 +44,7 @@ namespace Lyrious.UILib.Login
 			// The address last warned about: pressing ✓ again for the same address uses it anyway.
 			string? warnedAbout = null;
 
-			var saveButton = HomeView.IconButton(SaveIcon, "Save host");
+			var saveButton = PageLayout.OkButton("Save host");
 			var cancelButton = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, "Cancel"));
 			cancelButton.Click += (_, _) => Cancelled?.Invoke();
 			host.TextChanged += (_, _) =>

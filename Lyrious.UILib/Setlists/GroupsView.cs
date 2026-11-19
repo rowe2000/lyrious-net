@@ -187,16 +187,15 @@ namespace Lyrious.UILib.Setlists
 				memberRows.Children.Add(MemberRow(group, member, isAdmin, lastAdmin: member.Role == GroupRole.Admin && admins <= 1));
 			}
 
-			var panel = new StackPanel { Spacing = 12, Children = { header } };
+			// The members (and inviting), or what the private band is for.
+			var membersTab = new StackPanel { Spacing = 12 };
 			if (!group.IsPrivate)
 			{
-				panel.Children.Add(new TextBlock { Text = $"Members ({bandMembers.Count})", FontWeight = FontWeight.SemiBold });
-				panel.Children.Add(memberRows);
+				membersTab.Children.Add(memberRows);
 			}
 			else
 			{
-				// What the private band is for.
-				panel.Children.Add(new TextBlock
+				membersTab.Children.Add(new TextBlock
 				{
 					Text = "This is your private place to keep your own songs and setlists. No one else can see them, and no one can be invited here.",
 					TextWrapping = TextWrapping.Wrap,
@@ -206,16 +205,26 @@ namespace Lyrious.UILib.Setlists
 
 			if (isAdmin)
 			{
-				panel.Children.Add(InviteRow(group));
+				membersTab.Children.Add(InviteRow(group));
 			}
 
-			// The band's MIDI expressions: every member sees them, its admins (also of the private band) change them.
+			var panel = new StackPanel { Spacing = 12, Children = { header } };
+
+			// The band's MIDI expressions: every member sees them, its admins (also of the private
+			// band) change them. They're on a tab of their own beside the members.
 			if (me is { Approved: true })
 			{
-				panel.Children.Add(new MidiExpressionsSection(
+				var midiTab = new MidiExpressionsSection(
 					Midi.ExpressionsFromJson(group.MidiExpressions),
 					canEdit: me.Role == GroupRole.Admin,
-					expressions => MidiExpressionsChangeRequested?.Invoke(group, expressions)));
+					expressions => MidiExpressionsChangeRequested?.Invoke(group, expressions));
+				panel.Children.Add(Tabs(
+					(group.IsPrivate ? "About" : $"Members ({bandMembers.Count})", membersTab),
+					("MIDI", midiTab)));
+			}
+			else
+			{
+				panel.Children.Add(membersTab);
 			}
 
 			var card = new Border { Padding = new Thickness(16), CornerRadius = new CornerRadius(8), Child = panel };
@@ -228,6 +237,46 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			return card;
+		}
+
+		// The band card's tab shown (by position), kept while the app runs: the page is made anew
+		// after every change, and stays on the same tab.
+		private static int shownTab;
+
+		/// <summary>
+		/// Tabs: a row of buttons (the shown one highlighted), and the shown tab's content below it.
+		/// </summary>
+		private static Control Tabs(params (string Title, Control Content)[] tabs)
+		{
+			var content = new ContentControl();
+			var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+			var tabButtons = new List<Button>();
+
+			void Show(int index)
+			{
+				shownTab = index;
+				content.Content = tabs[index].Content;
+				for (var i = 0; i < tabButtons.Count; i++)
+				{
+					tabButtons[i].Classes.Set("accent", i == index);
+				}
+			}
+
+			for (var i = 0; i < tabs.Length; i++)
+			{
+				var index = i;
+				var button = new Button
+				{
+					Content = new TextBlock { Text = tabs[i].Title, FontSize = 15 },
+					Padding = new Thickness(12, 5),
+				};
+				button.Click += (_, _) => Show(index);
+				tabButtons.Add(button);
+				buttons.Children.Add(button);
+			}
+
+			Show(Math.Clamp(shownTab, 0, tabs.Length - 1));
+			return new StackPanel { Spacing = 12, Children = { buttons, content } };
 		}
 
 		/// <summary>
@@ -294,14 +343,13 @@ namespace Lyrious.UILib.Setlists
 			return new DockPanel { Children = { tools, info } };
 		}
 
-		/// <summary>A pencil that opens a small popup to change the member's name: a box with Save (or Enter) and Cancel.</summary>
+		/// <summary>A pencil that opens a small popup to change the member's name: a box with ✓ (or Enter) and ✕.</summary>
 		private Button EditButton(GroupSummary group, GroupMember member)
 		{
 			var button = PageLayout.EditButton($"Edit {member.Name}", () => { });
 			var nameBox = new TextBox { Text = member.Name, PlaceholderText = "Name", MaxLength = 100, MinWidth = 220 };
-			var save = new Button { Content = "Save" };
-			save.Classes.Add("accent");
-			var cancel = new Button { Content = "Cancel" };
+			var save = PageLayout.OkButton("Save the name");
+			var cancel = PageLayout.CancelButton("Cancel");
 			var flyout = new Flyout
 			{
 				Content = new StackPanel
@@ -312,7 +360,7 @@ namespace Lyrious.UILib.Setlists
 					{
 						new TextBlock { Text = "Name", FontSize = 13, Opacity = 0.75 },
 						nameBox,
-						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { save, cancel } },
+						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { save, cancel } },
 					},
 				},
 			};
