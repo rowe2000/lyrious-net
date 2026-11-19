@@ -264,7 +264,8 @@ namespace Lyrious.UILib.Setlists
 		/// Add (or Enter) passes the trimmed name to <paramref name="add"/>; Cancel (or Escape) hides it.
 		/// Dock the row at the top of the page content.
 		/// </summary>
-		public static (Control Row, Action Show) NameRow(string placeholder, Action<string> add)
+		/// <param name="closeOnAdd">Hides the row (and empties the box) after Add, for a page that stays.</param>
+		public static (Control Row, Action Show) NameRow(string placeholder, Action<string> add, bool closeOnAdd = false)
 		{
 			var nameBox = new TextBox { PlaceholderText = placeholder };
 			var confirm = new Button { Content = "Add", IsEnabled = false };
@@ -288,6 +289,10 @@ namespace Lyrious.UILib.Setlists
 				if (!string.IsNullOrEmpty(name))
 				{
 					add(name);
+					if (closeOnAdd)
+					{
+						Close();
+					}
 				}
 			}
 
@@ -365,25 +370,39 @@ namespace Lyrious.UILib.Setlists
 			var row = (DockPanel)RowContent(text, (string?)null);
 			if (isCurrent)
 			{
-				var check = new Avalonia.Controls.Shapes.Path
-				{
-					Data = Geometry.Parse(OpenIcon),
-					StrokeThickness = 2,
-					StrokeLineCap = PenLineCap.Round,
-					StrokeJoin = PenLineJoin.Round,
-					Width = 24,
-					Height = 24,
-					// No taller than the text, so the row is as high as the others.
-					Margin = new Thickness(12, -2, 0, -2),
-					VerticalAlignment = VerticalAlignment.Center,
-				};
-				check.Bind(Avalonia.Controls.Shapes.Shape.StrokeProperty, check.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
-				ToolTip.SetTip(check, "The current setlist");
-				DockPanel.SetDock(check, Dock.Right);
-				row.Children.Insert(0, check);
+				row.Children.Insert(0, CurrentCheck("The current setlist"));
 			}
 
 			return row;
+		}
+
+		/// <summary>
+		/// The quarter note (♩) that marks a list row's item as the current one, for docking at the
+		/// row's right. It has the colour of the row's text, and is no taller than the text, so the
+		/// row is as high as the others.
+		/// </summary>
+		public static Control CurrentCheck(string description)
+		{
+			// A filled, tilted note head with its stem rising from the head's right side.
+			var note = new Avalonia.Controls.Shapes.Path
+			{
+				Data = new GeometryGroup
+				{
+					Children =
+					{
+						new EllipseGeometry(new Rect(7, 14.6, 8.4, 5.8)) { Transform = new RotateTransform(-22, 11.2, 17.5) },
+						new RectangleGeometry(new Rect(13.9, 3.5, 1.7, 13.6)),
+					},
+				},
+				Width = 24,
+				Height = 24,
+				Margin = new Thickness(12, -2, 0, -2),
+				VerticalAlignment = VerticalAlignment.Center,
+			};
+			note.Bind(Avalonia.Controls.Shapes.Shape.FillProperty, note.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
+			ToolTip.SetTip(note, description);
+			DockPanel.SetDock(note, Dock.Right);
+			return note;
 		}
 
 		// A trash can: lid, handle, can and two lines on it.

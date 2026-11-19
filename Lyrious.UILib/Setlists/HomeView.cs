@@ -12,6 +12,7 @@ using Avalonia.VisualTree;
 using Lyrious.UILib.Login;
 using Path = Avalonia.Controls.Shapes.Path;
 using Shape = Avalonia.Controls.Shapes.Shape;
+using ToggleButton = Avalonia.Controls.Primitives.ToggleButton;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -68,7 +69,7 @@ namespace Lyrious.UILib.Setlists
 		private readonly Button addSongsButton = IconButton(AddIcon, "Add a song to the setlist");
 		// The right drawer's search: the box takes the place of the setlist's name and the tools, and
 		// only the songs with the text in their name are listed.
-		private readonly TextBox setlistSearchBox = PageLayout.WithClearButton(new TextBox { PlaceholderText = "Search the setlist", VerticalAlignment = VerticalAlignment.Center, IsVisible = false });
+		private readonly TextBox setlistSearchBox = PageLayout.WithClearButton(new TextBox { PlaceholderText = "Search songs and tags", VerticalAlignment = VerticalAlignment.Center, IsVisible = false });
 		private readonly ContentControl page = new();
 		private readonly SplitView menuDrawer;
 		private readonly SplitView setlistDrawer;
@@ -124,6 +125,11 @@ namespace Lyrious.UILib.Setlists
 		// What the right drawer is showing: the setlist, and its song rows by entry id (for moving the highlight).
 		private Guid? drawerSetlistId;
 		private readonly Dictionary<Guid, Button> drawerRows = new();
+
+		// While searching the right drawer: the tags of its songs to choose from, and the chosen ones
+		// (a song is listed when it has all of them).
+		private readonly WrapPanel drawerTagFilter = new() { Orientation = Orientation.Horizontal, ItemSpacing = 6, LineSpacing = 6, Margin = new Thickness(8, 0, 0, 8), IsVisible = false };
+		private readonly HashSet<string> drawerChosenTags = new(StringComparer.CurrentCultureIgnoreCase);
 		private int drawerLoad;
 
 		/// <summary>Raised with the new password once the user has changed it on the profile page.</summary>
@@ -141,8 +147,8 @@ namespace Lyrious.UILib.Setlists
 		private readonly AuthenticatedUser user;
 		// Offered on the profile page until used.
 		private bool offerForgetSavedPassword;
-		// At the top of the left drawer; follows a change of name on the profile page.
-		private readonly TextBlock memberName = new() { FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+		// The member's name, under "Profile" in the left drawer; follows a change of name on the profile page.
+		private readonly TextBlock memberName = new() { FontSize = 13, Opacity = 0.7, TextTrimming = TextTrimming.CharacterEllipsis };
 
 		/// <param name="offerForgetSavedPassword">Shows "Forget saved password" on the profile page (when a password is saved and the app can remove it).</param>
 		public HomeView(AuthenticatedUser user, ISetlistService service, bool offerForgetSavedPassword = false)
@@ -271,7 +277,17 @@ namespace Lyrious.UILib.Setlists
 				_ = LoadSetlistDrawerAsync(centerSong: true);
 			};
 			// Opened again some other way (e.g. after focus mode): the current song in the middle too.
-			setlistDrawer.PaneOpened += (_, _) => CenterDrawerSong();
+			// (Not when it slides back in after a press during its slide away: the list stays where it was.)
+			setlistDrawer.PaneOpened += (_, _) =>
+			{
+				if (keepDrawerScroll)
+				{
+					keepDrawerScroll = false;
+					return;
+				}
+
+				CenterDrawerSong();
+			};
 			// The computer may have changed networks since.
 			menuDrawer.PaneOpened += (_, _) => ShowSharingCode();
 
@@ -1009,7 +1025,7 @@ namespace Lyrious.UILib.Setlists
 		/// ✕ hides the drawer but keeps it pinned, so it docks again when reopened. While a pinned
 		/// drawer is showing, its open button in the top corner is hidden.
 		/// </summary>
-		private static StackPanel DrawerButtons(SplitView drawer, Button openButton, string name)
+		private static StackPanel DrawerButtons(SplitView drawer, Button openButton, string name, bool closeFirst = false)
 		{
 			var pinButton = IconButton(PinIcon, $"Pin {name}");
 			var closeButton = EscapeKey.MarkAsClose(IconButton(CloseIcon, $"Close {name}"));
@@ -1044,7 +1060,8 @@ namespace Lyrious.UILib.Setlists
 			drawer.PaneClosed += (_, _) => Update();
 			Update();
 
-			return new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top, Children = { pinButton, closeButton } };
+			// ✕ first in the left drawer (at its left edge, by the button that opens it), last in the right one.
+			return new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top, Children = { closeFirst ? closeButton : pinButton, closeFirst ? pinButton : closeButton } };
 		}
 
 		/// <summary>Closes the drawer after an action, unless it's pinned.</summary>
@@ -1164,8 +1181,8 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The left drawer: member, band, setlist and song at the top, account actions at the bottom.</summary>
 		private Control MenuDrawerContent(AuthenticatedUser user, Button openButton, bool offerForgetSavedPassword)
 		{
-			var buttons = DrawerButtons(menuDrawer, openButton, "menu");
-			DockPanel.SetDock(buttons, Dock.Right);
+			var buttons = DrawerButtons(menuDrawer, openButton, "menu", closeFirst: true);
+			DockPanel.SetDock(buttons, Dock.Left);
 
 			var settings = DrawerItem("Settings");
 			settings.Click += (_, _) =>
@@ -1198,8 +1215,10 @@ namespace Lyrious.UILib.Setlists
 				SyncRequested?.Invoke();
 			};
 
-			// The member's name, password, saved password and logging out.
+			// The member's name, password, saved password and logging out; the name under "Profile".
 			var profile = DrawerItem("Profile");
+			profile.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+			profile.Content = new StackPanel { Spacing = 2, Children = { new TextBlock { Text = "Profile" }, memberName } };
 			profile.Click += (_, _) =>
 			{
 				CloseUnlessPinned(menuDrawer);
@@ -1211,9 +1230,8 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 4,
 				Children =
 				{
-					// The name sits in a little from the edge, in line with the items' text below,
-					// and 4px above the first item (the panel's spacing).
-					new DockPanel { Children = { buttons, memberName } },
+					// The drawer's buttons (✕ and pin) at the left, 4px above the first item (the panel's spacing).
+					new DockPanel { Children = { buttons } },
 					chooseGroupButton,
 					chooseSetlistButton,
 					chooseSongButton,
@@ -1225,17 +1243,29 @@ namespace Lyrious.UILib.Setlists
 
 			// The account actions sit at the bottom of the drawer.
 			// Its top margin is the gap between items, kept when the two groups meet (a short drawer).
-			var account = new StackPanel { Spacing = 4, Margin = new Thickness(0, 4, 0, 0), Children = { profile, settings, sync } };
+			var account = new StackPanel { Spacing = 4, Margin = new Thickness(0, 4, 0, 0), Children = { settings, sync } };
 			DockPanel.SetDock(account, Dock.Bottom);
 
-			// Last: about the app (version, release notes), and on desktop quitting it.
+			// Last: about the app (version, release notes), the profile, and on desktop quitting it.
 			var about = DrawerItem("About");
+			// The version under "About", as the status is under "Sync".
+			about.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+			about.Content = new StackPanel
+			{
+				Spacing = 2,
+				Children =
+				{
+					new TextBlock { Text = "About" },
+					new TextBlock { Text = $"Version {ReleaseNotes.AppVersion}", FontSize = 13, Opacity = 0.7 },
+				},
+			};
 			about.Click += (_, _) =>
 			{
 				CloseUnlessPinned(menuDrawer);
 				page.Content = new AboutView();
 			};
 			account.Children.Add(about);
+			account.Children.Add(profile);
 			if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
 			{
 				var exit = DrawerItem("Exit");
@@ -1252,7 +1282,7 @@ namespace Lyrious.UILib.Setlists
 					CloseUnlessPinned(menuDrawer);
 					page.Content = new SoundFilesView(sounds, service);
 				};
-				account.Children.Insert(2, soundFiles);
+				account.Children.Insert(1, soundFiles);
 			}
 
 			var panel = new DockPanel
@@ -1430,6 +1460,8 @@ namespace Lyrious.UILib.Setlists
 				endSearchButton.IsVisible = searching;
 				setlistTitle.IsVisible = !searching;
 				buttons.IsVisible = !searching;
+				// The songs' tags to choose from, while searching (when they have any).
+				drawerTagFilter.IsVisible = searching && drawerTagFilter.Children.Count > 0;
 				if (searching)
 				{
 					// Once it's on screen.
@@ -1437,7 +1469,15 @@ namespace Lyrious.UILib.Setlists
 				}
 				else
 				{
-					setlistSearchBox.Text = string.Empty; // Every song is listed again.
+					// Every song is listed again.
+					drawerChosenTags.Clear();
+					foreach (var tag in drawerTagFilter.Children.OfType<ToggleButton>())
+					{
+						tag.IsChecked = false;
+					}
+
+					setlistSearchBox.Text = string.Empty;
+					FilterDrawerSongs();
 					CenterDrawerSong();
 				}
 			}
@@ -1467,7 +1507,14 @@ namespace Lyrious.UILib.Setlists
 			AddHandler(PointerPressedEvent, OnPressWhileDrawerLingers, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 			// The page scrolls with the mouse wheel or touchpad also while a drawer slides over it.
 			AddHandler(PointerWheelChangedEvent, OnWheelBesideOpenDrawer, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
-			setlistDrawer.PaneOpening += (_, _) => EndSlowDrawerSlide();
+			// (Not when it slides back in after a press during its slide away: that keeps its own slide.)
+			setlistDrawer.PaneOpening += (_, _) =>
+			{
+				if (!drawerSlidingBack)
+				{
+					EndSlowDrawerSlide();
+				}
+			};
 			// Closed some other way while it waited to slide away: nothing left to do.
 			setlistDrawer.PaneClosed += (_, _) => drawerStayTimer.Stop();
 			// A drawer that slid away opens without a search the next time.
@@ -1490,7 +1537,7 @@ namespace Lyrious.UILib.Setlists
 				Margin = new Thickness(4, 4, 4, 0),
 				Width = setlistDrawer.OpenPaneLength - 8,
 				HorizontalAlignment = HorizontalAlignment.Left,
-				Children = { titleRow, setlistDrawerBody },
+				Children = { titleRow, TopDocked(drawerTagFilter), setlistDrawerBody },
 			};
 		}
 
@@ -1540,11 +1587,12 @@ namespace Lyrious.UILib.Setlists
 				foreach (var entry in entries)
 				{
 					var row = RoundedHighlight(SongRow(group, setlist, entry));
-					row.Tag = entry.Song.Name; // For the search.
+					row.Tag = entry.Song; // For the search (name and tags).
 					drawerRows[entry.Id] = row;
 					list.Children.Add(row);
 				}
 
+				ShowDrawerTags(entries.Select(entry => entry.Song));
 				FilterDrawerSongs();
 
 				if (sameSetlist && setlistDrawerBody.Content is ScrollViewer scroller)
@@ -1613,8 +1661,70 @@ namespace Lyrious.UILib.Setlists
 			var text = setlistSearchBox.Text?.Trim() ?? string.Empty;
 			foreach (var row in drawerRows.Values)
 			{
-				row.IsVisible = text.Length == 0 || (row.Tag is string name && name.Contains(text, StringComparison.CurrentCultureIgnoreCase));
+				row.IsVisible = row.Tag is not SongDetails song
+					|| ((text.Length == 0 || DrawerSongMatches(song, text)) && drawerChosenTags.All(tag => SongTags.Has(song, tag)));
 			}
+		}
+
+		/// <summary>
+		/// The tags of the setlist's songs as small toggle buttons under the drawer's search box (shown
+		/// while searching): each one chosen narrows the list to the songs that have it, and all the
+		/// others chosen. Tags chosen before that the songs still have stay chosen.
+		/// </summary>
+		private void ShowDrawerTags(IEnumerable<SongDetails> songs)
+		{
+			var tags = SongTags.AllOf(songs);
+			drawerChosenTags.IntersectWith(tags);
+			drawerTagFilter.Children.Clear();
+			foreach (var tag in tags)
+			{
+				var button = new ToggleButton
+				{
+					Content = new TextBlock { Text = tag, FontSize = 12 },
+					Padding = new Thickness(8, 1),
+					MinHeight = 0,
+					CornerRadius = new CornerRadius(12),
+					IsChecked = drawerChosenTags.Contains(tag),
+				};
+				ToolTip.SetTip(button, $"Only songs tagged {tag}");
+				button.IsCheckedChanged += (_, _) =>
+				{
+					if (button.IsChecked == true)
+					{
+						drawerChosenTags.Add(tag);
+					}
+					else
+					{
+						drawerChosenTags.Remove(tag);
+					}
+
+					FilterDrawerSongs();
+				};
+				drawerTagFilter.Children.Add(button);
+			}
+
+			drawerTagFilter.IsVisible = setlistSearchBox.IsVisible && tags.Count > 0;
+		}
+
+		private static Control TopDocked(Control control)
+		{
+			DockPanel.SetDock(control, Dock.Top);
+			return control;
+		}
+
+		/// <summary>
+		/// Whether the right drawer's search finds the song: the text in its name, or in one of its
+		/// tags ("#" in front of the text is left out, as tags are written without one).
+		/// </summary>
+		private static bool DrawerSongMatches(SongDetails song, string text)
+		{
+			if (song.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase))
+			{
+				return true;
+			}
+
+			var tag = text.TrimStart('#').Trim();
+			return tag.Length > 0 && SongTags.Parse(song.Tags).Any(t => t.Contains(tag, StringComparison.CurrentCultureIgnoreCase));
 		}
 
 		/// <summary>The first song listed in the right drawer (the first found, while searching).</summary>
@@ -1632,8 +1742,9 @@ namespace Lyrious.UILib.Setlists
 			if (!reload && drawerSetlistId != null && drawerSetlistId == currentSetlist?.Id)
 			{
 				HighlightDrawerSong();
-				// The current song may have changed: bring it to the middle of an open drawer.
-				if (setlistDrawer.IsPaneOpen)
+				// The current song may have changed: bring it to the middle of an open drawer (not when
+				// it was clicked in the drawer: it's in sight there already).
+				if (setlistDrawer.IsPaneOpen && !chosenInDrawer)
 				{
 					CenterDrawerSong();
 				}
@@ -1659,7 +1770,7 @@ namespace Lyrious.UILib.Setlists
 			var details = PageLayout.SongInfo(entry.Song);
 			var content = new StackPanel { Spacing = 2 };
 			content.Children.Add(new TextBlock { Text = entry.Song.Name, FontSize = 18, TextTrimming = TextTrimming.CharacterEllipsis });
-			var tags = SongTags.Parse(entry.Song.Tags);
+			var tags = SongTags.Sorted(entry.Song.Tags);
 			if (details.Length > 0 || tags.Count > 0)
 			{
 				// At the right: the tags, then key, tempo and beat. When the drawer is too narrow for
@@ -1693,10 +1804,19 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				// The song is chosen at once; the drawer stays a moment, showing it, and then slides away.
+				// The list stays where it is (the song was clicked where it is), not centred on it.
 				CloseSetlistDrawerSlowly();
 				currentEntryId = entry.Id;
 				HighlightDrawerSong();
-				SelectSong(group, setlist, entry);
+				chosenInDrawer = true;
+				try
+				{
+					SelectSong(group, setlist, entry);
+				}
+				finally
+				{
+					chosenInDrawer = false;
+				}
 			};
 			return row;
 		}
@@ -1737,13 +1857,82 @@ namespace Lyrious.UILib.Setlists
 					new Avalonia.Animation.DoubleTransition { Property = WidthProperty, Duration = DrawerSlide, Easing = new Avalonia.Animation.Easings.CubicEaseInOut() },
 				];
 				// Back to the theme's speed once it's away (or when it's opened again before that).
-				DispatcherTimer.RunOnce(EndSlowDrawerSlide, DrawerSlide + TimeSpan.FromMilliseconds(100));
+				var slide = ++drawerSlide;
+				DispatcherTimer.RunOnce(() =>
+				{
+					if (slide == drawerSlide)
+					{
+						EndSlowDrawerSlide();
+					}
+				}, DrawerSlide + TimeSpan.FromMilliseconds(100));
 				// It's going away: clicks go through it to what's underneath, e.g. the play button
 				// (at the far right, the last to come out), instead of being lost on the drawer.
 				slowPaneRoot.IsHitTestVisible = false;
 			}
 
 			setlistDrawer.IsPaneOpen = false;
+		}
+
+		// Counts the slow slides (and slides back), so a timer of an earlier one leaves a later one alone.
+		private int drawerSlide;
+
+		// While the drawer slides back in (see SlideSetlistDrawerBack): its opening keeps that slide.
+		private bool drawerSlidingBack;
+
+		// While a song clicked in the right drawer is shown: the drawer isn't centred on it.
+		private bool chosenInDrawer;
+
+		// The drawer slid back in after a press during its slide away: once open, it isn't centred.
+		private bool keepDrawerScroll;
+
+		/// <summary>
+		/// A press on the drawer while it slides away: it stops, and comes back quickly (from where it
+		/// got to). The press is used up, so it doesn't reach the page underneath.
+		/// </summary>
+		private void SlideSetlistDrawerBack()
+		{
+			if (slowPaneRoot is not { } pane)
+			{
+				return;
+			}
+
+			var slide = ++drawerSlide;
+			pane.Transitions =
+			[
+				new Avalonia.Animation.DoubleTransition { Property = WidthProperty, Duration = TimeSpan.FromMilliseconds(250), Easing = new Avalonia.Animation.Easings.CubicEaseOut() },
+			];
+			pane.ClearValue(IsHitTestVisibleProperty);
+			keepDrawerScroll = true;
+			drawerSlidingBack = true;
+			try
+			{
+				setlistDrawer.IsPaneOpen = true;
+			}
+			finally
+			{
+				drawerSlidingBack = false;
+			}
+
+			// Back to the theme's speed once it's in.
+			DispatcherTimer.RunOnce(() =>
+			{
+				if (slide == drawerSlide)
+				{
+					EndSlowDrawerSlide();
+				}
+			}, TimeSpan.FromMilliseconds(350));
+		}
+
+		/// <summary>Whether the press is on what's still showing of the drawer sliding away.</summary>
+		private bool PressOnSlidingDrawer(Avalonia.Input.PointerPressedEventArgs e)
+		{
+			if (slowPaneRoot is not { } pane || setlistDrawer.IsPaneOpen || pane.Bounds.Width < 1)
+			{
+				return false;
+			}
+
+			var point = e.GetPosition(pane);
+			return point.X >= 0 && point.Y >= 0 && point.X <= pane.Bounds.Width && point.Y <= pane.Bounds.Height;
 		}
 
 		private void EndSlowDrawerSlide()
@@ -1761,6 +1950,14 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private void OnPressWhileDrawerLingers(object? sender, Avalonia.Input.PointerPressedEventArgs e)
 		{
+			// Sliding away already: a press on the drawer brings it back (one beside it goes through).
+			if (PressOnSlidingDrawer(e))
+			{
+				e.Handled = true;
+				SlideSetlistDrawerBack();
+				return;
+			}
+
 			if (!drawerStayTimer.IsEnabled || setlistDrawer.Pane is not Visual pane
 			    || (e.Source is Visual pressed && (pressed == pane || pane.IsVisualAncestorOf(pressed))))
 			{
@@ -2227,10 +2424,24 @@ namespace Lyrious.UILib.Setlists
 		private async Task ShowSongsAsync(GroupSummary group, bool replace = false)
 		{
 			var songs = await service.GetSongbookSongsAsync(group.Id);
-			var view = new SongsView(group, songs, currentSongId, await SongbookChoicesAsync());
+			// The songbook played as the setlist (its id is its band's), for the note on its button.
+			var playing = currentSetlist is { } shownSetlist && IsSongbookSetlist(shownSetlist) ? shownSetlist.GroupId : (Guid?)null;
+			var view = new SongsView(group, songs, currentSongId, await SongbookChoicesAsync(), playing);
 			// Another songbook chosen: shown in this page's place.
 			view.SongbookChosen += chosen => _ = RunAsync(() => ShowSongsAsync(chosen, replace: true));
-			view.ShowAsSetlistRequested += shown => ShowSongbookAsSetlist(group, shown);
+			// A new setlist of the band's with the songs, in order; the songbook stays on the page.
+			view.SaveAsSetlistRequested += (name, chosen) => _ = RunAsync(async () =>
+			{
+				var setlist = await service.CreateSetlistAsync(group.Id, name);
+				await service.AddSongsAsync(setlist.Id, chosen.Select(song => song.Id).ToList());
+				ShowNotice($"Saved the setlist {name} ({chosen.Count} song{(chosen.Count == 1 ? "" : "s")})");
+			});
+			view.ShowAsSetlistRequested += shown =>
+			{
+				ShowSongbookAsSetlist(group, shown);
+				// Again in its place, now with the note on this songbook's button (the search and tags stay).
+				_ = RunAsync(() => ShowSongsAsync(group, replace: true));
+			};
 			view.SongSelected += song => _ = RunAsync(async () =>
 			{
 				if (currentSetlist is { } setlist

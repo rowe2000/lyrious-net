@@ -87,6 +87,16 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				var lyrics = Lyrics(song, convert);
+				var tags = convert ? Tags(song) : "";
+				// Converted, a ✓ in the name or the lyrics becomes the tag "✓": it's taken out of both
+				// (with the space before it), so "Go Your Own Way ✓" is "Go Your Own Way", tagged ✓.
+				if (convert && (name.Contains(Check) || lyrics.Contains(Check)))
+				{
+					name = WithoutCheck(name).Trim();
+					lyrics = WithoutCheck(lyrics);
+					tags = SongTags.Tidy($"{tags} {Check}");
+				}
+
 				if (lyrics.Length > MaxLyricsLength)
 				{
 					skipped.Add($"{name} (too long: {lyrics.Length} characters, at most {MaxLyricsLength})");
@@ -105,7 +115,7 @@ namespace Lyrious.UILib.Setlists
 					lyrics,
 					link.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? link : "",
 					TimeSpan.FromSeconds(Math.Max(0, Int(song, "Duration"))),
-					convert ? Tags(song) : "",
+					tags,
 					Artist(song, convert)));
 			}
 
@@ -282,6 +292,15 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>A heading line's chord with the spaces after it, "# [d] ": group 1 is "# ", group 2 the chord.</summary>
 		[System.Text.RegularExpressions.GeneratedRegex(@"^([ \t]*#+[ \t]+)\[([^\]\s][^\]]*)\][ \t]+(?=\S)", System.Text.RegularExpressions.RegexOptions.Multiline)]
 		private static partial System.Text.RegularExpressions.Regex HeadingChord();
+
+		/// <summary>The mark that, in a name or lyrics, becomes a tag of its own when the import converts.</summary>
+		private const string Check = "✓";
+
+		/// <summary>The text without its ✓ marks, each with the space or tab before it (if any).</summary>
+		private static string WithoutCheck(string text) => CheckMark().Replace(text, "");
+
+		[System.Text.RegularExpressions.GeneratedRegex(@"[ \t]?✓")]
+		private static partial System.Text.RegularExpressions.Regex CheckMark();
 
 		/// <summary>Artists whose songs get their name as a tag when the import converts.</summary>
 		private static readonly string[] TaggedArtists = ["Maria", "Tobbe", "Robert"];

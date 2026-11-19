@@ -253,7 +253,7 @@ namespace Lyrious.UILib.Setlists
 	public sealed record SetlistSummary(Guid Id, string Name, Guid GroupId);
 
 	/// <param name="MediaLink">A link to listen to or watch the song (Spotify, YouTube, …); empty if none.</param>
-	/// <param name="Tags">Tags to sort the song by, separated by commas (see <see cref="SongTags"/>); empty if none.</param>
+	/// <param name="Tags">Tags to sort the song by, separated by spaces (see <see cref="SongTags"/>); empty if none.</param>
 	public sealed record SongDetails(Guid Id, string Name, string PlayingKey, float Tempo, string Beat, string Lyrics, string MediaLink = "", string Tags = "", string OriginalKey = "", string Artist = "");
 
 	/// <summary>A song found online: title, artist, album, length and plain lyrics (empty if the database has none).</summary>

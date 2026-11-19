@@ -15,13 +15,12 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>
 	/// One band's details (at first the joined one), and all the member's other bands as buttons
 	/// above them, flowing left to right; clicking one shows its details instead (the joined band is
-	/// highlighted and has a ✓).
+	/// highlighted and has a ♩).
 	/// The details: who's in it (role, invited or not, last login), Join, and for the band's admins
 	/// tools to invite, set roles, remove members and delete the band.
 	/// </summary>
 	public sealed class GroupsView : UserControl
 	{
-		private const string CheckIcon = "M5,12 L10,17 L19,7";
 		private const string RemoveIcon = "M6,6 L18,18 M18,6 L6,18";
 
 		private readonly IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>> members;
@@ -109,7 +108,7 @@ namespace Lyrious.UILib.Setlists
 			otherBands.Children.Clear();
 			foreach (var band in groups)
 			{
-				// As wide as the name (and the joined band's ✓); the one shown below is highlighted.
+				// As wide as the name (and the joined band's ♩); the one shown below is highlighted.
 				var button = new Button { Content = GroupContent(band, joined: band.Id == currentGroupId), Padding = new Thickness(12, 6) };
 				if (band.Id == group?.Id)
 				{
@@ -494,7 +493,7 @@ namespace Lyrious.UILib.Setlists
 
 		private static string Capitalized(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
 
-		/// <summary>One band: its name; the joined band has a ✓ at the right.</summary>
+		/// <summary>One band: its name; the joined band has the note of the current one (♩) at the right.</summary>
 		private static Control GroupContent(GroupSummary group, bool joined)
 		{
 			var details = new TextBlock { Text = group.Name, FontSize = 20, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
@@ -503,22 +502,9 @@ namespace Lyrious.UILib.Setlists
 				return details;
 			}
 
-			// Drawn in the row's text colour, so it shows on the highlight.
-			var check = new Path
-			{
-				Data = Geometry.Parse(CheckIcon),
-				StrokeThickness = 2,
-				StrokeLineCap = PenLineCap.Round,
-				StrokeJoin = PenLineJoin.Round,
-				Width = 24,
-				Height = 24,
-				Margin = new Thickness(12, 0, 0, 0),
-				VerticalAlignment = VerticalAlignment.Center,
-			};
-			check.Bind(Shape.StrokeProperty, new Binding(nameof(Button.Foreground)) { RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Button) } });
-			ToolTip.SetTip(check, "Joined");
-			DockPanel.SetDock(check, Dock.Right);
-			return new DockPanel { Children = { check, details } };
+			// In the button's text colour, so it shows on the highlight too.
+			var note = PageLayout.CurrentCheck("Joined");
+			return new DockPanel { Children = { note, details } };
 		}
 	}
 }

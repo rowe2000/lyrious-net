@@ -207,7 +207,7 @@ namespace Lyrious.UILib.Setlists
 						new TextBlock { Text = "Convert the songs to Lyrious format?", FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
 						new TextBlock
 						{
-							Text = "Each song then starts with a heading of its key and name (\"# [D]Amazing Grace\"), comments such as {c: Verse 1} become headings (\"## Verse 1\"), and a heading like \"# [d] Intro\" becomes \"# [D]Intro\". Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist.",
+							Text = "Each song then starts with a heading of its key and name (\"# [D]Amazing Grace\"), comments such as {c: Verse 1} become headings (\"## Verse 1\"), and a heading like \"# [d] Intro\" becomes \"# [D]Intro\". Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist, and a ✓ in a name or the lyrics becomes the tag ✓.",
 							TextWrapping = TextWrapping.Wrap,
 							Opacity = 0.8,
 						},

@@ -26,7 +26,7 @@ public sealed class Song : Entity, IName
     /// <summary>A link to listen to or watch the song, e.g. on Spotify or YouTube; empty if none.</summary>
     [MaxLength(500)]
     [DataMember] public string MediaLink { get; set; } = "";
-    /// <summary>Tags to sort the song by (e.g. "christmas, ballad"), separated by commas; empty if none.</summary>
+    /// <summary>Tags to sort the song by (e.g. "ballad christmas"), separated by spaces; empty if none.</summary>
     [MaxLength(MaxTagsLength)]
     [DataMember] public string Tags { get; set; } = "";
 

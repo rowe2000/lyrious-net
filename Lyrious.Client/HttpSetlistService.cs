@@ -1093,7 +1093,7 @@ public sealed class HttpSetlistService : ISetlistService
             ["beat"] = Limit(song.Beat, 10),
             ["lyrics"] = Limit(song.Lyrics, 5000),
             ["mediaLink"] = Limit(song.MediaLink, 500),
-            ["tags"] = Limit(SongTags.Join(SongTags.Parse(song.Tags)), 500),
+            ["tags"] = Limit(SongTags.Tidy(song.Tags), 500),
         });
     }
 

@@ -2075,12 +2075,12 @@ namespace Lyrious.UILib.Setlists
 			// by commas, until it loses the focus or Enter is pressed.
 			var tagsBox = new TextBox
 			{
-				Text = SongTags.Join(SongTags.Parse(song.Tags)),
-				PlaceholderText = "Tags, separated by commas",
+				Text = SongTags.Tidy(song.Tags),
+				PlaceholderText = "Tags, separated by spaces",
 				MinWidth = 240,
 				MaxLength = 500,
 			};
-			ToolTip.SetTip(tagsBox, "Tags, separated by commas (e.g. christmas, ballad)");
+			ToolTip.SetTip(tagsBox, "Tags, separated by spaces (e.g. ballad christmas)");
 			// The artist likewise: "by …" (or "Add artist") until clicked, then its text box, until it
 			// loses the focus or Enter is pressed.
 			var artistSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 12, 5) };
@@ -2123,7 +2123,7 @@ namespace Lyrious.UILib.Setlists
 			var tagsSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(12, 0, 0, 3) };
 
 			// Below the box, the songbook's tags that the song doesn't have yet, narrowed to the ones
-			// containing what's typed after the last comma; clicking one puts it in the box.
+			// containing what's typed after the last space; clicking one puts it in the box.
 			var usedTagsList = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 6, LineSpacing = 6, MaxWidth = 360 };
 			var usedTagsFrame = new Border
 			{
@@ -2154,18 +2154,18 @@ namespace Lyrious.UILib.Setlists
 			// Set while a tag in the popup is being clicked, so the box keeps showing.
 			var pickingTag = false;
 
-			// The text after the last comma: the tag being typed.
+			// The text after the last space (or comma): the tag being typed.
 			string TypedTag()
 			{
 				var text = tagsBox.Text ?? "";
-				return text[(text.LastIndexOfAny([',', ';']) + 1)..].Trim().TrimStart('#');
+				return text[(text.LastIndexOfAny(SongTags.Separators) + 1)..].Trim().TrimStart('#');
 			}
 
 			void PickTag(string tag)
 			{
 				var text = tagsBox.Text ?? "";
-				var kept = text[..(text.LastIndexOfAny([',', ';']) + 1)];
-				tagsBox.Text = SongTags.Join(SongTags.Parse(kept).Append(tag)) + ", ";
+				var kept = text[..(text.LastIndexOfAny(SongTags.Separators) + 1)];
+				tagsBox.Text = SongTags.Join(SongTags.Parse(kept).Append(tag)) + " ";
 				tagsBox.CaretIndex = tagsBox.Text.Length;
 				tagsBox.Focus();
 			}
@@ -2231,7 +2231,7 @@ namespace Lyrious.UILib.Setlists
 			void ShowTagsText()
 			{
 				usedTagsPopup.IsOpen = false;
-				var tags = SongTags.Parse(tagsBox.Text);
+				var tags = SongTags.Sorted(tagsBox.Text); // As they'll be saved.
 				Control shown = tags.Count == 0
 					? new TextBlock { Text = "Add tags", Opacity = 0.7, FontStyle = FontStyle.Italic, Margin = new Thickness(0, 0, 0, 2) }
 					: PageLayout.TagChips(tags);
@@ -2295,7 +2295,7 @@ namespace Lyrious.UILib.Setlists
 					Name = name.Text!.Trim(),
 					Lyrics = editor.Text ?? string.Empty,
 					MediaLink = mediaLink.Trim(),
-					Tags = SongTags.Join(SongTags.Parse(tagsBox.Text)),
+					Tags = SongTags.Tidy(tagsBox.Text),
 					Artist = artist.Text?.Trim() ?? "",
 				};
 
