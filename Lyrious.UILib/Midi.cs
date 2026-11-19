@@ -140,17 +140,17 @@ namespace Lyrious.UILib
 		{
 			if (!NamePattern().IsMatch(expression.Name))
 			{
-				return "The name is letters, digits and _, not starting with a digit (e.g. MODX).";
+				return Localization.L.T("The name is letters, digits and _, not starting with a digit (e.g. MODX).");
 			}
 
 			if (others.FirstOrDefault(other => string.Equals(other.Name, expression.Name, StringComparison.OrdinalIgnoreCase)) is { } same)
 			{
-				return $"There's already an expression called {same.Name}.";
+				return Localization.L.T("There's already an expression called {0}.", same.Name);
 			}
 
 			if (string.IsNullOrWhiteSpace(expression.Output))
 			{
-				return "The output is needed: the MIDI commands to send, e.g. PC{program}@1.";
+				return Localization.L.T("The output is needed: the MIDI commands to send, e.g. PC{{program}}@1.");
 			}
 
 			foreach (Match placeholder in Placeholder().Matches(expression.Output))
@@ -171,7 +171,7 @@ namespace Lyrious.UILib
 				return problems[0];
 			}
 
-			return messages.Count == 0 ? "The output sends nothing." : null;
+			return messages.Count == 0 ? Localization.L.T("The output sends nothing.") : null;
 		}
 
 		/// <summary>Parameters as typed in the editor, "bank=0, program"; null with the reason if they aren't right.</summary>
@@ -191,7 +191,7 @@ namespace Lyrious.UILib
 
 				if (parameters.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
 				{
-					problem = $"There are two parameters called {name}.";
+					problem = Localization.L.T("There are two parameters called {0}.", name);
 					return null;
 				}
 
@@ -200,7 +200,7 @@ namespace Lyrious.UILib
 				{
 					if (!TryValue(pieces[1], out var value))
 					{
-						problem = $"The default of {name} must be a whole number from 0 to 127.";
+						problem = Localization.L.T("The default of {0} must be a whole number from 0 to 127.", name);
 						return null;
 					}
 

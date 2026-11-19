@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib
 {
@@ -18,14 +19,14 @@ namespace Lyrious.UILib
 		[
 			new(new DateTime(2026, 11, 18), "0.9",
 			[
-				"Your private band: every member has one, to keep songs and setlists of their own without joining a band.",
-				"Band and Setlist pages show your bands and setlists as buttons to pick from; click a name to rename it.",
-				"The songbook lets you switch between your private songbook and your band's.",
-				"A '|' in the lyrics marks a new bar, like [+1], so the lyrics scroll in time.",
-				"Chord grid: chords in bar columns over the words; turn it on with the grid button on the lyrics page.",
-				"Spotify and YouTube songs play inside the app, in a small player under the media button, and stop at the song's end.",
-				"Delete buttons turn red, and the lyrics use the whole width of the window.",
-				"After login you see what's new since your last visit; Exit and About are at the bottom of the menu.",
+				L.T("Your private band: every member has one, to keep songs and setlists of their own without joining a band."),
+				L.T("Band and Setlist pages show your bands and setlists as buttons to pick from; click a name to rename it."),
+				L.T("The songbook lets you switch between your private songbook and your band's."),
+				L.T("A '|' in the lyrics marks a new bar, like [+1], so the lyrics scroll in time."),
+				L.T("Chord grid: chords in bar columns over the words; turn it on with the grid button on the lyrics page."),
+				L.T("Spotify and YouTube songs play inside the app, in a small player under the media button, and stop at the song's end."),
+				L.T("Delete buttons turn red, and the lyrics use the whole width of the window."),
+				L.T("After login you see what's new since your last visit; Exit and About are at the bottom of the menu."),
 			]),
 		];
 

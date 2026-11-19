@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Lyrious.Client.Offline;
 using Lyrious.UILib;
 using Lyrious.UILib.Setlists;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.Client;
 
@@ -131,7 +132,7 @@ public sealed class HttpSetlistService : ISetlistService
     /// </summary>
     private Task<EntityCache> CacheAsync()
     {
-        var memberId = auth.MemberId ?? throw new InvalidOperationException("You're not logged in.");
+        var memberId = auth.MemberId ?? throw new InvalidOperationException(L.T("You're not logged in."));
         if (ready == null || readySession != auth.Session || cache?.MemberId != memberId)
         {
             readySession = auth.Session;
@@ -264,7 +265,7 @@ public sealed class HttpSetlistService : ISetlistService
 
     public async Task<IReadOnlyList<Change>> GetChangesSinceAsync(DateTime since, CancellationToken cancellationToken = default)
     {
-        var memberId = auth.MemberId ?? throw new InvalidOperationException("You're not logged in.");
+        var memberId = auth.MemberId ?? throw new InvalidOperationException(L.T("You're not logged in."));
         var current = await CacheAsync();
         var changedHere = ChangedHere(memberId);
 
@@ -297,7 +298,7 @@ public sealed class HttpSetlistService : ISetlistService
             else
             {
                 var name = IdField(membership, "memberId") is { } other && members.TryGetValue(other, out var member) ? Text(member, "name") : "";
-                changes.Add(new Change(ChangeKind.Member, name.Length > 0 ? name : "A new member", BandName(groupId), true, Time(membership, "createdAt")!.Value));
+                changes.Add(new Change(ChangeKind.Member, name.Length > 0 ? name : L.T("A new member"), BandName(groupId), true, Time(membership, "createdAt")!.Value));
             }
         }
 
@@ -654,7 +655,7 @@ public sealed class HttpSetlistService : ISetlistService
                         play.CreatedAt,
                         play.SongId,
                         // A song deleted since keeps its name in the cache (removed), so it can still be named.
-                        songs.TryGetValue(play.SongId, out var song) ? song.Name : "Unknown song",
+                        songs.TryGetValue(play.SongId, out var song) ? song.Name : L.T("Unknown song"),
                         play.KeyString ?? "",
                         play.Tempo,
                         TimeSpan.FromMilliseconds(play.DurationMilliSeconds),
@@ -667,7 +668,7 @@ public sealed class HttpSetlistService : ISetlistService
 
     public async Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, CancellationToken cancellationToken = default)
     {
-        var memberId = auth.MemberId ?? throw new InvalidOperationException("You're not logged in.");
+        var memberId = auth.MemberId ?? throw new InvalidOperationException(L.T("You're not logged in."));
         var current = await CacheAsync();
         if (Find(current, "song", songId, ClientJsonContext.Default.SongDto) is not { } song)
         {
@@ -716,7 +717,7 @@ public sealed class HttpSetlistService : ISetlistService
 
     public async Task<GroupSummary> CreateGroupAsync(string name, CancellationToken cancellationToken = default)
     {
-        var memberId = auth.MemberId ?? throw new InvalidOperationException("You're not logged in.");
+        var memberId = auth.MemberId ?? throw new InvalidOperationException(L.T("You're not logged in."));
         var current = await CacheAsync();
         const int admin = 2, approved = 2;
 
@@ -739,7 +740,7 @@ public sealed class HttpSetlistService : ISetlistService
     /// <summary>Joins the group by changing the member's joined group.</summary>
     public async Task SelectGroupAsync(Guid groupId, CancellationToken cancellationToken = default)
     {
-        var memberId = auth.MemberId ?? throw new InvalidOperationException("You're not logged in.");
+        var memberId = auth.MemberId ?? throw new InvalidOperationException(L.T("You're not logged in."));
         var current = await CacheAsync();
         current.Update("member", memberId, new JsonObject { ["joinedGroupId"] = groupId.ToString() });
 
@@ -775,7 +776,7 @@ public sealed class HttpSetlistService : ISetlistService
     {
         if (string.IsNullOrEmpty(auth.AccessToken))
         {
-            throw new InvalidOperationException("Finding a member to invite needs a connection to the server.");
+            throw new InvalidOperationException(L.T("Finding a member to invite needs a connection to the server."));
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, $"api/member/find?query={Uri.EscapeDataString(query.Trim())}");
@@ -797,7 +798,7 @@ public sealed class HttpSetlistService : ISetlistService
         var current = await CacheAsync();
         if (MembershipOf(current, groupId, memberId) != null)
         {
-            throw new InvalidOperationException("They're in the band already.");
+            throw new InvalidOperationException(L.T("They're in the band already."));
         }
 
         current.Create("membership", Node(new MembershipDto(Guid.NewGuid(), member, invited, groupId, memberId, Removed: false), ClientJsonContext.Default.MembershipDto));
@@ -808,7 +809,7 @@ public sealed class HttpSetlistService : ISetlistService
     {
         if (string.IsNullOrEmpty(auth.AccessToken))
         {
-            throw new InvalidOperationException("Inviting by email needs a connection to the server.");
+            throw new InvalidOperationException(L.T("Inviting by email needs a connection to the server."));
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/member/invite-email");
@@ -825,7 +826,7 @@ public sealed class HttpSetlistService : ISetlistService
     {
         if (string.IsNullOrEmpty(auth.AccessToken))
         {
-            throw new InvalidOperationException("Sending a sound file needs a connection to the server.");
+            throw new InvalidOperationException(L.T("Sending a sound file needs a connection to the server."));
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Put, $"api/sound/{Uri.EscapeDataString(soundId)}?songId={songId}");
@@ -843,7 +844,7 @@ public sealed class HttpSetlistService : ISetlistService
     {
         if (string.IsNullOrEmpty(auth.AccessToken))
         {
-            throw new InvalidOperationException("Fetching a sound file needs a connection to the server.");
+            throw new InvalidOperationException(L.T("Fetching a sound file needs a connection to the server."));
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, $"api/sound/{Uri.EscapeDataString(soundId)}");
@@ -897,7 +898,7 @@ public sealed class HttpSetlistService : ISetlistService
     public async Task SetMemberRoleAsync(Guid groupId, Guid memberId, GroupRole role, CancellationToken cancellationToken = default)
     {
         var current = await CacheAsync();
-        var membership = MembershipOf(current, groupId, memberId) ?? throw new InvalidOperationException("They're no longer in the band.");
+        var membership = MembershipOf(current, groupId, memberId) ?? throw new InvalidOperationException(L.T("They're no longer in the band."));
         current.Update("membership", membership.Id, new JsonObject { ["roleEnum"] = (int)role });
         Queued(current);
     }
@@ -907,7 +908,7 @@ public sealed class HttpSetlistService : ISetlistService
         name = name.Trim();
         if (name.Length == 0)
         {
-            throw new InvalidOperationException("A name is needed.");
+            throw new InvalidOperationException(L.T("A name is needed."));
         }
 
         var current = await CacheAsync();
@@ -916,7 +917,7 @@ public sealed class HttpSetlistService : ISetlistService
     }
 
     public Task RenameMeAsync(string name, CancellationToken cancellationToken = default)
-        => RenameMemberAsync(auth.MemberId ?? throw new InvalidOperationException("You're not logged in."), name, cancellationToken);
+        => RenameMemberAsync(auth.MemberId ?? throw new InvalidOperationException(L.T("You're not logged in.")), name, cancellationToken);
 
     public async Task<string?> GetMySettingsAsync(CancellationToken cancellationToken = default)
     {
@@ -939,7 +940,7 @@ public sealed class HttpSetlistService : ISetlistService
     {
         if (string.IsNullOrEmpty(auth.AccessToken))
         {
-            throw new InvalidOperationException("Your settings need a connection to the server.");
+            throw new InvalidOperationException(L.T("Your settings need a connection to the server."));
         }
 
         using var request = new HttpRequestMessage(method, "api/member/me/settings");
@@ -1000,7 +1001,7 @@ public sealed class HttpSetlistService : ISetlistService
         name = name.Trim();
         if (name.Length == 0)
         {
-            throw new InvalidOperationException("A name is needed.");
+            throw new InvalidOperationException(L.T("A name is needed."));
         }
 
         var current = await CacheAsync();
@@ -1028,7 +1029,7 @@ public sealed class HttpSetlistService : ISetlistService
         name = name.Trim();
         if (name.Length == 0)
         {
-            throw new InvalidOperationException("A name is needed.");
+            throw new InvalidOperationException(L.T("A name is needed."));
         }
 
         var current = await CacheAsync();
@@ -1051,7 +1052,7 @@ public sealed class HttpSetlistService : ISetlistService
                        .Where(book => book.GroupId == groupId)
                        .OrderBy(book => book.Name, StringComparer.CurrentCultureIgnoreCase)
                        .FirstOrDefault()
-                       ?? throw new InvalidOperationException("The band has no songbook.");
+                       ?? throw new InvalidOperationException(L.T("The band has no songbook."));
 
         // The server keeps at most 100 characters of name and 5000 of lyrics.
         var now = DateTime.Now;
@@ -1105,7 +1106,7 @@ public sealed class HttpSetlistService : ISetlistService
         var current = await CacheAsync();
         if (Find(current, "song", songId, ClientJsonContext.Default.SongDto) == null)
         {
-            throw new InvalidOperationException("The song no longer exists.");
+            throw new InvalidOperationException(L.T("The song no longer exists."));
         }
 
         current.Update("song", songId, fields);
@@ -1208,7 +1209,7 @@ public sealed class HttpSetlistService : ISetlistService
         var current = await CacheAsync();
         if (Find(current, "group", groupId, ClientJsonContext.Default.GroupDto) == null)
         {
-            throw new InvalidOperationException("The group no longer exists.");
+            throw new InvalidOperationException(L.T("The group no longer exists."));
         }
 
         current.Update("group", groupId, fields);
@@ -1238,7 +1239,7 @@ public sealed class HttpSetlistService : ISetlistService
         using var response = await Lrclib.GetAsync($"api/search?q={Uri.EscapeDataString(query)}", cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            throw new HttpRequestException($"The lyrics database answered {(int)response.StatusCode} {response.ReasonPhrase}.", null, response.StatusCode);
+            throw new HttpRequestException(L.T("The lyrics database answered {0} {1}.", (int)response.StatusCode, response.ReasonPhrase), null, response.StatusCode);
         }
 
         var tracks = await response.Content.ReadFromJsonAsync(ClientJsonContext.Default.LrclibTrackArray, cancellationToken) ?? [];

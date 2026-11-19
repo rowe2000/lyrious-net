@@ -1,4 +1,5 @@
 using System;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -11,36 +12,36 @@ namespace Lyrious.UILib.Setlists
 			var waiting = status.PendingChanges switch
 			{
 				0 => null,
-				1 => "1 change waiting",
-				var n => $"{n} changes waiting",
+				1 => L.T("1 change waiting"),
+				var n => L.T("{0} changes waiting", n),
 			};
 
 			if (!status.Online)
 			{
-				return waiting == null ? "Offline" : $"Offline · {waiting}";
+				return waiting == null ? L.T("Offline") : L.T("Offline · {0}", waiting);
 			}
 
 			if (waiting != null)
 			{
-				return $"Syncing · {waiting}";
+				return L.T("Syncing · {0}", waiting);
 			}
 
-			return status.LastSynced is { } synced ? $"Synced {When(synced)}" : "Not synced yet";
+			return status.LastSynced is { } synced ? $"Synced {When(synced)}" : L.T("Not synced yet");
 		}
 
 		/// <summary>A fuller explanation for the Sync page.</summary>
 		public static string Long(SyncStatus status)
 		{
 			var text = status.Online
-				? "Connected to the server. Changes are sent as you make them, and others' changes arrive as they happen."
-				: "The server can't be reached, so you're working offline from the copy on this device. Changes are kept and sent when the server is back (it's tried every few seconds).";
+				? L.T("Connected to the server. Changes are sent as you make them, and others' changes arrive as they happen.")
+				: L.T("The server can't be reached, so you're working offline from the copy on this device. Changes are kept and sent when the server is back (it's tried every few seconds).");
 
 			if (status.PendingChanges > 0)
 			{
-				text += status.PendingChanges == 1 ? " 1 change is waiting to be sent." : $" {status.PendingChanges} changes are waiting to be sent.";
+				text += status.PendingChanges == 1 ? L.T(" 1 change is waiting to be sent.") : L.T(" {0} changes are waiting to be sent.", status.PendingChanges);
 			}
 
-			text += status.LastSynced is { } synced ? $" Last full sync: {When(synced)}." : " This device hasn't synced yet.";
+			text += status.LastSynced is { } synced ? L.T(" Last full sync: {0}.", When(synced)) : L.T(" This device hasn't synced yet.");
 			return text;
 		}
 

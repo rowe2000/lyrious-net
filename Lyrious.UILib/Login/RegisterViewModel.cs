@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
@@ -56,14 +57,14 @@ namespace Lyrious.UILib.Login
 		{
 			if (Password != ConfirmPassword)
 			{
-				ErrorMessage = "The passwords don't match.";
+				ErrorMessage = L.T("The passwords don't match.");
 				return;
 			}
 
 			var trimmedEmail = Email.Trim();
 			if (trimmedEmail.Length > 0 && !trimmedEmail.Contains('@'))
 			{
-				ErrorMessage = "That doesn't look like an email address.";
+				ErrorMessage = L.T("That doesn't look like an email address.");
 				return;
 			}
 
@@ -72,7 +73,7 @@ namespace Lyrious.UILib.Login
 			var registered = await authService.RegisterAsync(registration);
 			if (!registered.Succeeded)
 			{
-				ErrorMessage = registered.Error ?? "Registration failed.";
+				ErrorMessage = registered.Error ?? L.T("Registration failed.");
 				return;
 			}
 
@@ -85,7 +86,7 @@ namespace Lyrious.UILib.Login
 			}
 			else
 			{
-				ErrorMessage = $"Your account was created, but logging in failed: {login.Error}";
+				ErrorMessage = L.T("Your account was created, but logging in failed: {0}", login.Error);
 			}
 		});
 	}

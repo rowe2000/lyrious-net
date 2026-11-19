@@ -13,6 +13,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
 using Avalonia.Threading;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -53,7 +54,7 @@ namespace Lyrious.UILib.Setlists
 		private const string NoOriginalKey = "(not set)";
 
 		/// <summary>The title of a song that has no name yet.</summary>
-		private const string NewSongTitle = "New song";
+		private static string NewSongTitle => L.T("New song");
 
 		private readonly ContentControl body = new();
 		private readonly Button editButton;
@@ -229,10 +230,10 @@ namespace Lyrious.UILib.Setlists
 			}
 
 
-			editButton = HomeView.IconButton(EditIcon, "Edit song");
+			editButton = HomeView.IconButton(EditIcon, L.T("Edit song"));
 			editButton.Click += (_, _) => ShowEditor();
 			// Chords only, in bar columns, or chords over the words (remembered for every song).
-			chordGridButton = HomeView.IconButton(ChordGridIcon, "Chord grid");
+			chordGridButton = HomeView.IconButton(ChordGridIcon, L.T("Chord grid"));
 			chordGridButton.Click += (_, _) =>
 			{
 				ChordGrid = !ChordGrid;
@@ -1064,7 +1065,7 @@ namespace Lyrious.UILib.Setlists
 				chordGridButton.Background = Brushes.Transparent;
 			}
 
-			ToolTip.SetTip(chordGridButton, grid ? "Show chords over the words" : "Show a chord grid (chords only, by bar)");
+			ToolTip.SetTip(chordGridButton, grid ? L.T("Show chords over the words") : L.T("Show a chord grid (chords only, by bar)"));
 
 			if (hasLyrics && ChordPro.HasFormatting(song.Lyrics))
 			{
@@ -1079,7 +1080,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				text = new TextBlock
 				{
-					Text = hasLyrics ? song.Lyrics : "There are no lyrics for this song yet. Add them with the pencil button.",
+					Text = hasLyrics ? song.Lyrics : L.T("There are no lyrics for this song yet. Add them with the pencil button."),
 					FontSize = hasLyrics ? 24 : 16,
 					LineHeight = hasLyrics ? 36 : double.NaN,
 					Opacity = hasLyrics ? 1 : 0.7,
@@ -1344,7 +1345,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				var button = NewButton();
 				button.Content = MediaLinks.Icon(MediaSite.Other);
-				const string tip = "Media: search Spotify or YouTube, paste a link or pick a sound file (or drop one here, or paste a link with Ctrl/⌘+V)";
+				var tip = L.T("Media: search Spotify or YouTube, paste a link or pick a sound file (or drop one here, or paste a link with Ctrl/⌘+V)");
 				ToolTip.SetTip(button, tip);
 				Avalonia.Automation.AutomationProperties.SetName(button, tip);
 				var menu = Menu(button, null);
@@ -1373,13 +1374,13 @@ namespace Lyrious.UILib.Setlists
 					: "";
 				var tip = sound != null
 					? active
-						? $"Media player on for {sound.Name}{tuned}: it plays and stops with the lyrics. Click to turn off (hold for more)"
-						: $"Turn the media player on for {sound.Name}: it plays and stops with the lyrics (hold for more)"
+						? L.T("Media player on for {0}{1}: it plays and stops with the lyrics. Click to turn off (hold for more)", sound.Name, tuned)
+						: L.T("Turn the media player on for {0}: it plays and stops with the lyrics (hold for more)", sound.Name)
 					: site switch
 					{
-						MediaSite.Spotify => "Play on Spotify (hold for more)",
-						MediaSite.YouTube => "Play on YouTube (hold for more)",
-						_ => $"Open {link} (hold for more)",
+						MediaSite.Spotify => L.T("Play on Spotify (hold for more)"),
+						MediaSite.YouTube => L.T("Play on YouTube (hold for more)"),
+						_ => L.T("Open {0} (hold for more)", link),
 					};
 				ToolTip.SetTip(button, tip);
 				Avalonia.Automation.AutomationProperties.SetName(button, tip);
@@ -1413,7 +1414,7 @@ namespace Lyrious.UILib.Setlists
 					}
 					else
 					{
-						showProblem(button, $"\"{link}\" isn't a link that can be opened. Hold the button to remove it.");
+						showProblem(button, L.T("\"{0}\" isn't a link that can be opened. Hold the button to remove it.", link));
 					}
 				};
 				return button;
@@ -1423,7 +1424,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				if (TopLevel.GetTopLevel(this) is not { } topLevel || !await topLevel.Launcher.LaunchUriAsync(uri))
 				{
-					showProblem(button, $"Couldn't open {uri}.");
+					showProblem(button, L.T("Couldn't open {0}.", uri));
 				}
 			}
 
@@ -1435,7 +1436,7 @@ namespace Lyrious.UILib.Setlists
 				}
 				catch (Exception ex)
 				{
-					showProblem(at, $"Couldn't save the media links. {ex.Message}");
+					showProblem(at, L.T("Couldn't save the media links. {0}", ex.Message));
 				}
 
 				ShowLinks();
@@ -1461,8 +1462,8 @@ namespace Lyrious.UILib.Setlists
 				if (!MediaLinks.IsMediaLink(text))
 				{
 					showProblem(at, string.IsNullOrWhiteSpace(text)
-						? "There's no link on the clipboard to paste."
-						: "What's on the clipboard isn't a link (a Spotify or YouTube link, or another web address).");
+						? L.T("There's no link on the clipboard to paste.")
+						: L.T("What's on the clipboard isn't a link (a Spotify or YouTube link, or another web address)."));
 					return;
 				}
 
@@ -1473,13 +1474,13 @@ namespace Lyrious.UILib.Setlists
 			{
 				if (sounds == null)
 				{
-					showProblem(at, "Sound files can't be kept here.");
+					showProblem(at, L.T("Sound files can't be kept here."));
 					return;
 				}
 
 				if (!MediaLinks.IsSoundFile(file.Name))
 				{
-					showProblem(at, $"{file.Name} isn't a sound file this app keeps ({string.Join(", ", MediaLinks.SoundExtensions)}).");
+					showProblem(at, L.T("{0} isn't a sound file this app keeps ({1}).", file.Name, string.Join(", ", MediaLinks.SoundExtensions)));
 					return;
 				}
 
@@ -1490,7 +1491,7 @@ namespace Lyrious.UILib.Setlists
 					{
 						if (content.CanSeek && content.Length > MediaLinks.MaxSoundSize)
 						{
-							showProblem(at, $"{file.Name} is too big: a sound file can be at most {MediaLinks.MaxSoundSize / (1024 * 1024)} MB.");
+							showProblem(at, L.T("{0} is too big: a sound file can be at most {1} MB.", file.Name, MediaLinks.MaxSoundSize / (1024 * 1024)));
 							return;
 						}
 
@@ -1501,7 +1502,7 @@ namespace Lyrious.UILib.Setlists
 				}
 				catch (Exception ex)
 				{
-					showProblem(at, $"Couldn't keep {file.Name}. {ex.Message}");
+					showProblem(at, L.T("Couldn't keep {0}. {1}", file.Name, ex.Message));
 				}
 			}
 
@@ -1509,17 +1510,17 @@ namespace Lyrious.UILib.Setlists
 			{
 				if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage)
 				{
-					showProblem(at, "Files can't be picked here.");
+					showProblem(at, L.T("Files can't be picked here."));
 					return;
 				}
 
 				var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
 				{
-					Title = "Pick sound files for the song",
+					Title = L.T("Pick sound files for the song"),
 					AllowMultiple = true,
 					FileTypeFilter =
 					[
-						new FilePickerFileType("Sound files")
+						new FilePickerFileType(L.T("Sound files"))
 						{
 							Patterns = MediaLinks.SoundExtensions.Select(extension => "*" + extension).ToArray(),
 							MimeTypes = ["audio/*"],
@@ -1545,18 +1546,18 @@ namespace Lyrious.UILib.Setlists
 				var menu = new MenuFlyout();
 				if (link != null)
 				{
-					menu.Items.Add(Item(MediaLinks.SoundOf(link) is { } sound ? $"Remove {sound.Name}" : "Remove this link",
+					menu.Items.Add(Item(MediaLinks.SoundOf(link) is { } sound ? $"Remove {sound.Name}" : L.T("Remove this link"),
 						() => ChangeAsync(button, MediaLinks.Without(getLinks(), link))));
 					menu.Items.Add(new Separator());
 				}
 
-				var another = link == null ? "" : " another";
-				menu.Items.Add(Item("Search on Spotify", () => OpenAsync(button, MediaLinks.Search(MediaSite.Spotify, MediaLinks.Query(name(), lyrics(), artist())))));
-				menu.Items.Add(Item("Search on YouTube", () => OpenAsync(button, MediaLinks.Search(MediaSite.YouTube, MediaLinks.Query(name(), lyrics(), artist())))));
-				menu.Items.Add(Item($"Paste{another} link from clipboard", () => PasteAsync(button)));
+				// ("another" link or sound file when there's one already.)
+				menu.Items.Add(Item(L.T("Search on Spotify"), () => OpenAsync(button, MediaLinks.Search(MediaSite.Spotify, MediaLinks.Query(name(), lyrics(), artist())))));
+				menu.Items.Add(Item(L.T("Search on YouTube"), () => OpenAsync(button, MediaLinks.Search(MediaSite.YouTube, MediaLinks.Query(name(), lyrics(), artist())))));
+				menu.Items.Add(Item(link == null ? L.T("Paste link from clipboard") : L.T("Paste another link from clipboard"), () => PasteAsync(button)));
 				if (sounds != null)
 				{
-					menu.Items.Add(Item($"Pick{another} sound file…", () => PickSoundAsync(button)));
+					menu.Items.Add(Item(link == null ? L.T("Pick sound file…") : L.T("Pick another sound file…"), () => PickSoundAsync(button)));
 				}
 
 				return menu;
@@ -1884,8 +1885,8 @@ namespace Lyrious.UILib.Setlists
 			SetAutoScroll(false);
 			StopNudge();
 			scroller = null;
-			var name = new TextBox { Text = song.Name, MaxLength = MaxNameLength, PlaceholderText = "Song name" };
-			var artist = new TextBox { Text = song.Artist, MaxLength = 100, PlaceholderText = "Artist", MinWidth = 200 };
+			var name = new TextBox { Text = song.Name, MaxLength = MaxNameLength, PlaceholderText = L.T("Song name") };
+			var artist = new TextBox { Text = song.Artist, MaxLength = 100, PlaceholderText = L.T("Artist"), MinWidth = 200 };
 			var key = Choice(Keys, song.PlayingKey, NoKey);
 			var originalKey = Choice(Keys, song.OriginalKey, NoOriginalKey);
 			var beat = Choice(Beats, song.Beat, null);
@@ -1899,11 +1900,11 @@ namespace Lyrious.UILib.Setlists
 				FontSize = 18,
 				MinHeight = 120,
 				VerticalContentAlignment = VerticalAlignment.Top,
-				PlaceholderText = "Type or paste the lyrics",
+				PlaceholderText = L.T("Type or paste the lyrics"),
 			};
-			var save = PageLayout.OkButton("Save song");
+			var save = PageLayout.OkButton(L.T("Save song"));
 			// Escape cancels too (before the page's ✕).
-			var cancel = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, "Cancel editing"), first: true);
+			var cancel = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, L.T("Cancel editing")), first: true);
 			var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Margin = new Thickness(0, 0, 0, 12) };
 			error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable(LyriousTheme.ErrorBrush));
 			// What in the MIDI tags can't be sent (with the band's expressions), as the lyrics are typed.
@@ -1950,7 +1951,7 @@ namespace Lyrious.UILib.Setlists
 				Background = Brushes.Transparent,
 				Cursor = new Cursor(StandardCursorType.Hand),
 			};
-			ToolTip.SetTip(nameText, "Click to rename");
+			ToolTip.SetTip(nameText, L.T("Click to rename"));
 			var nameSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 12, 0) };
 			name.FontSize = 22;
 			name.FontWeight = FontWeight.Bold;
@@ -1995,10 +1996,10 @@ namespace Lyrious.UILib.Setlists
 			tempo.MinWidth = 0;
 			tempo.Width = 72;
 			tempo.ShowButtonSpinner = false;
-			ToolTip.SetTip(key, "Playing key: the key the band plays the song in");
-			ToolTip.SetTip(originalKey, "Original key: the key the song was written or recorded in");
-			ToolTip.SetTip(tempo, "Tempo (bpm)");
-			ToolTip.SetTip(beat, "Beat");
+			ToolTip.SetTip(key, L.T("Playing key: the key the band plays the song in"));
+			ToolTip.SetTip(originalKey, L.T("Original key: the key the song was written or recorded in"));
+			ToolTip.SetTip(tempo, L.T("Tempo (bpm)"));
+			ToolTip.SetTip(beat, L.T("Beat"));
 			var originalLabel = new TextBlock { Text = "orig.", Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center };
 			var detailsInputs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { key, originalLabel, originalKey, tempo, beat } };
 
@@ -2014,13 +2015,13 @@ namespace Lyrious.UILib.Setlists
 			var info = PageLayout.SongInfo(song);
 			var detailsText = new TextBlock
 			{
-				Text = string.IsNullOrEmpty(info) ? "Set keys, tempo and beat" : info,
+				Text = string.IsNullOrEmpty(info) ? L.T("Set keys, tempo and beat") : info,
 				Opacity = 0.7,
 				Background = Brushes.Transparent,
 				Cursor = new Cursor(StandardCursorType.Hand),
 				Margin = new Thickness(0, 0, 0, 5),
 			};
-			ToolTip.SetTip(detailsText, "Click to change the playing key, original key, tempo and beat");
+			ToolTip.SetTip(detailsText, L.T("Click to change the playing key, original key, tempo and beat"));
 			var detailsSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Content = detailsText };
 			detailsText.Tapped += (_, e) =>
 			{
@@ -2061,7 +2062,7 @@ namespace Lyrious.UILib.Setlists
 				if (detailsSlot.Content == detailsInputs && !FocusInDetails())
 				{
 					var edited = PageLayout.SongInfo(WithDetails());
-					detailsText.Text = string.IsNullOrEmpty(edited) ? "Set keys, tempo and beat" : edited;
+					detailsText.Text = string.IsNullOrEmpty(edited) ? L.T("Set keys, tempo and beat") : edited;
 					detailsSlot.Content = detailsText;
 				}
 			});
@@ -2075,11 +2076,11 @@ namespace Lyrious.UILib.Setlists
 			var tagsBox = new TextBox
 			{
 				Text = SongTags.Tidy(song.Tags),
-				PlaceholderText = "Tags, separated by spaces",
+				PlaceholderText = L.T("Tags, separated by spaces"),
 				MinWidth = 240,
 				MaxLength = 500,
 			};
-			ToolTip.SetTip(tagsBox, "Tags, separated by spaces (e.g. ballad christmas)");
+			ToolTip.SetTip(tagsBox, L.T("Tags, separated by spaces (e.g. ballad christmas)"));
 			// The artist likewise: "by …" (or "Add artist") until clicked, then its text box, until it
 			// loses the focus or Enter is pressed.
 			var artistSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 12, 5) };
@@ -2088,13 +2089,13 @@ namespace Lyrious.UILib.Setlists
 				var text = artist.Text?.Trim() ?? "";
 				var shown = new TextBlock
 				{
-					Text = text.Length == 0 ? "Add artist" : $"by {text}",
+					Text = text.Length == 0 ? L.T("Add artist") : $"by {text}",
 					Opacity = 0.7,
 					FontStyle = text.Length == 0 ? FontStyle.Italic : FontStyle.Normal,
 					Background = Brushes.Transparent,
 					Cursor = new Cursor(StandardCursorType.Hand),
 				};
-				ToolTip.SetTip(shown, "Click to change the artist");
+				ToolTip.SetTip(shown, L.T("Click to change the artist"));
 				shown.Tapped += (_, e) =>
 				{
 					e.Handled = true;
@@ -2134,7 +2135,7 @@ namespace Lyrious.UILib.Setlists
 					Spacing = 6,
 					Children =
 					{
-						new TextBlock { Text = "Used tags", FontSize = 12, Opacity = 0.7 },
+						new TextBlock { Text = L.T("Used tags"), FontSize = 12, Opacity = 0.7 },
 						usedTagsList,
 					},
 				},
@@ -2184,7 +2185,7 @@ namespace Lyrious.UILib.Setlists
 					var chip = PageLayout.TagChip(tag, 13);
 					chip.Cursor = new Cursor(StandardCursorType.Hand);
 					chip.Padding = new Thickness(10, 3);
-					ToolTip.SetTip(chip, $"Add {tag}");
+					ToolTip.SetTip(chip, L.T("Add {0}", tag));
 					chip.PointerPressed += (_, e) =>
 					{
 						pickingTag = true;
@@ -2232,10 +2233,10 @@ namespace Lyrious.UILib.Setlists
 				usedTagsPopup.IsOpen = false;
 				var tags = SongTags.Sorted(tagsBox.Text); // As they'll be saved.
 				Control shown = tags.Count == 0
-					? new TextBlock { Text = "Add tags", Opacity = 0.7, FontStyle = FontStyle.Italic, Margin = new Thickness(0, 0, 0, 2) }
+					? new TextBlock { Text = L.T("Add tags"), Opacity = 0.7, FontStyle = FontStyle.Italic, Margin = new Thickness(0, 0, 0, 2) }
 					: PageLayout.TagChips(tags);
 				var holder = new Border { Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand), Child = shown };
-				ToolTip.SetTip(holder, "Click to change the tags");
+				ToolTip.SetTip(holder, L.T("Click to change the tags"));
 				holder.Tapped += (_, e) =>
 				{
 					e.Handled = true;
@@ -2317,7 +2318,7 @@ namespace Lyrious.UILib.Setlists
 				catch (Exception ex)
 				{
 					// The edits stay in the boxes, so nothing is lost; Save can be tried again.
-					error.Text = $"Couldn't save. {ex.Message}";
+					error.Text = L.T("Couldn't save. {0}", ex.Message);
 					error.IsVisible = true;
 					foreach (var input in inputs)
 					{

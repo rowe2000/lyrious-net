@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -49,13 +50,13 @@ namespace Lyrious.UILib.Setlists
 			{
 				using var archive = new ZipArchive(zip, ZipArchiveMode.Read, leaveOpen: true);
 				var entry = archive.Entries.FirstOrDefault(e => e.FullName.Replace('\\', '/').EndsWith("dataFile.txt", StringComparison.OrdinalIgnoreCase))
-				            ?? throw new InvalidOperationException("This isn't a SongbookPro backup (it has no dataFile.txt).");
+				            ?? throw new InvalidOperationException(L.T("This isn't a SongbookPro backup (it has no dataFile.txt)."));
 				using var reader = new StreamReader(entry.Open());
 				data = reader.ReadToEnd();
 			}
 			catch (InvalidDataException ex)
 			{
-				throw new InvalidOperationException("This isn't a SongbookPro backup (it isn't a zip file).", ex);
+				throw new InvalidOperationException(L.T("This isn't a SongbookPro backup (it isn't a zip file)."), ex);
 			}
 
 			// A version line ("1.0") before the JSON.
@@ -63,11 +64,11 @@ namespace Lyrious.UILib.Setlists
 			JsonObject json;
 			try
 			{
-				json = start >= 0 && JsonNode.Parse(data[start..]) is JsonObject parsed ? parsed : throw new InvalidOperationException("The backup's data couldn't be read.");
+				json = start >= 0 && JsonNode.Parse(data[start..]) is JsonObject parsed ? parsed : throw new InvalidOperationException(L.T("The backup's data couldn't be read."));
 			}
 			catch (JsonException ex)
 			{
-				throw new InvalidOperationException($"The backup's data couldn't be read. {ex.Message}", ex);
+				throw new InvalidOperationException(L.T("The backup's data couldn't be read. {0}", ex.Message), ex);
 			}
 
 			var skipped = new List<string>();

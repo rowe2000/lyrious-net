@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Controls;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -19,7 +20,7 @@ namespace Lyrious.UILib.Setlists
 
 		public SetlistView(SetlistSummary setlist, IReadOnlyList<SetlistEntry> entries)
 		{
-			var addButton = HomeView.IconButton(AddIcon, "Add songs from the songbook");
+			var addButton = HomeView.IconButton(AddIcon, L.T("Add songs from the songbook"));
 			addButton.Click += (_, _) => AddSongsRequested?.Invoke();
 
 			var rows = entries
@@ -31,7 +32,7 @@ namespace Lyrious.UILib.Setlists
 
 			Content = PageLayout.Page(
 				setlist.Name,
-				PageLayout.List(rows, "There are no songs in this setlist yet."),
+				PageLayout.List(rows, L.T("There are no songs in this setlist yet.")),
 				subtitle: entries.Count == 1 ? "1 song" : $"{entries.Count} songs",
 				titleAction: addButton,
 				closable: true);

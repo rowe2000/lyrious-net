@@ -1,4 +1,5 @@
 using System;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
@@ -9,14 +10,14 @@ namespace Lyrious.UILib.Login
 		public event Action? LoginRequested;
 
 		public RegisterView(RegisterViewModel viewModel)
-			: base(viewModel, "Create account", "Join Lyrious to share songs and setlists with your band.", "Create account", viewModel.RegisterAsync)
+			: base(viewModel, L.T("Create account"), L.T("Join Lyrious to share songs and setlists with your band."), L.T("Create account"), viewModel.RegisterAsync)
 		{
-			AddField("Username", () => viewModel.UserName, value => viewModel.UserName = value);
-			AddField("Your name", () => viewModel.DisplayName, value => viewModel.DisplayName = value);
-			AddField("Email (optional)", () => viewModel.Email, value => viewModel.Email = value);
-			AddField("Password", () => viewModel.Password, value => viewModel.Password = value, isPassword: true);
-			AddField("Confirm password", () => viewModel.ConfirmPassword, value => viewModel.ConfirmPassword = value, isPassword: true);
-			AddLink("Already have an account? Log in", () => LoginRequested?.Invoke());
+			AddField(L.T("Username"), () => viewModel.UserName, value => viewModel.UserName = value);
+			AddField(L.T("Your name"), () => viewModel.DisplayName, value => viewModel.DisplayName = value);
+			AddField(L.T("Email (optional)"), () => viewModel.Email, value => viewModel.Email = value);
+			AddField(L.T("Password"), () => viewModel.Password, value => viewModel.Password = value, isPassword: true);
+			AddField(L.T("Confirm password"), () => viewModel.ConfirmPassword, value => viewModel.ConfirmPassword = value, isPassword: true);
+			AddLink(L.T("Already have an account? Log in"), () => LoginRequested?.Invoke());
 		}
 	}
 }

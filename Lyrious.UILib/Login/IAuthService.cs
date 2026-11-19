@@ -77,7 +77,7 @@ namespace Lyrious.UILib.Login
 	/// <summary>Used until a host provides a real service, so the pages say why nothing works.</summary>
 	public sealed class UnconfiguredAuthService : IAuthService
 	{
-		private const string NotConnected = "This app isn't connected to a Lyrious server yet.";
+		private static string NotConnected => Localization.L.T("This app isn't connected to a Lyrious server yet.");
 
 		public string ServerAddress => "";
 

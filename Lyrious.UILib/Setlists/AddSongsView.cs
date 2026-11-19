@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -26,7 +27,7 @@ namespace Lyrious.UILib.Setlists
 		public AddSongsView(SetlistSummary setlist, IReadOnlyList<SongDetails> songbook, IReadOnlySet<Guid> songsInSetlist)
 		{
 			var selected = new List<SongDetails>();
-			var add = new Button { Content = "Add songs", IsEnabled = false, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(16, 12), Margin = new Thickness(0, 16, 0, 0) };
+			var add = new Button { Content = L.T("Add songs"), IsEnabled = false, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(16, 12), Margin = new Thickness(0, 16, 0, 0) };
 			add.Classes.Add("accent");
 			add.Click += (_, _) => SongsAdded?.Invoke(songbook.Where(selected.Contains).ToArray());
 			DockPanel.SetDock(add, Dock.Bottom);
@@ -40,13 +41,13 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				add.IsEnabled = selected.Count > 0;
-				add.Content = selected.Count switch { 0 => "Add songs", 1 => "Add 1 song", _ => $"Add {selected.Count} songs" };
+				add.Content = selected.Count switch { 0 => L.T("Add songs"), 1 => L.T("Add 1 song"), _ => L.T("Add {0} songs", selected.Count) };
 			}
 
 			var rows = songbook.Select(song => (Control)SongRow(song, songsInSetlist.Contains(song.Id), Toggle)).ToArray();
 
 			// At the top: find a song that isn't in the songbook yet.
-			var internet = new Button { Content = "Find song on the internet…", Margin = new Thickness(0, 0, 0, 16) };
+			var internet = new Button { Content = L.T("Find song on the internet…"), Margin = new Thickness(0, 0, 0, 16) };
 			internet.Click += (_, _) => InternetSearchRequested?.Invoke();
 			DockPanel.SetDock(internet, Dock.Top);
 
@@ -56,12 +57,12 @@ namespace Lyrious.UILib.Setlists
 				content.Children.Add(add);
 			}
 
-			content.Children.Add(PageLayout.List(rows, "There are no songs in the songbook yet."));
+			content.Children.Add(PageLayout.List(rows, L.T("There are no songs in the songbook yet.")));
 
 			Content = PageLayout.Page(
-				"Add songs",
+				L.T("Add songs"),
 				content,
-				subtitle: $"To {setlist.Name} · select songs from the songbook",
+				subtitle: L.T("To {0} · select songs from the songbook", setlist.Name),
 				closable: true);
 		}
 
@@ -73,7 +74,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			var button = new ToggleButton
 			{
-				Content = SongsView.SongRow(song, inSetlist ? "in setlist" : null),
+				Content = SongsView.SongRow(song, inSetlist ? L.T("in setlist") : null),
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				HorizontalContentAlignment = HorizontalAlignment.Stretch,
 				Padding = new Thickness(16, 12),

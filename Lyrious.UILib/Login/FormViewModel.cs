@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
@@ -57,7 +58,7 @@ namespace Lyrious.UILib.Login
 			}
 			catch (Exception ex)
 			{
-				ErrorMessage = $"Couldn't reach the server. {ex.Message}";
+				ErrorMessage = L.T("Couldn't reach the server. {0}", ex.Message);
 			}
 			finally
 			{

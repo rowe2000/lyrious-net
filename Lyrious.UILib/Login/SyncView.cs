@@ -6,14 +6,16 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Lyrious.UILib.Setlists;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
 	/// <summary>
 	/// "Sync": whether the data is in sync with the server (and "Sync now"), and which Lyrious server
-	/// (host) the app talks to. Save (✓) checks the server answers before switching. A host that
+	/// (host) the app talks to, checked to be a web address as it's typed. Its ✓ (right after it)
+	/// checks the server answers before switching. A host that
 	/// doesn't answer can still be used: a warning says so, and pressing ✓ again uses it. Something
-	/// that isn't an address at all is refused. Cancel (✕) goes back.
+	/// that isn't an address at all is refused. ✕ (at the top) goes back.
 	/// </summary>
 	public sealed class SyncView : UserControl
 	{
@@ -36,7 +38,7 @@ namespace Lyrious.UILib.Login
 		public SyncView(string currentHost, Func<string, Task<ServerCheck>> check, ISetlistService? sync = null)
 		{
 			this.sync = sync;
-			host = new TextBox { Text = currentHost, PlaceholderText = "e.g. http://localhost:5180" };
+			host = new TextBox { Text = currentHost, PlaceholderText = L.T("e.g. http://localhost:5180"), VerticalContentAlignment = VerticalAlignment.Center };
 
 			var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
 			error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable(LyriousTheme.ErrorBrush));
@@ -44,20 +46,36 @@ namespace Lyrious.UILib.Login
 			// The address last warned about: pressing ✓ again for the same address uses it anyway.
 			string? warnedAbout = null;
 
-			var saveButton = PageLayout.OkButton("Save host");
-			var cancelButton = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, "Cancel"));
+			var saveButton = PageLayout.OkButton(L.T("Save host"));
+			var cancelButton = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, L.T("Cancel")));
 			cancelButton.Click += (_, _) => Cancelled?.Invoke();
-			host.TextChanged += (_, _) =>
+			// Checked as it's typed: something that isn't a web address can't be saved, and says why.
+			// (Whether the server answers is checked when ✓ is pressed.)
+			void CheckTyped()
 			{
-				saveButton.IsEnabled = !string.IsNullOrWhiteSpace(host.Text);
-				if (warnedAbout != null)
+				var problem = AddressProblem(host.Text);
+				saveButton.IsEnabled = problem == null;
+				// The ✓ only once the host has been changed: there's nothing to save before.
+				saveButton.IsVisible = !string.Equals(host.Text?.Trim(), currentHost.Trim(), StringComparison.OrdinalIgnoreCase);
+				if (problem != null)
+				{
+					warnedAbout = null;
+					error.Text = problem;
+					ShowAs(error, LyriousTheme.ErrorBrush);
+					error.IsVisible = true;
+					ToolTip.SetTip(saveButton, L.T("Save host"));
+				}
+				else if (warnedAbout == null || warnedAbout != host.Text?.Trim())
 				{
 					// A different address is checked afresh.
 					warnedAbout = null;
 					error.IsVisible = false;
-					ToolTip.SetTip(saveButton, "Save host");
+					ToolTip.SetTip(saveButton, L.T("Save host"));
 				}
-			};
+			}
+
+			host.TextChanged += (_, _) => CheckTyped();
+			saveButton.IsVisible = false; // Nothing changed yet.
 
 			async Task SaveAsync()
 			{
@@ -94,8 +112,8 @@ namespace Lyrious.UILib.Login
 					{
 						warnedAbout = address;
 						ShowAs(error, LyriousTheme.WarningBrush);
-						error.Text = $"Warning: {result.Message} You can use it anyway: press ✓ again. Until it answers you'll work offline, and you can only log in if you've logged in to it on this device before.";
-						ToolTip.SetTip(saveButton, "Use this host anyway");
+						error.Text = L.T("Warning: {0} You can use it anyway: press ✓ again. Until it answers you'll work offline, and you can only log in if you've logged in to it on this device before.", result.Message);
+						ToolTip.SetTip(saveButton, L.T("Use this host anyway"));
 					}
 
 					error.IsVisible = true;
@@ -120,7 +138,7 @@ namespace Lyrious.UILib.Login
 				}
 			};
 
-			var syncNow = new Button { Content = "Sync now", HorizontalAlignment = HorizontalAlignment.Left };
+			var syncNow = new Button { Content = L.T("Sync now"), HorizontalAlignment = HorizontalAlignment.Left };
 			syncNow.Click += async (_, _) =>
 			{
 				syncNow.IsEnabled = false;
@@ -148,11 +166,12 @@ namespace Lyrious.UILib.Login
 						Margin = new Thickness(0, 0, 0, 16),
 						Children = { statusTitle, statusText, problemText, syncNow },
 					},
-					new StackPanel { Spacing = 4, Children = { new TextBlock { Text = "Host", FontSize = 13, Opacity = 0.75 }, host } },
+					// The host, with ✓ right after it to save just that.
+					new StackPanel { Spacing = 4, Children = { new TextBlock { Text = L.T("Host"), FontSize = 13, Opacity = 0.75 }, HostRow(host, saveButton) } },
 					error,
 					new TextBlock
 					{
-						Text = "Changing the host logs you out; log in again on the new server.",
+						Text = L.T("Changing the host logs you out; log in again on the new server."),
 						Opacity = 0.7,
 						TextWrapping = TextWrapping.Wrap,
 					},
@@ -169,10 +188,10 @@ namespace Lyrious.UILib.Login
 			form.Margin = new Thickness(0, 0, 0, 16);
 			var scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
 			Content = PageLayout.Page(
-				"Sync",
+				L.T("Sync"),
 				scroller,
-				subtitle: "The Lyrious server this app syncs with",
-				titleAction: new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { saveButton, cancelButton } },
+				subtitle: L.T("The Lyrious server this app syncs with"),
+				titleAction: cancelButton,
 				icon: AppIcons.Sync);
 		}
 
@@ -184,7 +203,7 @@ namespace Lyrious.UILib.Login
 		/// </summary>
 		private static Control LanSharingSetting(ILanSharing sharing, string currentHost)
 		{
-			var toggle = new ToggleSwitch { IsChecked = LanSharingSettings.Enabled, OnContent = "On", OffContent = "Off", VerticalAlignment = VerticalAlignment.Center };
+			var toggle = new ToggleSwitch { IsChecked = LanSharingSettings.Enabled, OnContent = L.T("On"), OffContent = L.T("Off"), VerticalAlignment = VerticalAlignment.Center };
 			var port = new NumericUpDown
 			{
 				Value = LanSharingSettings.Port,
@@ -227,8 +246,8 @@ namespace Lyrious.UILib.Login
 							await sharing.StartAsync(LanSharingSettings.Port);
 							var addresses = sharing.Addresses;
 							status.Text = addresses.Count > 0
-								? "Open this in a browser on the other device:\n" + string.Join("\n", addresses)
-								: "This computer isn't on a network right now.";
+								? L.T("Open this in a browser on the other device:\n") + string.Join("\n", addresses)
+								: L.T("This computer isn't on a network right now.");
 						}
 						else
 						{
@@ -264,7 +283,7 @@ namespace Lyrious.UILib.Login
 				Margin = new Thickness(0, 24, 0, 0),
 				Children =
 				{
-					new TextBlock { Text = "Local network", FontSize = 18, FontWeight = FontWeight.SemiBold },
+					new TextBlock { Text = L.T("Local network"), FontSize = 18, FontWeight = FontWeight.SemiBold },
 					new DockPanel
 					{
 						Children =
@@ -275,10 +294,10 @@ namespace Lyrious.UILib.Login
 								Spacing = 4,
 								Children =
 								{
-									new TextBlock { Text = "Share on the local network", FontSize = 16, TextWrapping = TextWrapping.Wrap },
+									new TextBlock { Text = L.T("Share on the local network"), FontSize = 16, TextWrapping = TextWrapping.Wrap },
 									new TextBlock
 									{
-										Text = $"Lets phones and other devices on the same network open Lyrious in a browser, through this computer. They use the host above ({currentHost}), even one only this computer can reach.",
+										Text = L.T("Lets phones and other devices on the same network open Lyrious in a browser, through this computer. They use the host above ({0}), even one only this computer can reach.", currentHost),
 										Opacity = 0.7,
 										TextWrapping = TextWrapping.Wrap,
 									},
@@ -286,18 +305,49 @@ namespace Lyrious.UILib.Login
 							},
 						},
 					},
-					new StackPanel { Spacing = 4, Children = { new TextBlock { Text = "Port", FontSize = 13, Opacity = 0.75 }, port } },
+					new StackPanel { Spacing = 4, Children = { new TextBlock { Text = L.T("Port"), FontSize = 13, Opacity = 0.75 }, port } },
 					status,
 				},
 			};
 		}
 
+		/// <summary>The host box with its ✓ right after it.</summary>
+		private static Control HostRow(TextBox box, Button save)
+		{
+			save.Margin = new Thickness(8, 0, 0, 0);
+			save.VerticalAlignment = VerticalAlignment.Center;
+			DockPanel.SetDock(save, Dock.Right);
+			return new DockPanel { Children = { save, box } };
+		}
+
+		/// <summary>
+		/// Why the text isn't a web address the app can use (as the server check would say), or null
+		/// when it is one: "http://" may be left out, as when it's checked.
+		/// </summary>
+		private static string? AddressProblem(string? text)
+		{
+			var address = text?.Trim() ?? "";
+			if (address.Length == 0)
+			{
+				return L.T("Type the server's address, e.g. http://localhost:5180.");
+			}
+
+			if (!address.Contains("://"))
+			{
+				address = "http://" + address;
+			}
+
+			return Uri.TryCreate(address, UriKind.Absolute, out var uri)
+			       && uri.Scheme is "http" or "https"
+			       && uri.Host.Length > 0
+			       && !address.Contains(' ')
+				? null
+				: L.T("That isn't a web address. Use for example http://localhost:5180.");
+		}
+
 		protected override void OnLoaded(Avalonia.Interactivity.RoutedEventArgs e)
 		{
 			base.OnLoaded(e);
-			// Ready to type a new address straight away.
-			host.Focus();
-			host.SelectAll();
 			if (sync != null)
 			{
 				sync.StatusChanged += OnStatusChanged;

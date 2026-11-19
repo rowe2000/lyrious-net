@@ -8,13 +8,14 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
 	/// The playback toolbar under the lyrics. At the left, the next song in the setlist, shown by
 	/// name under a "Next" caption (tap to go to it); at the right, back to the start of the song, and play/pause for
-	/// scrolling the lyrics by themselves, and before them a globe that turns band sync on and off. It stays visible in focus mode. Icons are drawn as shapes, since the browser has
+	/// scrolling the lyrics by themselves, and before them the band icon that turns band sync on and off. It stays visible in focus mode. Icons are drawn as shapes, since the browser has
 	/// no symbol fonts. While a media file plays in the app (see <see cref="ISoundStore"/>), a bar above
 	/// shows where it is, with the time played and its length; dragging it (or clicking on it) moves
 	/// the sound there.
@@ -25,18 +26,16 @@ namespace Lyrious.UILib.Setlists
 		private const string RestartIcon = "M6,5 V19 M18,5 L8,12 L18,19 Z";
 		private const string PlayIcon = "M8,5 L19,12 L8,19 Z";
 		private const string PauseIcon = "M8,5 V19 M16,5 V19";
-		// A globe: the outline, the equator and a meridian.
 		// The caption above the next song's name: half of 14 would be too small to read.
 		private const double CaptionSize = 10;
 		// Slower and faster (the media file's speed): a turtle and a rabbit, side on.
 		private const string TurtleIcon = "M4,16 C4,10 8,7 12,7 C16,7 19,10 19,16 Z M4,16 H19 M8.5,16 L10,9.5 M14.5,16 L13.5,9.5 M6,16 V19 M17,16 V19 M19,14 C20,12.5 22.5,12.5 22.5,14.5 C22.5,16 21,16.5 19,16 M2.5,15.5 L4,16";
 		private const string RabbitIcon = "M3.5,19 C3,14.5 6.5,11.5 10.5,12 C13,12.3 14.5,13.5 15.2,14.8 M15.5,16.5 C15.6,18 14.8,19 13.5,19 H3.5 M15,12.5 A3.2,3.2 0 1,0 21.4,12.5 A3.2,3.2 0 1,0 15,12.5 M16.6,9.8 C15.6,7 15.6,4 16.7,3.2 C17.8,3.6 18.3,6.5 18,9.4 M18.9,9.4 C19.5,6.6 20.7,4.4 21.8,4.7 C22.4,5.5 21.6,8 20.4,10 M3.8,15 C2.3,14.8 2.1,16.8 3.5,17.2 M9.5,19 C9.5,17.5 10.5,16.8 11.8,17 M19.4,12 A0.2,0.2 0 1,0 19.8,12 A0.2,0.2 0 1,0 19.4,12";
-		private const string GlobeIcon = "M12,3 A9,9 0 1,1 11.99,3 Z M3,12 H21 M12,3 C6.5,7 6.5,17 12,21 M12,3 C17.5,7 17.5,17 12,21";
 
-		private readonly Button restart = HomeView.IconButton(RestartIcon, "Back to the start of the song");
-		private readonly Button playPause = HomeView.IconButton(PlayIcon, "Scroll the lyrics");
+		private readonly Button restart = HomeView.IconButton(RestartIcon, L.T("Back to the start of the song"));
+		private readonly Button playPause = HomeView.IconButton(PlayIcon, L.T("Scroll the lyrics"));
 		// Where the next song would be, after the last song of a setlist.
-		private readonly TextBlock noMoreSongs = new() { Text = "No more songs", FontSize = 14, Opacity = 0.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0), IsVisible = false };
+		private readonly TextBlock noMoreSongs = new() { Text = L.T("No more songs"), FontSize = 14, Opacity = 0.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0), IsVisible = false };
 		private readonly TextBlock nextInfo = new() { FontSize = CaptionSize, Opacity = 0.7, Margin = new Thickness(8, 0, 0, 0) };
 		private readonly TextBlock nextName = new() { FontSize = 14, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
 		private readonly Button next;
@@ -44,7 +43,8 @@ namespace Lyrious.UILib.Setlists
 		{
 			Content = new Path
 			{
-				Data = Geometry.Parse(GlobeIcon),
+				// The band (as on the left drawer's Band item): band sync.
+				Data = Geometry.Parse(AppIcons.Band),
 				StrokeThickness = 2,
 				StrokeLineCap = PenLineCap.Round,
 				StrokeJoin = PenLineJoin.Round,
@@ -77,10 +77,10 @@ namespace Lyrious.UILib.Setlists
 		// The media file's speed and pitch, a step at a time: slower and faster (5 %), lower and higher
 		// (a semitone); between each pair what it is now, which resets it (as recorded) when clicked.
 		private const double SpeedStep = 0.05;
-		private readonly Button slower = HomeView.IconButton(TurtleIcon, "Slower");
-		private readonly Button faster = HomeView.IconButton(RabbitIcon, "Faster");
-		private readonly Button lower = SignButton("b", "Lower");
-		private readonly Button higher = SignButton("#", "Higher");
+		private readonly Button slower = HomeView.IconButton(TurtleIcon, L.T("Slower"));
+		private readonly Button faster = HomeView.IconButton(RabbitIcon, L.T("Faster"));
+		private readonly Button lower = SignButton("b", L.T("Lower"));
+		private readonly Button higher = SignButton("#", L.T("Higher"));
 		private readonly Button speedValue = ValueButton(44);
 		private readonly Button pitchValue = ValueButton(30);
 
@@ -99,8 +99,8 @@ namespace Lyrious.UILib.Setlists
 		public event Action<bool>? BandSyncToggled;
 
 		/// <summary>
-		/// Raised on a longclick of the globe: band sync on, sending this member's setlist and song to
-		/// the band (instead of taking the band's). The globe isn't toggled; call <see cref="SetBandSync"/>.
+		/// Raised on a longclick of the band icon: band sync on, sending this member's setlist and song to
+		/// the band (instead of taking the band's). The band icon isn't toggled; call <see cref="SetBandSync"/>.
 		/// </summary>
 		public event Action? BandSyncSendRequested;
 
@@ -160,7 +160,7 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(playPause, Dock.Right);
 			DockPanel.SetDock(restart, Dock.Right);
 			DockPanel.SetDock(bandSync, Dock.Right);
-			// Who's there, just left of the globe.
+			// Who's there, just left of the band icon.
 			DockPanel.SetDock(members, Dock.Right);
 			restart.Margin = new Thickness(4, 0);
 			var row = new DockPanel { Children = { playPause, restart, bandSync, members, new Panel { Children = { next, noMoreSongs } } } };
@@ -190,7 +190,7 @@ namespace Lyrious.UILib.Setlists
 			higher.Click += (_, _) => ChangePitch(1);
 			speedValue.Click += (_, _) => ResetSpeed();
 			pitchValue.Click += (_, _) => ResetPitch();
-			Avalonia.Automation.AutomationProperties.SetName(progress, "Where the sound is");
+			Avalonia.Automation.AutomationProperties.SetName(progress, L.T("Where the sound is"));
 			progressTrack.Bind(Border.BackgroundProperty, progressTrack.GetResourceObservable(LyriousTheme.ForegroundBrush));
 			progressFill.Bind(Border.BackgroundProperty, progressFill.GetResourceObservable("AccentButtonBackground"));
 			progress.Children.Add(progressTrack);
@@ -427,12 +427,12 @@ namespace Lyrious.UILib.Setlists
 			((TextBlock)pitchValue.Content!).Text = pitch == 0 ? "0" : pitch.ToString("+0;-0");
 			speedValue.Opacity = speedChanged ? 1 : 0.6;
 			pitchValue.Opacity = pitch != 0 ? 1 : 0.6;
-			Describe(speedValue, speedChanged ? $"Speed {SoundTuning.DescribeSpeed(speed)}: click for as recorded" : "Speed as recorded");
-			Describe(pitchValue, pitch != 0 ? $"Pitch {SoundTuning.DescribePitch(pitch).ToLowerInvariant()}: click for as recorded" : "Pitch as recorded");
-			Describe(slower, $"Slower (now {SoundTuning.DescribeSpeed(speed)})");
-			Describe(faster, $"Faster (now {SoundTuning.DescribeSpeed(speed)})");
-			Describe(lower, $"A semitone lower (now {SoundTuning.DescribePitch(pitch).ToLowerInvariant()})");
-			Describe(higher, $"A semitone higher (now {SoundTuning.DescribePitch(pitch).ToLowerInvariant()})");
+			Describe(speedValue, speedChanged ? L.T("Speed {0}: click for as recorded", SoundTuning.DescribeSpeed(speed)) : L.T("Speed as recorded"));
+			Describe(pitchValue, pitch != 0 ? L.T("Pitch {0}: click for as recorded", SoundTuning.DescribePitch(pitch).ToLowerInvariant()) : L.T("Pitch as recorded"));
+			Describe(slower, L.T("Slower (now {0})", SoundTuning.DescribeSpeed(speed)));
+			Describe(faster, L.T("Faster (now {0})", SoundTuning.DescribeSpeed(speed)));
+			Describe(lower, L.T("A semitone lower (now {0})", SoundTuning.DescribePitch(pitch).ToLowerInvariant()));
+			Describe(higher, L.T("A semitone higher (now {0})", SoundTuning.DescribePitch(pitch).ToLowerInvariant()));
 
 			static void Describe(Control control, string text)
 			{
@@ -465,7 +465,7 @@ namespace Lyrious.UILib.Setlists
 		private Control CaptionLine()
 		{
 			DockPanel.SetDock(nextInfo, Dock.Right);
-			return new DockPanel { Children = { nextInfo, new TextBlock { Text = "Next", FontSize = CaptionSize, Opacity = 0.7 } } };
+			return new DockPanel { Children = { nextInfo, new TextBlock { Text = L.T("Next"), FontSize = CaptionSize, Opacity = 0.7 } } };
 		}
 
 		/// <summary>
@@ -502,7 +502,7 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			members.IsVisible = names.Count > 0;
-			Avalonia.Automation.AutomationProperties.SetName(members, names.Count == 0 ? "Nobody connected" : $"Connected: {string.Join(", ", names)}");
+			Avalonia.Automation.AutomationProperties.SetName(members, names.Count == 0 ? L.T("Nobody connected") : $"Connected: {string.Join(", ", names)}");
 		}
 
 		private static Control MemberBadge(string text, string tip)
@@ -558,17 +558,17 @@ namespace Lyrious.UILib.Setlists
 		// Set while SetBandSync changes the toggle, so it isn't reported as the user's change.
 		private bool settingBandSync;
 
-		/// <summary>The globe's colour (readable on the highlight when on) and its description.</summary>
+		/// <summary>The band icon's colour (readable on the highlight when on) and its description.</summary>
 		private void ShowBandSync()
 		{
 			var on = bandSync.IsChecked == true;
 			var icon = bandSync.Content is Viewbox { Child: Path inBox } ? inBox : (Path)bandSync.Content!;
 			icon.Bind(Shape.StrokeProperty, icon.GetResourceObservable(on ? "ToggleButtonForegroundChecked" : LyriousTheme.ForegroundBrush));
 			var description = on
-				? "Band sync is on: following and sending the band's song, setlist and play/stop. Tap to turn off; hold to send your setlist and song to the band."
-				: "Band sync is off: not following or sending the band's song, setlist and play/stop. Tap to turn on and take the band's; hold to turn on and send yours.";
+				? L.T("Band sync is on: following and sending the band's song, setlist and play/stop. Tap to turn off; hold to send your setlist and song to the band.")
+				: L.T("Band sync is off: not following or sending the band's song, setlist and play/stop. Tap to turn on and take the band's; hold to turn on and send yours.");
 			ToolTip.SetTip(bandSync, description);
-			Avalonia.Automation.AutomationProperties.SetName(bandSync, on ? "Band sync on" : "Band sync off");
+			Avalonia.Automation.AutomationProperties.SetName(bandSync, on ? L.T("Band sync on") : L.T("Band sync off"));
 		}
 
 		/// <summary>Shows play or pause, for whether the lyrics are scrolling.</summary>
@@ -576,7 +576,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			var icon = playPause.Content is Viewbox { Child: Path inBox } ? inBox : (Path)playPause.Content!;
 			icon.Data = Geometry.Parse(playing ? PauseIcon : PlayIcon);
-			var description = playing ? "Stop scrolling" : "Scroll the lyrics";
+			var description = playing ? L.T("Stop scrolling") : L.T("Scroll the lyrics");
 			ToolTip.SetTip(playPause, description);
 			Avalonia.Automation.AutomationProperties.SetName(playPause, description);
 		}
@@ -598,7 +598,7 @@ namespace Lyrious.UILib.Setlists
 			noMoreSongs.IsVisible = nextSongName == null && lastInSetlist;
 			nextName.Text = nextSongName;
 			nextInfo.Text = details;
-			var description = nextSongName == null ? "Next song" : $"Next song: {nextSongName}";
+			var description = nextSongName == null ? L.T("Next song") : L.T("Next song: {0}", nextSongName);
 			ToolTip.SetTip(next, description);
 			Avalonia.Automation.AutomationProperties.SetName(next, description);
 		}

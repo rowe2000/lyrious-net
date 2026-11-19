@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -33,12 +34,12 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 8,
 				Children =
 				{
-					new TextBlock { Text = "MIDI expressions", FontWeight = FontWeight.SemiBold },
+					new TextBlock { Text = L.T("MIDI expressions"), FontWeight = FontWeight.SemiBold },
 					new TextBlock
 					{
-						Text = "Shortcuts for MIDI commands in the lyrics, e.g. [midi:$MODX.0.20]: the name, then the values of its parameters. "
-						       + "They're sent to every MIDI output when a song opens."
-						       + (canEdit ? "" : " Only the band's admins change them."),
+						Text = L.T("Shortcuts for MIDI commands in the lyrics, e.g. [midi:$MODX.0.20]: the name, then the values of its parameters. ")
+						       + L.T("They're sent to every MIDI output when a song opens.")
+						       + (canEdit ? "" : L.T(" Only the band's admins change them.")),
 						TextWrapping = TextWrapping.Wrap,
 						Opacity = 0.75,
 					},
@@ -53,7 +54,7 @@ namespace Lyrious.UILib.Setlists
 			rows.Children.Clear();
 			if (expressions.Count == 0)
 			{
-				rows.Children.Add(new TextBlock { Text = "None yet.", Opacity = 0.6 });
+				rows.Children.Add(new TextBlock { Text = L.T("None yet."), Opacity = 0.6 });
 			}
 
 			for (var i = 0; i < expressions.Count; i++)
@@ -63,7 +64,7 @@ namespace Lyrious.UILib.Setlists
 
 			if (canEdit)
 			{
-				var add = new Button { Content = "Add expression", HorizontalAlignment = HorizontalAlignment.Left };
+				var add = new Button { Content = L.T("Add expression"), HorizontalAlignment = HorizontalAlignment.Left };
 				add.Click += (_, _) => ShowEditor(null, add);
 				rows.Children.Add(add);
 			}
@@ -90,12 +91,12 @@ namespace Lyrious.UILib.Setlists
 			if (canEdit)
 			{
 				var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
-				var edit = new Button { Content = "Edit", VerticalAlignment = VerticalAlignment.Center };
+				var edit = new Button { Content = L.T("Edit"), VerticalAlignment = VerticalAlignment.Center };
 				edit.Click += (_, _) => ShowEditor(index, row);
 				tools.Children.Add(edit);
 				tools.Children.Add(PageLayout.DeleteButton(
-					$"Delete ${expression.Name}",
-					$"Delete the MIDI expression ${expression.Name}? Lyrics that use it send nothing for it any more.",
+					L.T("Delete ${0}", expression.Name),
+					L.T("Delete the MIDI expression ${0}? Lyrics that use it send nothing for it any more.", expression.Name),
 					() =>
 					{
 						expressions.RemoveAt(index);
@@ -115,15 +116,15 @@ namespace Lyrious.UILib.Setlists
 		{
 			var existing = index is { } at ? expressions[at] : null;
 			var name = new TextBox { Text = existing?.Name, PlaceholderText = "MODX" };
-			var description = new TextBox { Text = existing?.Description, PlaceholderText = "Keyboard performance (optional)" };
-			var parameters = new TextBox { Text = existing?.ParametersText, PlaceholderText = "bank=0, program" };
-			var output = new TextBox { Text = existing?.Output, PlaceholderText = "MSB63 LSB{bank} PC{program}@1", FontFamily = FontFamily.Parse("monospace") };
+			var description = new TextBox { Text = existing?.Description, PlaceholderText = L.T("Keyboard performance (optional)") };
+			var parameters = new TextBox { Text = existing?.ParametersText, PlaceholderText = L.T("bank=0, program") };
+			var output = new TextBox { Text = existing?.Output, PlaceholderText = L.T("MSB63 LSB{bank} PC{program}@1"), FontFamily = FontFamily.Parse("monospace") };
 			var preview = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.8 };
 			var problem = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
 			problem.Bind(TextBlock.ForegroundProperty, problem.GetResourceObservable(LyriousTheme.ErrorBrush));
-			var saveButton = new Button { Content = "Save", Classes = { "accent" } };
+			var saveButton = new Button { Content = L.T("Save"), Classes = { "accent" } };
 			// Escape cancels this edit, before the page's ✕ (which would leave the band page).
-			var cancel = EscapeKey.MarkAsClose(new Button { Content = "Cancel" }, first: true);
+			var cancel = EscapeKey.MarkAsClose(new Button { Content = L.T("Cancel") }, first: true);
 			MidiExpression? valid = null;
 
 			// The others: the one being changed isn't among them (it may keep its name).
@@ -145,7 +146,7 @@ namespace Lyrious.UILib.Setlists
 					valid = candidate;
 					var example = Midi.Example(candidate);
 					var messages = Midi.Parse(example, others.Append(candidate).ToList());
-					preview.Text = $"Used as {candidate.Usage}. For example [midi:{example}] sends: {string.Join("; ", messages.Select(Midi.Describe))}.";
+					preview.Text = L.T("Used as {0}. For example [midi:{1}] sends: {2}.", candidate.Usage, example, string.Join("; ", messages.Select(Midi.Describe)));
 				}
 				else
 				{
@@ -175,10 +176,10 @@ namespace Lyrious.UILib.Setlists
 					Spacing = 8,
 					Children =
 					{
-						Field("Name", "Used in the lyrics after $, e.g. $MODX.", name),
-						Field("Description", null, description),
-						Field("Parameters", "In order, separated by commas; name=value gives a default, so the value can be left out.", parameters),
-						Field("Output", "MIDI commands with {parameter} for each value: PC (program), CC number:value, MSB and LSB (bank), @channel; or other expressions.", output),
+						Field(L.T("Name"), L.T("Used in the lyrics after $, e.g. $MODX."), name),
+						Field(L.T("Description"), null, description),
+						Field(L.T("Parameters"), L.T("In order, separated by commas; name=value gives a default, so the value can be left out."), parameters),
+						Field(L.T("Output"), L.T("MIDI commands with {parameter} for each value: PC (program), CC number:value, MSB and LSB (bank), @channel; or other expressions."), output),
 						preview,
 						problem,
 						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { saveButton, cancel } },

@@ -61,6 +61,8 @@ namespace Lyrious.UILib
 
 		public override void OnFrameworkInitializationCompleted()
 		{
+			// The language (chosen in Settings, else the device's), before anything is shown.
+			Localization.Language.Apply();
 			// The user's own colours (Settings → Colors), over the theme's.
 			ColorSettings.Apply();
 			EscapeKey.Register();

@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -23,26 +24,43 @@ namespace Lyrious.UILib.Setlists
 			var nextOnStop = new ToggleSwitch
 			{
 				IsChecked = PlaybackSettings.NextSongOnStopAtEnd,
-				OnContent = "On",
-				OffContent = "Off",
+				OnContent = L.T("On"),
+				OffContent = L.T("Off"),
 			};
 			nextOnStop.IsCheckedChanged += (_, _) => PlaybackSettings.NextSongOnStopAtEnd = nextOnStop.IsChecked == true;
 
 			var songHeader = new ToggleSwitch
 			{
 				IsChecked = DisplaySettings.ShowSongHeader,
-				OnContent = "On",
-				OffContent = "Off",
+				OnContent = L.T("On"),
+				OffContent = L.T("Off"),
 			};
 			songHeader.IsCheckedChanged += (_, _) => DisplaySettings.ShowSongHeader = songHeader.IsChecked == true;
 
 			var dynamicZoom = new ToggleSwitch
 			{
 				IsChecked = DisplaySettings.DynamicZoom,
-				OnContent = "On",
-				OffContent = "Off",
+				OnContent = L.T("On"),
+				OffContent = L.T("Off"),
 			};
 			dynamicZoom.IsCheckedChanged += (_, _) => DisplaySettings.DynamicZoom = dynamicZoom.IsChecked == true;
+
+			// The language: the device's, or one chosen; the screens are made anew in it at once.
+			var language = new ComboBox { MinWidth = 100 };
+			foreach (var choice in Localization.Language.Choices)
+			{
+				language.Items.Add(new ComboBoxItem { Content = choice.Code == "" ? Localization.L.T(choice.Name) : choice.Name, Tag = choice.Code });
+			}
+
+			language.SelectedIndex = Math.Max(0, System.Linq.Enumerable.ToList(Localization.Language.Choices).FindIndex(choice => choice.Code == Localization.Language.Chosen));
+			language.SelectionChanged += (_, _) =>
+			{
+				if (language.SelectedItem is ComboBoxItem { Tag: string code } && code != Localization.Language.Chosen)
+				{
+					// After the list has closed: the screens (this one too) are made anew.
+					Avalonia.Threading.Dispatcher.UIThread.Post(() => Localization.Language.Chosen = code);
+				}
+			};
 
 			// The interface size: a list of sizes, applied at once.
 			var scale = new ComboBox { MinWidth = 100 };
@@ -75,60 +93,64 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 16,
 				Children =
 				{
-					Section("Display"),
+					Section(L.T("Display")),
 					Setting(
-						"Interface size",
-						"Makes the whole app larger or smaller: text, buttons, icons and spacing.",
+						L.T("Language"),
+						L.T("The language of the app. Yours on all your devices."),
+						language),
+					Setting(
+						L.T("Interface size"),
+						L.T("Makes the whole app larger or smaller: text, buttons, icons and spacing."),
 						scale),
 					Setting(
-						"Song title above the lyrics",
-						"Shows the song's name, key, tempo and beat above the lyrics. The song's name is in the drawer either way.",
+						L.T("Song title above the lyrics"),
+						L.T("Shows the song's name, key, tempo and beat above the lyrics. The song's name is in the drawer either way."),
 						songHeader),
 					Setting(
-						"Dynamic zoom",
-						"Sizes the whole app, lyrics included, to the window: the smaller of its width and height sets the zoom, where 500 px is 100 %. The interface size above and the lyrics' own zoom apply on top.",
+						L.T("Dynamic zoom"),
+						L.T("Sizes the whole app, lyrics included, to the window: the smaller of its width and height sets the zoom, where 500 px is 100 %. The interface size above and the lyrics' own zoom apply on top."),
 						dynamicZoom),
-					Section("Playback"),
+					Section(L.T("Playback")),
 					Setting(
-						"Next song when stopping at the end",
-						"When the lyrics have scrolled all the way to the bottom, pressing stop also goes on to the next song in the setlist.",
+						L.T("Next song when stopping at the end"),
+						L.T("When the lyrics have scrolled all the way to the bottom, pressing stop also goes on to the next song in the setlist."),
 						nextOnStop),
-					Section("Colors"),
-					new TextBlock { Text = "Yours on all your devices.", Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
+					Section(L.T("Colors")),
+					new TextBlock { Text = L.T("Yours on all your devices."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
 					ColorSetting(
-						"Highlight",
-						"The current song, setlist and band, the selected row's outline, and the main buttons.",
+						L.T("Highlight"),
+						L.T("The current song, setlist and band, the selected row's outline, and the main buttons."),
 						() => ColorSettings.Highlight,
 						color => ColorSettings.Highlight = color,
-						"Theme purple",
+						L.T("Theme purple"),
 						"SystemAccentColor"),
 					ColorSetting(
-						"Chords",
-						"Chords above the lyrics, and the bar beside a chorus.",
+						L.T("Chords"),
+						L.T("Chords above the lyrics, and the bar beside a chorus."),
 						() => ColorSettings.Chord,
 						color => ColorSettings.Chord = color,
-						"Theme colour",
+						L.T("Theme colour"),
 						LyriousTheme.ChordBrush),
 					ColorSetting(
-						"Heading 1",
-						"The largest headings in the lyrics (\"# \"), such as the song's title.",
+						L.T("Heading 1"),
+						L.T("The largest headings in the lyrics (\"# \"), such as the song's title."),
 						() => ColorSettings.Heading1,
 						color => ColorSettings.Heading1 = color,
-						"Text colour",
+						L.T("Text colour"),
 						LyriousTheme.Heading1Brush),
 					ColorSetting(
-						"Heading 2",
-						"Headings in the lyrics written \"## \", such as Verse and Chorus.",
+						L.T("Heading 2"),
+						L.T("Headings in the lyrics written \"## \", such as Verse and Chorus."),
 						() => ColorSettings.Heading2,
 						color => ColorSettings.Heading2 = color,
-						"Theme colour",
+						L.T("Theme colour"),
 						LyriousTheme.Heading2Brush),
 					ColorSetting(
-						"Other headings",
-						"Smaller headings in the lyrics (\"### \" and more).",
+						L.T("Other headings"),
+						L.T("Smaller headings in the lyrics (\"### \" and more)."),
 						() => ColorSettings.Heading,
 						color => ColorSettings.Heading = color,
-						"Theme colour",
+						L.T("Theme colour"),
 						LyriousTheme.HeadingBrush),
 				},
 			};
@@ -137,14 +159,14 @@ namespace Lyrious.UILib.Setlists
 			// The current band's settings: saved with the band, not on this device.
 			if (bandName != null && bandSettings != null)
 			{
-				form.Children.Add(Section($"Band settings · {bandName}"));
-				form.Children.Add(new TextBlock { Text = "Saved with the band: the same for all its members.", Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
+				form.Children.Add(Section(L.T("Band settings · {0}", bandName)));
+				form.Children.Add(new TextBlock { Text = L.T("Saved with the band: the same for all its members."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
 				form.Children.Add(bandSettings);
 			}
 
 			if (bandName != null && (importSongbookPro != null || clearSongbook != null))
 			{
-				form.Children.Add(Section($"Songbook · {bandName}"));
+				form.Children.Add(Section(L.T("Songbook · {0}", bandName)));
 				if (importSongbookPro != null)
 				{
 					form.Children.Add(ImportSetting(importSongbookPro));
@@ -159,7 +181,7 @@ namespace Lyrious.UILib.Setlists
 			// Scrolls when the settings don't fit (a short window or a large interface size).
 			form.Margin = new Thickness(0, 0, 0, 16);
 			var scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-			Content = PageLayout.Page("Settings", scroller, subtitle: "Kept on this device", closable: true, icon: AppIcons.Settings);
+			Content = PageLayout.Page(L.T("Settings"), scroller, subtitle: L.T("Kept on this device"), closable: true, icon: AppIcons.Settings);
 		}
 
 		/// <summary>
@@ -169,14 +191,14 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private static Control ImportSetting(Func<Control, bool, Task<string?>> import)
 		{
-			var button = new Button { Content = "Import SongbookPro backup…" };
+			var button = new Button { Content = L.T("Import SongbookPro backup…") };
 			var status = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Opacity = 0.85 };
 
 			async Task ImportAsync(bool convert)
 			{
 				button.IsEnabled = false;
 				status.IsVisible = true;
-				status.Text = "Importing…";
+				status.Text = L.T("Importing…");
 				try
 				{
 					var result = await import(button, convert);
@@ -193,9 +215,9 @@ namespace Lyrious.UILib.Setlists
 				}
 			}
 
-			var convertButton = new Button { Content = "Convert", Classes = { "accent" } };
-			var keepButton = new Button { Content = "Keep as is" };
-			var cancelButton = new Button { Content = "Cancel" };
+			var convertButton = new Button { Content = L.T("Convert"), Classes = { "accent" } };
+			var keepButton = new Button { Content = L.T("Keep as is") };
+			var cancelButton = new Button { Content = L.T("Cancel") };
 			var question = new Flyout
 			{
 				Content = new StackPanel
@@ -204,10 +226,10 @@ namespace Lyrious.UILib.Setlists
 					MaxWidth = 340,
 					Children =
 					{
-						new TextBlock { Text = "Convert the songs to Lyrious format?", FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
+						new TextBlock { Text = L.T("Convert the songs to Lyrious format?"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
 						new TextBlock
 						{
-							Text = "Each song then starts with a heading of its key and name (\"# [D]Amazing Grace\"), comments such as {c: Verse 1} become headings (\"## Verse 1\"), and a heading like \"# [d] Intro\" becomes \"# [D]Intro\". Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist, and a ✓ in a name or the lyrics becomes the tag ✓.",
+							Text = L.T("Each song then starts with a heading of its key and name (\"# [D]Amazing Grace\"), comments such as {c: Verse 1} become headings (\"## Verse 1\"), and a heading like \"# [d] Intro\" becomes \"# [D]Intro\". Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist, and a ✓ in a name or the lyrics becomes the tag ✓."),
 							TextWrapping = TextWrapping.Wrap,
 							Opacity = 0.8,
 						},
@@ -235,7 +257,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					new TextBlock
 					{
-						Text = "Adds the songs and sets of a SongbookPro backup (\"SongbookPro Backup.zip\" or .sbpbackup) to your band's songbook and setlists. PDF songs are left out.",
+						Text = L.T("Adds the songs and sets of a SongbookPro backup (\"SongbookPro Backup.zip\" or .sbpbackup) to your band's songbook and setlists. PDF songs are left out."),
 						TextWrapping = TextWrapping.Wrap,
 						Opacity = 0.7,
 					},
@@ -251,10 +273,10 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private static Control ClearSetting(Func<Task<string>> clear, string bandName)
 		{
-			var button = new Button { Content = "Clear songbook…" };
+			var button = new Button { Content = L.T("Clear songbook…") };
 			var status = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Opacity = 0.85 };
-			var confirm = PageLayout.DangerButton("Delete all songs");
-			var cancel = new Button { Content = "Cancel" };
+			var confirm = PageLayout.DangerButton(L.T("Delete all songs"));
+			var cancel = new Button { Content = L.T("Cancel") };
 			var question = new Flyout
 			{
 				Content = new StackPanel
@@ -265,7 +287,7 @@ namespace Lyrious.UILib.Setlists
 					{
 						new TextBlock
 						{
-							Text = $"Delete every song in {bandName}'s songbook? They're removed from every setlist too (the setlists stay, empty). This can't be undone.",
+							Text = L.T("Delete every song in {0}'s songbook? They're removed from every setlist too (the setlists stay, empty). This can't be undone.", bandName),
 							TextWrapping = TextWrapping.Wrap,
 						},
 						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { confirm, cancel } },
@@ -278,14 +300,14 @@ namespace Lyrious.UILib.Setlists
 				question.Hide();
 				button.IsEnabled = false;
 				status.IsVisible = true;
-				status.Text = "Deleting…";
+				status.Text = L.T("Deleting…");
 				try
 				{
 					status.Text = await clear();
 				}
 				catch (Exception ex)
 				{
-					status.Text = $"Couldn't clear the songbook. {ex.Message}";
+					status.Text = L.T("Couldn't clear the songbook. {0}", ex.Message);
 				}
 				finally
 				{
@@ -300,7 +322,7 @@ namespace Lyrious.UILib.Setlists
 				Margin = new Thickness(0, 8, 0, 0),
 				Children =
 				{
-					new TextBlock { Text = "Deletes all the songs in the songbook, for everyone in the band.", TextWrapping = TextWrapping.Wrap, Opacity = 0.7 },
+					new TextBlock { Text = L.T("Deletes all the songs in the songbook, for everyone in the band."), TextWrapping = TextWrapping.Wrap, Opacity = 0.7 },
 					button,
 					status,
 				},
@@ -345,7 +367,7 @@ namespace Lyrious.UILib.Setlists
 			var picker = new HslColorPicker();
 			var preview = new Border { Width = 40, Height = 32, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.Gray, 0.6) };
 			var hex = new TextBox { Width = 110, PlaceholderText = "#RRGGBB", VerticalAlignment = VerticalAlignment.Center };
-			var problem = new TextBlock { Text = "Not a colour; write it as #RRGGBB.", IsVisible = false, TextWrapping = TextWrapping.Wrap };
+			var problem = new TextBlock { Text = L.T("Not a colour; write it as #RRGGBB."), IsVisible = false, TextWrapping = TextWrapping.Wrap };
 			problem.Bind(TextBlock.ForegroundProperty, problem.GetResourceObservable(LyriousTheme.ErrorBrush));
 
 			// The theme's own colour for this setting, followed as the theme changes (null until known).
@@ -445,7 +467,7 @@ namespace Lyrious.UILib.Setlists
 				ready.Children.Add(pick);
 			}
 
-			var useDefault = new Button { Content = $"Default ({defaultName})" };
+			var useDefault = new Button { Content = L.T("Default ({0})", defaultName) };
 			useDefault.Click += (_, _) => Choose(null);
 
 			button.Flyout = new Flyout

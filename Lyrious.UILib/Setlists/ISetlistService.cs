@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -271,7 +272,7 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>Used until a host provides a real service, so the pages say why nothing loads.</summary>
 	public sealed class UnconfiguredSetlistService : ISetlistService
 	{
-		private static Exception NotConnected() => new InvalidOperationException("This app isn't connected to a Lyrious server yet.");
+		private static Exception NotConnected() => new InvalidOperationException(L.T("This app isn't connected to a Lyrious server yet."));
 
 		public SyncStatus Status => new(false, 0, null, null);
 		public event Action? StatusChanged { add { } remove { } }

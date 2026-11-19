@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -51,12 +52,12 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					icon,
-					new TextBlock { Text = "No song chosen yet", FontSize = 26, FontWeight = FontWeight.Bold, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap },
+					new TextBlock { Text = L.T("No song chosen yet"), FontSize = 26, FontWeight = FontWeight.Bold, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap },
 					new TextBlock
 					{
 						Text = setlistName == null
-							? $"You haven't chosen a song yet. Pick one from {band}'s songbook, or choose a setlist to play from."
-							: $"You haven't chosen a song yet. Pick one from the setlist {setlistName}, from another setlist, or from {band}'s songbook.",
+							? L.T("You haven't chosen a song yet. Pick one from {0}'s songbook, or choose a setlist to play from.", band)
+							: L.T("You haven't chosen a song yet. Pick one from the setlist {0}, from another setlist, or from {1}'s songbook.", setlistName, band),
 						TextWrapping = TextWrapping.Wrap,
 						TextAlignment = TextAlignment.Center,
 						Opacity = 0.8,
@@ -66,11 +67,11 @@ namespace Lyrious.UILib.Setlists
 
 			if (setlistName != null)
 			{
-				panel.Children.Add(Choice($"Songs in {setlistName}", () => CurrentSetlistRequested?.Invoke(), accent: true));
+				panel.Children.Add(Choice(L.T("Songs in {0}", setlistName), () => CurrentSetlistRequested?.Invoke(), accent: true));
 			}
 
-			panel.Children.Add(Choice("Choose a song from the songbook", () => SongbookRequested?.Invoke(), accent: setlistName == null));
-			panel.Children.Add(Choice(setlistName == null ? "Choose a setlist" : "Choose another setlist", () => SetlistsRequested?.Invoke(), accent: false));
+			panel.Children.Add(Choice(L.T("Choose a song from the songbook"), () => SongbookRequested?.Invoke(), accent: setlistName == null));
+			panel.Children.Add(Choice(setlistName == null ? L.T("Choose a setlist") : L.T("Choose another setlist"), () => SetlistsRequested?.Invoke(), accent: false));
 			Content = panel;
 		}
 

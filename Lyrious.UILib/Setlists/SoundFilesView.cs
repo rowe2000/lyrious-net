@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -37,7 +38,7 @@ namespace Lyrious.UILib.Setlists
 			var top = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 4), Children = { summary, problem } };
 			DockPanel.SetDock(top, Dock.Top);
 			body.Content = new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 8) };
-			Content = PageLayout.Page("Sound files", new DockPanel { Children = { top, body } }, subtitle: "Kept on this device", closable: true, icon: AppIcons.SoundFiles);
+			Content = PageLayout.Page(L.T("Sound files"), new DockPanel { Children = { top, body } }, subtitle: L.T("Kept on this device"), closable: true, icon: AppIcons.SoundFiles);
 
 			// The marks follow when a file reaches the server.
 			void OnPendingChanged() => Dispatcher.UIThread.Post(() => _ = LoadAsync());
@@ -68,7 +69,7 @@ namespace Lyrious.UILib.Setlists
 			catch (Exception ex)
 			{
 				body.Content = null;
-				ShowProblem($"Couldn't list the sound files. {ex.Message}");
+				ShowProblem(L.T("Couldn't list the sound files. {0}", ex.Message));
 			}
 		}
 
@@ -101,7 +102,7 @@ namespace Lyrious.UILib.Setlists
 			catch (Exception ex)
 			{
 				// The files are still listed, by their ids.
-				ShowProblem($"Couldn't find the songs that use them. {ex.Message}");
+				ShowProblem(L.T("Couldn't find the songs that use them. {0}", ex.Message));
 			}
 
 			return bySound;
@@ -111,8 +112,8 @@ namespace Lyrious.UILib.Setlists
 		{
 			var total = rows.Sum(row => row.Sound.Size);
 			summary.Text = rows.Count == 0
-				? "No sound files are kept on this device."
-				: $"{rows.Count} file{(rows.Count == 1 ? "" : "s")}, {Size(total)} in all. Deleting one only frees this device: a song that uses it fetches it from the server again when it's played.";
+				? L.T("No sound files are kept on this device.")
+				: L.Plural(rows.Count, "{0} file, {1} in all. Deleting one only frees this device: a song that uses it fetches it from the server again when it's played.", "{0} files, {1} in all. Deleting one only frees this device: a song that uses it fetches it from the server again when it's played.", Size(total));
 
 			var list = new StackPanel { Spacing = 4 };
 			var unused = rows.Where(row => row.Songs.Count == 0 && !row.Pending).ToList();
@@ -127,18 +128,18 @@ namespace Lyrious.UILib.Setlists
 
 		private Control RowCard(Row row)
 		{
-			var detail = row.Songs.Count == 0 ? "Not used by any song" : $"Used by {string.Join(", ", row.Songs)}";
+			var detail = row.Songs.Count == 0 ? L.T("Not used by any song") : L.T("Used by {0}", string.Join(", ", row.Songs));
 			if (row.Pending)
 			{
-				detail += " · Not sent to the server yet";
+				detail += L.T(" · Not sent to the server yet");
 			}
 
 			var question = row.Pending
-				? $"{row.Name} hasn't reached the server yet: deleted, it's lost. Delete it?"
+				? L.T("{0} hasn't reached the server yet: deleted, it's lost. Delete it?", row.Name)
 				: row.Songs.Count == 0
-					? $"Delete {row.Name}? No song uses it."
-					: $"Delete {row.Name} from this device? It's fetched from the server again when it's played.";
-			var delete = PageLayout.DeleteButton($"Delete {row.Name}", question, () => _ = DeleteAsync([row.Sound.Id]));
+					? L.T("Delete {0}? No song uses it.", row.Name)
+					: L.T("Delete {0} from this device? It's fetched from the server again when it's played.", row.Name);
+			var delete = PageLayout.DeleteButton(L.T("Delete {0}", row.Name), question, () => _ = DeleteAsync([row.Sound.Id]));
 			delete.VerticalAlignment = VerticalAlignment.Center;
 			DockPanel.SetDock(delete, Dock.Right);
 
@@ -169,9 +170,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>"Delete the N unused files", asking first.</summary>
 		private Button DeleteUnusedButton(List<Row> unused)
 		{
-			var button = new Button { Content = $"Delete the {unused.Count} files no song uses ({Size(unused.Sum(row => row.Sound.Size))})", Margin = new Thickness(0, 0, 0, 4) };
-			var confirm = PageLayout.DangerButton("Delete");
-			var cancel = new Button { Content = "Cancel" };
+			var button = new Button { Content = L.T("Delete the {0} files no song uses ({1})", unused.Count, Size(unused.Sum(row => row.Sound.Size))), Margin = new Thickness(0, 0, 0, 4) };
+			var confirm = PageLayout.DangerButton(L.T("Delete"));
+			var cancel = new Button { Content = L.T("Cancel") };
 			var flyout = new Flyout
 			{
 				Content = new StackPanel
@@ -180,7 +181,7 @@ namespace Lyrious.UILib.Setlists
 					MaxWidth = 280,
 					Children =
 					{
-						new TextBlock { Text = $"Delete the {unused.Count} sound files no song uses from this device?", TextWrapping = TextWrapping.Wrap },
+						new TextBlock { Text = L.T("Delete the {0} sound files no song uses from this device?", unused.Count), TextWrapping = TextWrapping.Wrap },
 						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { confirm, cancel } },
 					},
 				},
@@ -207,7 +208,7 @@ namespace Lyrious.UILib.Setlists
 			}
 			catch (Exception ex)
 			{
-				ShowProblem($"Couldn't delete it. {ex.Message}");
+				ShowProblem(L.T("Couldn't delete it. {0}", ex.Message));
 			}
 
 			await LoadAsync();

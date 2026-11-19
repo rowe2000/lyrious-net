@@ -1,4 +1,5 @@
 using System;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
@@ -20,15 +21,15 @@ namespace Lyrious.UILib.Login
 
 		/// <param name="host">The server the app talks to; shown with a "change" link when given.</param>
 		public LoginView(LoginViewModel viewModel, string? host = null)
-			: base(viewModel, "Lyrious", "Songs, setlists and lyrics for your band, in sync.", "Log in", viewModel.LogInAsync)
+			: base(viewModel, "Lyrious", L.T("Songs, setlists and lyrics for your band, in sync."), L.T("Log in"), viewModel.LogInAsync)
 		{
-			AddField("Username", () => viewModel.UserName, value => viewModel.UserName = value);
-			AddField("Password", () => viewModel.Password, value => viewModel.Password = value, isPassword: true);
-			AddLink("Forgot my password?", () => ForgotPasswordRequested?.Invoke());
-			AddLink("New to Lyrious? Create an account", () => RegisterRequested?.Invoke());
+			AddField(L.T("Username"), () => viewModel.UserName, value => viewModel.UserName = value);
+			AddField(L.T("Password"), () => viewModel.Password, value => viewModel.Password = value, isPassword: true);
+			AddLink(L.T("Forgot my password?"), () => ForgotPasswordRequested?.Invoke());
+			AddLink(L.T("New to Lyrious? Create an account"), () => RegisterRequested?.Invoke());
 			if (!string.IsNullOrEmpty(host))
 			{
-				AddLink($"Host: {host} · Change", () => HostRequested?.Invoke());
+				AddLink(L.T("Host: {0} · Change", host), () => HostRequested?.Invoke());
 			}
 		}
 	}

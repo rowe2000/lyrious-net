@@ -29,6 +29,7 @@ namespace Lyrious.UILib
 			SettingKeys.Heading1Color,
 			SettingKeys.Heading2Color,
 			SettingKeys.HeadingColor,
+			SettingKeys.Language,
 		];
 
 		/// <summary>How long after the last change it's sent.</summary>
@@ -195,6 +196,8 @@ namespace Lyrious.UILib
 			if (changed)
 			{
 				ColorSettings.Apply();
+				// The language chosen on another device (the screens are made anew if it changed).
+				Localization.Language.ApplyChanged();
 				Changed?.Invoke();
 			}
 		}

@@ -1,4 +1,5 @@
 using System;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
@@ -9,10 +10,10 @@ namespace Lyrious.UILib.Login
 		public event Action? LoginRequested;
 
 		public ForgotPasswordView(ForgotPasswordViewModel viewModel)
-			: base(viewModel, "Forgot password", "Enter your username or email and we'll email you a code to choose a new password.", "Send code", viewModel.SendCodeAsync)
+			: base(viewModel, L.T("Forgot password"), L.T("Enter your username or email and we'll email you a code to choose a new password."), L.T("Send code"), viewModel.SendCodeAsync)
 		{
-			AddField("Username or email", () => viewModel.UserNameOrEmail, value => viewModel.UserNameOrEmail = value);
-			AddLink("Back to login", () => LoginRequested?.Invoke());
+			AddField(L.T("Username or email"), () => viewModel.UserNameOrEmail, value => viewModel.UserNameOrEmail = value);
+			AddLink(L.T("Back to login"), () => LoginRequested?.Invoke());
 		}
 	}
 }

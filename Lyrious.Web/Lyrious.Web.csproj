@@ -3,6 +3,9 @@
     <TargetFramework>net10.0-browser</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>enable</Nullable>
+    <!-- All languages' date and number formats (the default only has a few), e.g. Swedish for the
+         app in Swedish. -->
+    <WasmIncludeFullIcuData>true</WasmIncludeFullIcuData>
   </PropertyGroup>
 
   <!-- Published (Release) builds are compiled to WebAssembly ahead of time: much faster than the

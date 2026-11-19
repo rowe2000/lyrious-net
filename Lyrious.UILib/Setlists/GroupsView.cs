@@ -9,6 +9,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -81,15 +82,15 @@ namespace Lyrious.UILib.Setlists
 			ShowBand(shown);
 
 			// "+" reveals a name box above the list; Add (or Enter) creates the band.
-			var (addButton, nameRow) = PageLayout.AddByName("Add band", "Name of the new band", name => GroupCreateRequested?.Invoke(name));
+			var (addButton, nameRow) = PageLayout.AddByName(L.T("Add band"), L.T("Name of the new band"), name => GroupCreateRequested?.Invoke(name));
 
 			// The other bands and the details scroll together (the details can be long in a big band).
 			var column = new StackPanel { Spacing = 16, Children = { nameRow, otherBands, details } };
 
 			Content = PageLayout.Page(
-				"Band",
+				L.T("Band"),
 				new ScrollViewer { Content = column, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
-				subtitle: current == null ? "Choose a band" : null,
+				subtitle: current == null ? L.T("Choose a band") : null,
 				titleAction: addButton,
 				closable: true,
 				icon: AppIcons.Band);
@@ -134,20 +135,20 @@ namespace Lyrious.UILib.Setlists
 			var admins = bandMembers.Count(member => member.Role == GroupRole.Admin);
 
 			// The band's name and the member's place in it; Join and (admins) delete at the right.
-			var status = new List<string> { joined ? "Joined" : "Not joined" };
+			var status = new List<string> { joined ? "Joined" : L.T("Not joined") };
 			if (group.IsPrivate)
 			{
-				status.Add("Private · only you");
+				status.Add(L.T("Private · only you"));
 			}
 			else if (me != null)
 			{
-				status.Add(me.Approved ? $"You're {Article(me.Role)} {RoleName(me.Role)}" : "You're invited");
+				status.Add(me.Approved ? $"You're {Article(me.Role)} {RoleName(me.Role)}" : L.T("You're invited"));
 			}
 
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
 			if (!joined)
 			{
-				var join = new Button { Content = me is { Approved: false } ? "Accept and join" : "Join", Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center, Height = 40, VerticalContentAlignment = VerticalAlignment.Center };
+				var join = new Button { Content = me is { Approved: false } ? L.T("Accept and join") : "Join", Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center, Height = 40, VerticalContentAlignment = VerticalAlignment.Center };
 				join.Click += (_, _) => GroupSelected?.Invoke(group);
 				actions.Children.Add(join);
 			}
@@ -155,8 +156,8 @@ namespace Lyrious.UILib.Setlists
 			if (isAdmin)
 			{
 				actions.Children.Add(PageLayout.DeleteButton(
-					$"Delete {group.Name}",
-					$"Delete the band {group.Name}? Its members, setlists and songs go with it.",
+					L.T("Delete {0}", group.Name),
+					L.T("Delete the band {0}? Its members, setlists and songs go with it.", group.Name),
 					() => GroupDeleteRequested?.Invoke(group)));
 			}
 
@@ -198,7 +199,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				membersTab.Children.Add(new TextBlock
 				{
-					Text = "This is your private place to keep your own songs and setlists. No one else can see them, and no one can be invited here.",
+					Text = L.T("This is your private place to keep your own songs and setlists. No one else can see them, and no one can be invited here."),
 					TextWrapping = TextWrapping.Wrap,
 					Opacity = 0.85,
 				});
@@ -220,7 +221,7 @@ namespace Lyrious.UILib.Setlists
 					canEdit: me.Role == GroupRole.Admin,
 					expressions => MidiExpressionsChangeRequested?.Invoke(group, expressions));
 				panel.Children.Add(Tabs(
-					(group.IsPrivate ? "About" : $"Members ({bandMembers.Count})", membersTab),
+					(group.IsPrivate ? L.T("About") : L.T("Members ({0})", bandMembers.Count), membersTab),
 					("MIDI", midiTab)));
 			}
 			else
@@ -313,7 +314,7 @@ namespace Lyrious.UILib.Setlists
 				role.SelectedIndex = (int)member.Role;
 				if (lastAdmin)
 				{
-					ToolTip.SetTip(role, "The band's only admin stays one; make someone else admin first.");
+					ToolTip.SetTip(role, L.T("The band's only admin stays one; make someone else admin first."));
 				}
 
 				role.SelectionChanged += (_, _) =>
@@ -347,10 +348,10 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>A pencil that opens a small popup to change the member's name: a box with ✓ (or Enter) and ✕.</summary>
 		private Button EditButton(GroupSummary group, GroupMember member)
 		{
-			var button = PageLayout.EditButton($"Edit {member.Name}", () => { });
-			var nameBox = new TextBox { Text = member.Name, PlaceholderText = "Name", MaxLength = 100, MinWidth = 220 };
-			var save = PageLayout.OkButton("Save the name");
-			var cancel = PageLayout.CancelButton("Cancel");
+			var button = PageLayout.EditButton(L.T("Edit {0}", member.Name), () => { });
+			var nameBox = new TextBox { Text = member.Name, PlaceholderText = L.T("Name"), MaxLength = 100, MinWidth = 220 };
+			var save = PageLayout.OkButton(L.T("Save the name"));
+			var cancel = PageLayout.CancelButton(L.T("Cancel"));
 			var flyout = new Flyout
 			{
 				Content = new StackPanel
@@ -359,7 +360,7 @@ namespace Lyrious.UILib.Setlists
 					MaxWidth = 280,
 					Children =
 					{
-						new TextBlock { Text = "Name", FontSize = 13, Opacity = 0.75 },
+						new TextBlock { Text = L.T("Name"), FontSize = 13, Opacity = 0.75 },
 						nameBox,
 						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { save, cancel } },
 					},
@@ -406,9 +407,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>✕ that asks first, then removes the member from the band.</summary>
 		private Button RemoveButton(GroupSummary group, GroupMember member)
 		{
-			var button = HomeView.IconButton(RemoveIcon, $"Remove {member.Name}");
-			var confirm = PageLayout.DangerButton("Remove");
-			var cancel = new Button { Content = "Cancel" };
+			var button = HomeView.IconButton(RemoveIcon, L.T("Remove {0}", member.Name));
+			var confirm = PageLayout.DangerButton(L.T("Remove"));
+			var cancel = new Button { Content = L.T("Cancel") };
 			var flyout = new Flyout
 			{
 				Content = new StackPanel
@@ -417,7 +418,7 @@ namespace Lyrious.UILib.Setlists
 					MaxWidth = 280,
 					Children =
 					{
-						new TextBlock { Text = $"Remove {member.Name} from {group.Name}?", TextWrapping = TextWrapping.Wrap },
+						new TextBlock { Text = L.T("Remove {0} from {1}?", member.Name, group.Name), TextWrapping = TextWrapping.Wrap },
 						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { confirm, cancel } },
 					},
 				},
@@ -435,8 +436,8 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>A box for a username, email or phone, and Invite (or Enter). Problems show below it.</summary>
 		private Control InviteRow(GroupSummary group)
 		{
-			var box = new TextBox { PlaceholderText = "Username, email or phone", VerticalAlignment = VerticalAlignment.Center };
-			var invite = new Button { Content = "Invite", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+			var box = new TextBox { PlaceholderText = L.T("Username, email or phone"), VerticalAlignment = VerticalAlignment.Center };
+			var invite = new Button { Content = L.T("Invite"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
 			var problem = new TextBlock { IsVisible = false, TextWrapping = TextWrapping.Wrap };
 			problem.Bind(TextBlock.ForegroundProperty, problem.GetResourceObservable(LyriousTheme.ErrorBrush));
 
@@ -481,7 +482,7 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 6,
 				Children =
 				{
-					new TextBlock { Text = "Invite a member", FontWeight = FontWeight.SemiBold },
+					new TextBlock { Text = L.T("Invite a member"), FontWeight = FontWeight.SemiBold },
 					new DockPanel { Children = { invite, box } },
 					problem,
 				},
@@ -500,7 +501,7 @@ namespace Lyrious.UILib.Setlists
 			var showStatus = !(member.Connected && member.Approved);
 			if (showStatus)
 			{
-				var status = !member.Approved ? "Invited" : member.Joined ? "Joined" : "Accepted";
+				var status = !member.Approved ? L.T("Invited") : member.Joined ? L.T("Joined") : L.T("Accepted");
 				line.Inlines!.Add(new Avalonia.Controls.Documents.Run(status) { FontWeight = FontWeight.SemiBold });
 			}
 
@@ -521,7 +522,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (lastLogin is not { } time)
 			{
-				return "No login recorded yet";
+				return L.T("No login recorded yet");
 			}
 
 			var local = time.Kind == DateTimeKind.Utc ? time.ToLocalTime() : time;
@@ -530,10 +531,10 @@ namespace Lyrious.UILib.Setlists
 			{
 				<= 0 => $"today {local:HH:mm}",
 				1 => $"yesterday {local:HH:mm}",
-				< 7 => $"{days} days ago",
+				< 7 => L.T("{0} days ago", days),
 				_ => local.ToString("d MMM yyyy", CultureInfo.InvariantCulture),
 			};
-			return $"Last login {when}";
+			return L.T("Last login {0}", when);
 		}
 
 		private static string RoleName(GroupRole role) => role.ToString().ToLowerInvariant();
@@ -552,7 +553,7 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			// In the button's text colour, so it shows on the highlight too.
-			var note = PageLayout.CurrentCheck("Joined");
+			var note = PageLayout.CurrentCheck(L.T("Joined"));
 			return new DockPanel { Children = { note, details } };
 		}
 	}

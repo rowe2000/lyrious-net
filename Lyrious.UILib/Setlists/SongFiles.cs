@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -25,16 +26,16 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (TopLevel.GetTopLevel(anchor)?.StorageProvider is not { CanOpen: true } storage)
 			{
-				throw new InvalidOperationException("Opening files isn't possible here.");
+				throw new InvalidOperationException(L.T("Opening files isn't possible here."));
 			}
 
 			var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
 			{
-				Title = "Import a song",
+				Title = L.T("Import a song"),
 				AllowMultiple = false,
 				FileTypeFilter =
 				[
-					new FilePickerFileType("Lyrics and chords") { Patterns = ["*.txt", "*.cho", "*.crd", "*.chopro", "*.pro"], MimeTypes = ["text/plain"] },
+					new FilePickerFileType(L.T("Lyrics and chords")) { Patterns = ["*.txt", "*.cho", "*.crd", "*.chopro", "*.pro"], MimeTypes = ["text/plain"] },
 					FilePickerFileTypes.All,
 				],
 			});
@@ -52,14 +53,14 @@ namespace Lyrious.UILib.Setlists
 			}
 			catch (Exception ex)
 			{
-				throw new InvalidOperationException($"Couldn't read the file. {ex.Message}", ex);
+				throw new InvalidOperationException(L.T("Couldn't read the file. {0}", ex.Message), ex);
 			}
 
 			var (title, lyrics) = SplitTitle(text);
 			if (lyrics.Length > MaxLyricsLength)
 			{
 				// Rather than cutting it off without saying so.
-				throw new InvalidOperationException($"The file is too long: {lyrics.Length} characters, and a song holds at most {MaxLyricsLength}.");
+				throw new InvalidOperationException(L.T("The file is too long: {0} characters, and a song holds at most {1}.", lyrics.Length, MaxLyricsLength));
 			}
 
 			return new ImportedSong(title ?? Path.GetFileNameWithoutExtension(files[0].Name), lyrics);

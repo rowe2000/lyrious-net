@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Lyrious.UILib.Login;
 using Lyrious.UILib.Setlists;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib
 {
@@ -23,7 +24,51 @@ namespace Lyrious.UILib
 
 		public MainView()
 		{
+			// Another language: the screens are made anew in it.
+			Localization.Language.Changed += Relocalize;
 			_ = StartAsync();
+		}
+
+		// Who is logged in now (for making the screens anew in another language); null when no one is.
+		private (AuthenticatedUser User, SavedCredential Credential)? loggedIn;
+
+		// Waits for the lyrics to stop playing before the screens are made anew.
+		private Avalonia.Threading.DispatcherTimer? relocalizeTimer;
+
+		/// <summary>
+		/// The screens made anew in the language chosen now: the logged-in member's (from their start
+		/// page, without the screen of what's new), else the login page. Not while the lyrics play:
+		/// then once they've stopped.
+		/// </summary>
+		private void Relocalize()
+		{
+			if (Content is Setlists.HomeView { IsPlayingLyrics: true })
+			{
+				relocalizeTimer ??= new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+				relocalizeTimer.Tick -= OnRelocalizeTick;
+				relocalizeTimer.Tick += OnRelocalizeTick;
+				relocalizeTimer.Start();
+				return;
+			}
+
+			relocalizeTimer?.Stop();
+			if (Content is Setlists.HomeView home && loggedIn is { } session)
+			{
+				home.Close();
+				ShowHome(session.User, session.Credential, skipOnboarding: true);
+			}
+			else if (loggedIn == null)
+			{
+				ShowLogin();
+			}
+		}
+
+		private void OnRelocalizeTick(object? sender, EventArgs e)
+		{
+			if (Content is not Setlists.HomeView { IsPlayingLyrics: true })
+			{
+				Relocalize();
+			}
 		}
 
 		/// <summary>
@@ -33,7 +78,7 @@ namespace Lyrious.UILib
 		/// </summary>
 		private async Task StartAsync()
 		{
-			Content = Splash("Logging in…");
+			Content = Splash(L.T("Logging in…"));
 
 			SavedCredential? saved;
 			try
@@ -62,17 +107,17 @@ namespace Lyrious.UILib
 					return;
 				}
 
-				error = result.Error ?? "Login failed.";
+				error = result.Error ?? L.T("Login failed.");
 			}
 			catch (Exception ex)
 			{
-				error = $"Couldn't reach the server. {ex.Message}";
+				error = L.T("Couldn't reach the server. {0}", ex.Message);
 			}
 
 			var login = ShowLogin(null, null, fillInSaved: false);
 			login.UserName = saved.UserName;
 			login.Password = saved.Password;
-			login.ShowError($"Couldn't log in with the saved password. {error}");
+			login.ShowError(L.T("Couldn't log in with the saved password. {0}", error));
 		}
 
 		private static Control Splash(string text) => new SplashView(text);
@@ -84,6 +129,7 @@ namespace Lyrious.UILib
 		/// <param name="fillInSaved">Whether to fill in the saved password (when no username is given).</param>
 		private LoginViewModel ShowLogin(string? notice, string? userName, bool fillInSaved = true)
 		{
+			loggedIn = null; // The login page: no one's logged in.
 			var login = new LoginViewModel(App.AuthService);
 			login.LoggedIn += (user, credential) => _ = AfterLoginAsync(user, credential);
 			if (notice != null)
@@ -190,7 +236,7 @@ namespace Lyrious.UILib
 			var reset = new ResetPasswordViewModel(App.AuthService, userNameOrEmail);
 			// Prefill the username only when the user typed one (not an email address).
 			reset.PasswordReset += value => ShowLogin(
-				"Your password has been reset. Log in with your new password.",
+				L.T("Your password has been reset. Log in with your new password."),
 				value.Contains('@') ? null : value);
 			var view = new ResetPasswordView(reset);
 			view.NewCodeRequested += () => ShowForgotPassword(userNameOrEmail);
@@ -207,10 +253,11 @@ namespace Lyrious.UILib
 			Content = view;
 		}
 
-		private void ShowHome(AuthenticatedUser user, SavedCredential credential)
+		private void ShowHome(AuthenticatedUser user, SavedCredential credential, bool skipOnboarding = false)
 		{
+			loggedIn = (user, credential);
 			var store = App.CredentialStore;
-			var home = new HomeView(user, App.SetlistService, offerForgetSavedPassword: store.CanForget && IsSavedFor(credential.UserName));
+			var home = new HomeView(user, App.SetlistService, offerForgetSavedPassword: store.CanForget && IsSavedFor(credential.UserName), skipOnboarding);
 			// Keep a saved password working: replace it with the new one.
 			home.PasswordChanged += newPassword =>
 			{
@@ -223,8 +270,9 @@ namespace Lyrious.UILib
 			home.SyncRequested += () => ShowSync(home);
 			home.LogOutRequested += () =>
 			{
+				loggedIn = null;
 				App.AuthService.LogOut();
-				ShowLogin("You've been logged out.", null);
+				ShowLogin(L.T("You've been logged out."), null);
 			};
 			Content = home;
 		}
@@ -256,23 +304,24 @@ namespace Lyrious.UILib
 			var view = new SyncView(current, address => SameHost(address, current)
 				? Task.FromResult(new ServerCheck(current, true, null))
 				: auth.CheckServerAsync(address), App.SetlistService);
-			view.Cancelled += () => Content = home;
+			// Shown as the other pages are (in the home view, between its drawers); leaving goes back.
+			view.Cancelled += home.LeavePage;
 			view.Saved += address =>
 			{
 				if (SameHost(address, current))
 				{
 					// Unchanged, but remembered: it may only have come from the page's address (Web's ?api=).
 					App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
-					Content = home;
+					home.LeavePage();
 					return;
 				}
 
 				auth.UseServer(Tidy(address));
 				App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
 				home.Close();
-				ShowLogin($"Now syncing with {auth.ServerAddress}. Log in to continue.", null);
+				ShowLogin(L.T("Now syncing with {0}. Log in to continue.", auth.ServerAddress), null);
 			};
-			Content = view;
+			home.ShowDrawerPage(view);
 		}
 
 		/// <summary>
@@ -299,7 +348,7 @@ namespace Lyrious.UILib
 
 				auth.UseServer(Tidy(address));
 				App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
-				ShowLogin($"Now using {auth.ServerAddress}.", null);
+				ShowLogin(L.T("Now using {0}.", auth.ServerAddress), null);
 			};
 			Content = view;
 		}

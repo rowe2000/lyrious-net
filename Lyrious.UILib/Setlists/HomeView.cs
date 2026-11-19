@@ -13,6 +13,7 @@ using Lyrious.UILib.Login;
 using Path = Avalonia.Controls.Shapes.Path;
 using Shape = Avalonia.Controls.Shapes.Shape;
 using ToggleButton = Avalonia.Controls.Primitives.ToggleButton;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -34,7 +35,7 @@ namespace Lyrious.UILib.Setlists
 		private const string MenuIcon = "M4,7 H20 M4,12 H20 M4,17 H20";
 		// A list icon: three lines with a dot in front of each.
 		private const string ListIcon = "M9,7 H20 M9,12 H20 M9,17 H20 M4.5,7 H5 M4.5,12 H5 M4.5,17 H5";
-		private const string NoSong = "Choose a song";
+		private static string NoSong => L.T("Choose a song");
 
 		/// <summary>A page's room at the sides, clear of the drawer buttons over the top corners (4 of margin plus 40 wide).</summary>
 		private static readonly Thickness PageMargin = new(44, 0);
@@ -47,10 +48,10 @@ namespace Lyrious.UILib.Setlists
 		private const string PinIcon = "M9,3 H15 M10,3 V9 L7,13 H17 L14,9 V3 M12,13 V21";
 
 		private readonly ISetlistService service;
-		private readonly TextBlock groupName = new() { Text = "Choose a band", FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
-		private readonly TextBlock setlistTitle = new() { Text = "Setlist", FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+		private readonly TextBlock groupName = new() { Text = L.T("Choose a band"), FontSize = 18, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+		private readonly TextBlock setlistTitle = new() { Text = L.T("Setlist"), FontSize = 20, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
 		private readonly ContentControl setlistDrawerBody = new();
-		private readonly TextBlock currentSetlistName = new() { Text = "Choose a setlist", FontSize = 18, FontWeight = FontWeight.Normal, FontStyle = FontStyle.Italic, TextTrimming = TextTrimming.CharacterEllipsis };
+		private readonly TextBlock currentSetlistName = new() { Text = L.T("Choose a setlist"), FontSize = 18, FontWeight = FontWeight.Normal, FontStyle = FontStyle.Italic, TextTrimming = TextTrimming.CharacterEllipsis };
 		private readonly TextBlock currentSongName = new() { Text = NoSong, FontSize = 18, FontWeight = FontWeight.Normal, FontStyle = FontStyle.Italic, TextTrimming = TextTrimming.CharacterEllipsis };
 		private readonly Button chooseSetlistButton;
 		private readonly Button chooseSongButton;
@@ -66,10 +67,10 @@ namespace Lyrious.UILib.Setlists
 		private string? sharingCodeAddress;
 		// The left drawer's Sync button: highlighted while changes made here haven't reached the server.
 		private Button? syncButton;
-		private readonly Button addSongsButton = IconButton(AddIcon, "Add a song to the setlist");
+		private readonly Button addSongsButton = IconButton(AddIcon, L.T("Add a song to the setlist"));
 		// The right drawer's search: the box takes the place of the setlist's name and the tools, and
 		// only the songs with the text in their name are listed.
-		private readonly TextBox setlistSearchBox = PageLayout.WithClearButton(new TextBox { PlaceholderText = "Search songs and tags", VerticalAlignment = VerticalAlignment.Center, IsVisible = false });
+		private readonly TextBox setlistSearchBox = PageLayout.WithClearButton(new TextBox { PlaceholderText = L.T("Search songs and tags"), VerticalAlignment = VerticalAlignment.Center, IsVisible = false });
 		private readonly ContentControl page = new();
 		private readonly SplitView menuDrawer;
 		private readonly SplitView setlistDrawer;
@@ -153,15 +154,17 @@ namespace Lyrious.UILib.Setlists
 		private readonly TextBlock memberName = new() { FontSize = 13, Opacity = 0.7, TextTrimming = TextTrimming.CharacterEllipsis };
 
 		/// <param name="offerForgetSavedPassword">Shows "Forget saved password" on the profile page (when a password is saved and the app can remove it).</param>
-		public HomeView(AuthenticatedUser user, ISetlistService service, bool offerForgetSavedPassword = false)
+		/// <param name="skipOnboarding">Leaves out the screen of what's new (the view is made anew, e.g. in another language).</param>
+		public HomeView(AuthenticatedUser user, ISetlistService service, bool offerForgetSavedPassword = false, bool skipOnboarding = false)
 		{
 			this.service = service;
 			this.user = user;
+			this.skipOnboarding = skipOnboarding;
 			this.offerForgetSavedPassword = offerForgetSavedPassword;
 			memberName.Text = user.DisplayName;
 			// Sound files added here while offline go to the server once it can be reached.
 			SoundSync.Watch(service);
-			chooseSetlistButton = DrawerPicker("Setlist", currentSetlistName, "Choose a setlist", () =>
+			chooseSetlistButton = DrawerPicker(L.T("Setlist"), currentSetlistName, L.T("Choose a setlist"), () =>
 			{
 				if (currentGroup is { } group)
 				{
@@ -169,7 +172,7 @@ namespace Lyrious.UILib.Setlists
 				}
 			});
 			chooseSetlistButton.IsEnabled = false;
-			chooseSongButton = DrawerPicker("Songbook", currentSongName, "Choose a song from the songbook", () =>
+			chooseSongButton = DrawerPicker(L.T("Songbook"), currentSongName, L.T("Choose a song from the songbook"), () =>
 			{
 				if (currentGroup is { } group)
 				{
@@ -177,25 +180,25 @@ namespace Lyrious.UILib.Setlists
 				}
 			});
 			chooseSongButton.IsEnabled = false;
-			findSongButton = DrawerItem("Find song online");
+			findSongButton = DrawerItem(L.T("Find song online"));
 			findSongButton.IsEnabled = false;
 			findSongButton.Click += (_, _) => OpenInternetSearch();
-			playlogButton = DrawerItem("Playlog");
+			playlogButton = DrawerItem(L.T("Playlog"));
 			playlogButton.IsEnabled = false;
 			playlogButton.Click += (_, _) =>
 			{
 				if (currentGroup is { } group)
 				{
-					CloseUnlessPinned(menuDrawer);
+					OpenFromDrawer();
 					_ = RunAsync(async () => page.Content = new PlaylogView(group, await service.GetPlaylogsAsync(group.Id)));
 				}
 			};
-			chooseGroupButton = DrawerPicker("Band", groupName, "Choose a band", () => _ = RunAsync(ShowGroupsAsync));
+			chooseGroupButton = DrawerPicker(L.T("Band"), groupName, L.T("Choose a band"), () => _ = RunAsync(ShowGroupsAsync));
 
-			var menuButton = IconButton(MenuIcon, "Open menu");
+			var menuButton = IconButton(MenuIcon, L.T("Open menu"));
 			menuButton.HorizontalAlignment = HorizontalAlignment.Left;
 
-			var setlistButton = IconButton(ListIcon, "Open setlist");
+			var setlistButton = IconButton(ListIcon, L.T("Open setlist"));
 			setlistButton.HorizontalAlignment = HorizontalAlignment.Right;
 
 			// The drawer buttons float over the top corners instead of taking a row of their own, so
@@ -337,7 +340,14 @@ namespace Lyrious.UILib.Setlists
 
 				// Remember the page left, for ✕ (pages only: not loading indicators or messages).
 				// (Nor a song's editor opened by itself: it's done with once it's left.)
-				if (!goingBack && e.OldValue is UserControl left && !ReferenceEquals(left, e.NewValue) && left is not LyricScrollView { EditorOnly: true })
+				// A page opened from the left drawer starts afresh: ✕ there goes back to the song, not to
+				// the pages before it (loading indicators and messages on the way don't count).
+				if (clearHistoryOnNextPage && e.NewValue is UserControl)
+				{
+					clearHistoryOnNextPage = false;
+					history.Clear();
+				}
+				else if (!goingBack && e.OldValue is UserControl left && !ReferenceEquals(left, e.NewValue) && left is not LyricScrollView { EditorOnly: true })
 				{
 					history.Remove(left);
 					history.Add(left);
@@ -510,13 +520,13 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (currentGroup is not { } group || currentSetlist is not { } setlist)
 			{
-				ShowNotice("Band sync on; no setlist picked here to send");
+				ShowNotice(L.T("Band sync on; no setlist picked here to send"));
 				return;
 			}
 
 			if (IsSongbookSetlist(setlist))
 			{
-				ShowNotice("Band sync on; the songbook shown as a setlist isn't saved, so it can't be sent");
+				ShowNotice(L.T("Band sync on; the songbook shown as a setlist isn't saved, so it can't be sent"));
 				return;
 			}
 
@@ -525,12 +535,12 @@ namespace Lyrious.UILib.Setlists
 				if (currentEntryId is { } entryId && await service.GetEntryAsync(entryId) is { } entry)
 				{
 					await service.SelectSongAsync(group.Id, entry);
-					ShowNotice($"Sent to the band: {entry.Song.Name}");
+					ShowNotice(L.T("Sent to the band: {0}", entry.Song.Name));
 				}
 				else
 				{
 					await service.SelectSetlistAsync(group.Id, setlist.Id);
-					ShowNotice($"Sent to the band: {setlist.Name}");
+					ShowNotice(L.T("Sent to the band: {0}", setlist.Name));
 				}
 
 				if (page.Content is LyricScrollView lyrics)
@@ -540,7 +550,7 @@ namespace Lyrious.UILib.Setlists
 			}
 			catch (Exception ex)
 			{
-				ShowNotice($"Couldn't send to the band: {ex.Message}");
+				ShowNotice(L.T("Couldn't send to the band: {0}", ex.Message));
 			}
 		}
 
@@ -1066,8 +1076,8 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private static StackPanel DrawerButtons(SplitView drawer, Button openButton, string name, bool closeFirst = false)
 		{
-			var pinButton = IconButton(PinIcon, $"Pin {name}");
-			var closeButton = EscapeKey.MarkAsClose(IconButton(CloseIcon, $"Close {name}"));
+			var pinButton = IconButton(PinIcon, L.T("Pin {0}", name));
+			var closeButton = EscapeKey.MarkAsClose(IconButton(CloseIcon, L.T("Close {0}", name)));
 			closeButton.Click += (_, _) => drawer.IsPaneOpen = false;
 
 			void Update()
@@ -1084,7 +1094,7 @@ namespace Lyrious.UILib.Setlists
 					pinButton.Classes.Remove("accent");
 				}
 
-				var description = pinned ? $"Unpin {name}" : $"Pin {name}";
+				var description = pinned ? L.T("Unpin {0}", name) : L.T("Pin {0}", name);
 				ToolTip.SetTip(pinButton, description);
 				Avalonia.Automation.AutomationProperties.SetName(pinButton, description);
 				openButton.IsVisible = !(pinned && drawer.IsPaneOpen);
@@ -1101,6 +1111,32 @@ namespace Lyrious.UILib.Setlists
 
 			// ✕ first in the left drawer (at its left edge, by the button that opens it), last in the right one.
 			return new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top, Children = { closeFirst ? closeButton : pinButton, closeFirst ? pinButton : closeButton } };
+		}
+
+		// The next page shown was opened from the left drawer: the history of pages starts afresh.
+		private bool clearHistoryOnNextPage;
+
+		/// <summary>
+		/// Shows a page the host made for a left drawer item (the Sync page) as the other pages are
+		/// shown: between the drawers, starting a new history of pages.
+		/// </summary>
+		public void ShowDrawerPage(Control view)
+		{
+			clearHistoryOnNextPage = true;
+			page.Content = view;
+		}
+
+		/// <summary>Leaves the page shown, as its ✕ does (back to the page before, or to the song).</summary>
+		public void LeavePage() => GoBack();
+
+		/// <summary>
+		/// A left drawer item opens its page: the drawer closes (unless pinned), and the page starts a
+		/// new history, so ✕ on it (and back from it) leads to the song, not to earlier pages.
+		/// </summary>
+		private void OpenFromDrawer()
+		{
+			CloseUnlessPinned(menuDrawer);
+			clearHistoryOnNextPage = true;
 		}
 
 		/// <summary>Closes the drawer after an action, unless it's pinned.</summary>
@@ -1148,7 +1184,7 @@ namespace Lyrious.UILib.Setlists
 			ToolTip.SetTip(button, description);
 			button.Click += (_, _) =>
 			{
-				CloseUnlessPinned(menuDrawer);
+				OpenFromDrawer();
 				choose();
 			};
 			return button;
@@ -1157,7 +1193,7 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The setlist's name on the left drawer's button in bold; with none, "Choose a setlist" in italics.</summary>
 		private void ShowSetlistName(string? name)
 		{
-			currentSetlistName.Text = name ?? "Choose a setlist";
+			currentSetlistName.Text = name ?? L.T("Choose a setlist");
 			currentSetlistName.FontWeight = name == null ? FontWeight.Normal : FontWeight.SemiBold;
 			currentSetlistName.FontStyle = name == null ? FontStyle.Italic : FontStyle.Normal;
 		}
@@ -1195,7 +1231,7 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private void ShowSongbookAsSetlist(GroupSummary group, IReadOnlyList<SongDetails> songs)
 		{
-			var setlist = new SetlistSummary(group.Id, $"Songbook · {group.Name}", group.Id);
+			var setlist = new SetlistSummary(group.Id, L.T("Songbook · {0}", group.Name), group.Id);
 			// Each song's entry has the song's id, so the current song is found in it.
 			songbookEntries = songs.Select((song, index) => new SetlistEntry(song.Id, setlist.Id, index, song)).ToArray();
 			SetCurrentSetlist(setlist);
@@ -1213,7 +1249,7 @@ namespace Lyrious.UILib.Setlists
 			RefreshSetlistDrawer(reload: true);
 			setlistDrawer.IsPaneOpen = true;
 			_ = LoadSetlistDrawerAsync(centerSong: true);
-			ShowNotice($"The songbook is the setlist here ({songs.Count} song{(songs.Count == 1 ? "" : "s")}); it isn't saved");
+			ShowNotice(L.Plural(songs.Count, "The songbook is the setlist here ({0} song); it isn't saved", "The songbook is the setlist here ({0} songs); it isn't saved"));
 		}
 
 		/// <summary>Records the song the app is showing (and its setlist entry, if it's shown from a setlist), for the Song button and the highlights.</summary>
@@ -1239,14 +1275,14 @@ namespace Lyrious.UILib.Setlists
 			var buttons = DrawerButtons(menuDrawer, openButton, "menu", closeFirst: true);
 			DockPanel.SetDock(buttons, Dock.Left);
 
-			var settings = DrawerItem("Settings");
+			var settings = DrawerItem(L.T("Settings"));
 			settings.Click += (_, _) =>
 			{
-				CloseUnlessPinned(menuDrawer);
+				OpenFromDrawer();
 				ShowSettings();
 			};
 
-			var sync = DrawerItem("Sync");
+			var sync = DrawerItem(L.T("Sync"));
 			syncButton = sync;
 			// Under "Sync": whether the server can be reached and how many changes are waiting.
 			// At the right, level with "Sync": the QR code while the app is shared on the local network.
@@ -1260,23 +1296,24 @@ namespace Lyrious.UILib.Setlists
 					new StackPanel
 					{
 						Spacing = 2,
-						Children = { new TextBlock { Text = "Sync" }, syncStatus, sharingAddress },
+						Children = { new TextBlock { Text = L.T("Sync") }, syncStatus, sharingAddress },
 					},
 				},
 			};
 			sync.Click += (_, _) =>
 			{
-				CloseUnlessPinned(menuDrawer);
+				// The host shows it (see ShowDrawerPage), as the other pages are shown.
+				OpenFromDrawer();
 				SyncRequested?.Invoke();
 			};
 
 			// The member's name, password, saved password and logging out; the name under "Profile".
-			var profile = DrawerItem("Profile");
+			var profile = DrawerItem(L.T("Profile"));
 			profile.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-			profile.Content = new StackPanel { Spacing = 2, Children = { new TextBlock { Text = "Profile" }, memberName } };
+			profile.Content = new StackPanel { Spacing = 2, Children = { new TextBlock { Text = L.T("Profile") }, memberName } };
 			profile.Click += (_, _) =>
 			{
-				CloseUnlessPinned(menuDrawer);
+				OpenFromDrawer();
 				ShowProfile();
 			};
 
@@ -1302,7 +1339,7 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(account, Dock.Bottom);
 
 			// Last: about the app (version, release notes), the profile, and on desktop quitting it.
-			var about = DrawerItem("About");
+			var about = DrawerItem(L.T("About"));
 			// The version under "About", as the status is under "Sync".
 			about.HorizontalContentAlignment = HorizontalAlignment.Stretch;
 			about.Content = new StackPanel
@@ -1310,36 +1347,36 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 2,
 				Children =
 				{
-					new TextBlock { Text = "About" },
-					new TextBlock { Text = $"Version {ReleaseNotes.AppVersion}", FontSize = 13, Opacity = 0.7 },
+					new TextBlock { Text = L.T("About") },
+					new TextBlock { Text = L.T("Version {0}", ReleaseNotes.AppVersion), FontSize = 13, Opacity = 0.7 },
 				},
 			};
 			about.Click += (_, _) =>
 			{
-				CloseUnlessPinned(menuDrawer);
+				OpenFromDrawer();
 				page.Content = new AboutView();
 			};
 			account.Children.Add(about);
 			account.Children.Add(profile);
 			if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
 			{
-				var exit = DrawerItem("Exit");
+				var exit = DrawerItem(L.T("Exit"));
 				exit.Click += (_, _) => desktop.Shutdown();
 				WithDrawerIcon(exit, AppIcons.Exit);
 				account.Children.Add(exit);
 			}
 
-			// The songs' sound files kept on this device, after Settings (both about this device).
+			// The songs' sound files kept on this device, first of these (just above Settings).
 			if (App.SoundStore is { } sounds)
 			{
-				var soundFiles = DrawerItem("Sound files");
+				var soundFiles = DrawerItem(L.T("Sound files"));
 				soundFiles.Click += (_, _) =>
 				{
-					CloseUnlessPinned(menuDrawer);
+					OpenFromDrawer();
 					page.Content = new SoundFilesView(sounds, service);
 				};
 				WithDrawerIcon(soundFiles, AppIcons.SoundFiles);
-				account.Children.Insert(1, soundFiles);
+				account.Children.Insert(0, soundFiles);
 			}
 
 			// An icon before each item's text.
@@ -1392,18 +1429,18 @@ namespace Lyrious.UILib.Setlists
 			{
 				Items =
 				{
-					Item("From the songbook…", (group, setlist) => RunAsync(async () =>
+					Item(L.T("From the songbook…"), (group, setlist) => RunAsync(async () =>
 					{
 						var entries = await service.GetEntriesAsync(setlist.Id);
 						ShowAddSongs(group, setlist, await service.GetSongbookSongsAsync(group.Id), entries.Select(entry => entry.Song.Id).ToHashSet());
 					})),
-					Item("New empty song…", (group, setlist) =>
+					Item(L.T("New empty song…"), (group, setlist) =>
 					{
 						ShowNewSongEditor(group, setlist);
 						return Task.CompletedTask;
 					}),
-					Item("Import from file…", ImportSongToSetlistAsync),
-					Item("Find on the internet…", (group, setlist) => RunAsync(async () =>
+					Item(L.T("Import from file…"), ImportSongToSetlistAsync),
+					Item(L.T("Find on the internet…"), (group, setlist) => RunAsync(async () =>
 						ShowInternetSearch(group, await service.GetSongbookSongsAsync(group.Id), setlist))),
 				},
 			};
@@ -1511,10 +1548,10 @@ namespace Lyrious.UILib.Setlists
 
 			// The magnifying glass, in front of the other tools: the search box takes the place of the
 			// setlist's name and the tools, with only a ✕ beside it to end the search.
-			var searchButton = IconButton(SearchIcon, "Search the setlist");
+			var searchButton = IconButton(SearchIcon, L.T("Search the setlist"));
 			buttons.Children.Insert(0, searchButton);
 			// While the search shows, Escape only ends it: nothing else closes (see the box's KeyDown too).
-			var endSearchButton = EscapeKey.MarkAsClose(IconButton(CloseIcon, "End the search"), before: true);
+			var endSearchButton = EscapeKey.MarkAsClose(IconButton(CloseIcon, L.T("End the search")), before: true);
 			endSearchButton.IsVisible = false;
 
 			void ShowSearch(bool searching)
@@ -1620,8 +1657,8 @@ namespace Lyrious.UILib.Setlists
 			{
 				drawerSetlistId = null;
 				drawerRows.Clear();
-				setlistTitle.Text = "Setlist";
-				setlistDrawerBody.Content = DrawerMessage("No setlist is selected yet. Choose one from the list of setlists.");
+				setlistTitle.Text = L.T("Setlist");
+				setlistDrawerBody.Content = DrawerMessage(L.T("No setlist is selected yet. Choose one from the list of setlists."));
 				return;
 			}
 
@@ -1645,7 +1682,7 @@ namespace Lyrious.UILib.Setlists
 				drawerRows.Clear();
 				if (entries.Count == 0)
 				{
-					setlistDrawerBody.Content = DrawerMessage("There are no songs in this setlist yet.");
+					setlistDrawerBody.Content = DrawerMessage(L.T("There are no songs in this setlist yet."));
 					return;
 				}
 
@@ -1681,7 +1718,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					drawerSetlistId = null;
 					drawerRows.Clear();
-					setlistDrawerBody.Content = DrawerMessage($"Couldn't load the songs. {ex.Message}");
+					setlistDrawerBody.Content = DrawerMessage(L.T("Couldn't load the songs. {0}", ex.Message));
 				}
 			}
 		}
@@ -2140,13 +2177,22 @@ namespace Lyrious.UILib.Setlists
 		private Task StartAsync()
 		{
 			// The singer while the bands are fetched (the first sync after login), until the start page.
-			page.Content = new SplashView("Getting your songs and setlists…");
+			page.Content = new SplashView(L.T("Getting your songs and setlists…"));
 			return RunAsync(async () =>
 			{
 				await OpenStartPageAsync();
-				await ShowOnboardingAsync();
+				if (!skipOnboarding)
+				{
+					await ShowOnboardingAsync();
+				}
 			});
 		}
+
+		// Made anew (e.g. in another language): no screen of what's new.
+		private readonly bool skipOnboarding;
+
+		/// <summary>Whether the lyrics are playing now (so the screens aren't made anew under them).</summary>
+		public bool IsPlayingLyrics => IsPlaying;
 
 		/// <summary>
 		/// Shows what changed since the member's last visit on this device, and the release notes since
@@ -2195,7 +2241,7 @@ namespace Lyrious.UILib.Setlists
 			// A band's start page begins a new history: ✕ never leads back into another band's pages.
 			history.Clear();
 			var start = await StartPage.DetermineAsync(service);
-			groupName.Text = start.Group?.Name ?? "Choose a band";
+			groupName.Text = start.Group?.Name ?? L.T("Choose a band");
 			// The private band's name in italics (it's not a band as such); a band's in bold.
 			var isPrivate = start.Group?.IsPrivate == true;
 			groupName.FontWeight = isPrivate ? FontWeight.Normal : FontWeight.SemiBold;
@@ -2240,8 +2286,8 @@ namespace Lyrious.UILib.Setlists
 				default:
 					// Offline with no copy on this device yet, nothing can be shown: say why.
 					ShowMessage(service.Status is { Online: false, LastSynced: null }
-						? "You're offline, and this device has no copy of your bands yet. Connect to the server once to sync, then the app works offline too."
-						: "You're not a member of a band yet. Ask a band admin to invite you.");
+						? L.T("You're offline, and this device has no copy of your bands yet. Connect to the server once to sync, then the app works offline too.")
+						: L.T("You're not a member of a band yet. Ask a band admin to invite you."));
 					break;
 			}
 
@@ -2319,17 +2365,17 @@ namespace Lyrious.UILib.Setlists
 						// email to create one.
 						if (!query.Contains('@'))
 						{
-							return $"No member has the username, email or phone \"{query}\". To invite someone who has no account yet, enter their email address.";
+							return L.T("No member has the username, email or phone \"{0}\". To invite someone who has no account yet, enter their email address.", query);
 						}
 
 						await service.InviteByEmailAsync(group.Id, query);
-						ShowNotice($"{query} has no account yet: sent them an email invitation");
+						ShowNotice(L.T("{0} has no account yet: sent them an email invitation", query));
 						await ShowGroupsAsync(group.Id, replace: true);
 						return null;
 					}
 
 					await service.InviteMemberAsync(group.Id, found.Id);
-					ShowNotice($"Invited {found.Name} to {group.Name}");
+					ShowNotice(L.T("Invited {0} to {1}", found.Name, group.Name));
 					await ShowGroupsAsync(group.Id, replace: true);
 					return null;
 				}
@@ -2506,7 +2552,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				var setlist = await service.CreateSetlistAsync(group.Id, name);
 				await service.AddSongsAsync(setlist.Id, chosen.Select(song => song.Id).ToList());
-				ShowNotice($"Saved the setlist {name} ({chosen.Count} song{(chosen.Count == 1 ? "" : "s")})");
+				ShowNotice(L.Plural(chosen.Count, "Saved the setlist {1} ({0} song)", "Saved the setlist {1} ({0} songs)", name));
 			});
 			view.ShowAsSetlistRequested += shown =>
 			{
@@ -2565,7 +2611,7 @@ namespace Lyrious.UILib.Setlists
 				songbookEntries = songbookEntries.Where(entry => !deleted.Contains(entry.Song.Id)).ToArray();
 				playbackEntries = [];
 				RefreshSetlistDrawer(reload: true);
-				ShowNotice($"Deleted {songs.Count} song{(songs.Count == 1 ? "" : "s")}");
+				ShowNotice(L.Plural(songs.Count, "Deleted {0} song", "Deleted {0} songs"));
 				await ShowSongsAsync(group, replace: true);
 			});
 			ShowPage(view, replace);
@@ -2583,7 +2629,7 @@ namespace Lyrious.UILib.Setlists
 			}
 			catch (Exception ex)
 			{
-				ShowNotice($"Couldn't add \"{song.Name}\" to {setlist.Name}. {ex.Message}");
+				ShowNotice(L.T("Couldn't add \"{0}\" to {1}. {2}", song.Name, setlist.Name, ex.Message));
 				return;
 			}
 
@@ -2594,7 +2640,7 @@ namespace Lyrious.UILib.Setlists
 				RefreshSetlistDrawer(reload: true);
 			}
 
-			ShowNotice($"Added \"{song.Name}\" to {setlist.Name}.");
+			ShowNotice(L.T("Added \"{0}\" to {1}.", song.Name, setlist.Name));
 		}
 
 		/// <summary>A song was edited: its name, key, tempo and beat show in the menu and the setlists too.</summary>
@@ -2639,7 +2685,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (currentGroup is { } group)
 			{
-				CloseUnlessPinned(menuDrawer);
+				OpenFromDrawer();
 				_ = RunAsync(async () => ShowInternetSearch(group, await service.GetSongbookSongsAsync(group.Id)));
 			}
 		}
@@ -2652,7 +2698,7 @@ namespace Lyrious.UILib.Setlists
 		private void ShowInternetSearch(GroupSummary group, IReadOnlyList<SongDetails> songbook, SetlistSummary? addToSetlist = null)
 		{
 			var names = songbook.Select(song => song.Name).ToHashSet(StringComparer.CurrentCultureIgnoreCase);
-			var addText = addToSetlist == null ? "Add to songbook" : $"Add to {addToSetlist.Name}";
+			var addText = addToSetlist == null ? L.T("Add to songbook") : L.T("Add to {0}", addToSetlist.Name);
 			var view = new InternetSongView(query => service.SearchInternetAsync(query), names, addText);
 			view.AddRequested += found => _ = RunAsync(async () =>
 			{
@@ -3033,7 +3079,7 @@ namespace Lyrious.UILib.Setlists
 			}
 			catch (Exception ex)
 			{
-				place.Content = new TextBlock { Text = $"Couldn't read the band settings. {ex.Message}", TextWrapping = TextWrapping.Wrap };
+				place.Content = new TextBlock { Text = L.T("Couldn't read the band settings. {0}", ex.Message), TextWrapping = TextWrapping.Wrap };
 			}
 		}
 
@@ -3055,8 +3101,8 @@ namespace Lyrious.UILib.Setlists
 			playbackEntries = [];
 			RefreshSetlistDrawer(reload: true);
 			return songs.Count == 0
-				? $"{group.Name}'s songbook was already empty."
-				: $"Deleted {songs.Count} song{(songs.Count == 1 ? "" : "s")} from {group.Name}'s songbook.";
+				? L.T("{0}'s songbook was already empty.", group.Name)
+				: L.Plural(songs.Count, "Deleted {0} song from {1}'s songbook.", "Deleted {0} songs from {1}'s songbook.", group.Name);
 		}
 
 		/// <summary>
@@ -3067,16 +3113,16 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (TopLevel.GetTopLevel(anchor)?.StorageProvider is not { CanOpen: true } storage)
 			{
-				throw new InvalidOperationException("Opening files isn't possible here.");
+				throw new InvalidOperationException(L.T("Opening files isn't possible here."));
 			}
 
 			var files = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
 			{
-				Title = "Import a SongbookPro backup",
+				Title = L.T("Import a SongbookPro backup"),
 				AllowMultiple = false,
 				FileTypeFilter =
 				[
-					new Avalonia.Platform.Storage.FilePickerFileType("SongbookPro backup") { Patterns = ["*.zip", "*.sbpbackup"] },
+					new Avalonia.Platform.Storage.FilePickerFileType(L.T("SongbookPro backup")) { Patterns = ["*.zip", "*.sbpbackup"] },
 					Avalonia.Platform.Storage.FilePickerFileTypes.All,
 				],
 			});
@@ -3094,7 +3140,7 @@ namespace Lyrious.UILib.Setlists
 			}
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 			{
-				throw new InvalidOperationException($"Couldn't read the file. {ex.Message}", ex);
+				throw new InvalidOperationException(L.T("Couldn't read the file. {0}", ex.Message), ex);
 			}
 
 			data.Position = 0;
@@ -3104,15 +3150,15 @@ namespace Lyrious.UILib.Setlists
 			// The drawer's setlists and songs may include the new ones.
 			RefreshSetlistDrawer(reload: true);
 
-			var text = $"Imported {result.Songs} song{(result.Songs == 1 ? "" : "s")} and {result.Setlists} setlist{(result.Setlists == 1 ? "" : "s")} into {group.Name}.";
+			var text = L.Plural(result.Songs, "Imported {0} song", "Imported {0} songs") + " " + L.Plural(result.Setlists, "and {0} setlist into {1}.", "and {0} setlists into {1}.", group.Name);
 			if (result.Replaced > 0)
 			{
-				text += $" {result.Replaced} of the songs overwrote one of the same name.";
+				text += L.T(" {0} of the songs overwrote one of the same name.", result.Replaced);
 			}
 
 			if (result.ReplacedSetlists > 0)
 			{
-				text += $" {result.ReplacedSetlists} of the setlists replaced the songs of one of the same name.";
+				text += L.T(" {0} of the setlists replaced the songs of one of the same name.", result.ReplacedSetlists);
 			}
 
 			if (result.Skipped.Count > 0)
@@ -3297,7 +3343,7 @@ namespace Lyrious.UILib.Setlists
 				return false;
 			}
 
-			ShowNotice("Stop playing to change song.");
+			ShowNotice(L.T("Stop playing to change song."));
 			return true;
 		}
 
@@ -3374,9 +3420,9 @@ namespace Lyrious.UILib.Setlists
 			}
 			catch (Exception ex)
 			{
-				var retry = new Button { Content = "Try again", HorizontalAlignment = HorizontalAlignment.Center };
+				var retry = new Button { Content = L.T("Try again"), HorizontalAlignment = HorizontalAlignment.Center };
 				retry.Click += (_, _) => _ = previous is null or SplashView ? StartAsync() : RunAsync(action);
-				ShowMessage($"Something went wrong. {ex.Message}", retry);
+				ShowMessage(L.T("Something went wrong. {0}", ex.Message), retry);
 			}
 		}
 

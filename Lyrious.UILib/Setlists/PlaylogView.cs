@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -31,7 +32,7 @@ namespace Lyrious.UILib.Setlists
 			Control body;
 			if (playlogs.Count == 0)
 			{
-				body = new TextBlock { Text = "Nothing has been played yet.", Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
+				body = new TextBlock { Text = L.T("Nothing has been played yet."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
 			}
 			else
 			{
@@ -52,7 +53,7 @@ namespace Lyrious.UILib.Setlists
 						{
 							new WrapPanel { Orientation = Orientation.Horizontal, Children = { shownTitle, shownDate } },
 							shown,
-							Section("All playlogs"),
+							Section(L.T("All playlogs")),
 							list,
 						},
 					},
@@ -60,18 +61,18 @@ namespace Lyrious.UILib.Setlists
 				Show(playlogs[0]);
 			}
 
-			Content = PageLayout.Page("Playlog", body, subtitle: $"{group.Name} · songs played", closable: true, icon: AppIcons.Playlog);
+			Content = PageLayout.Page(L.T("Playlog"), body, subtitle: L.T("{0} · songs played", group.Name), closable: true, icon: AppIcons.Playlog);
 		}
 
 		/// <summary>Shows the playlog's songs at the top, and highlights its row in the list.</summary>
 		private void Show(PlaylogSummary playlog)
 		{
-			shownTitle.Text = ReferenceEquals(playlog, playlogs[0]) ? "Last playlog" : "Playlog";
+			shownTitle.Text = ReferenceEquals(playlog, playlogs[0]) ? L.T("Last playlog") : "Playlog";
 			shownDate.Text = Date(playlog.CreatedAt);
 			shown.Children.Clear();
 			if (playlog.Plays.Count == 0)
 			{
-				shown.Children.Add(new TextBlock { Text = "No songs in this playlog.", Opacity = 0.7 });
+				shown.Children.Add(new TextBlock { Text = L.T("No songs in this playlog."), Opacity = 0.7 });
 			}
 
 			foreach (var (play, number) in playlog.Plays.Select((play, index) => (play, index + 1)))

@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -21,9 +22,9 @@ namespace Lyrious.UILib.Setlists
 	{
 		private readonly Func<string, Task<IReadOnlyList<InternetSong>>> search;
 		private readonly IReadOnlySet<string> songbookNames;
-		private readonly TextBox query = PageLayout.WithClearButton(new TextBox { PlaceholderText = "Title and/or artist" });
-		private readonly Button searchButton = new() { Content = "Search", IsEnabled = false };
-		private readonly Button ultimateGuitarButton = new() { Content = "Search on Ultimate Guitar ↗", IsEnabled = false, Margin = new Thickness(0, 0, 0, 16) };
+		private readonly TextBox query = PageLayout.WithClearButton(new TextBox { PlaceholderText = L.T("Title and/or artist") });
+		private readonly Button searchButton = new() { Content = L.T("Search"), IsEnabled = false };
+		private readonly Button ultimateGuitarButton = new() { Content = L.T("Search on Ultimate Guitar ↗"), IsEnabled = false, Margin = new Thickness(0, 0, 0, 16) };
 		private readonly ContentControl results = new();
 		private readonly Control searchPage;
 		private IReadOnlyList<InternetSong> lastResults = [];
@@ -44,7 +45,7 @@ namespace Lyrious.UILib.Setlists
 			searchButton.Classes.Add("accent");
 			searchButton.Click += (_, _) => _ = SearchAsync();
 			query.TextChanged += (_, _) => searchButton.IsEnabled = ultimateGuitarButton.IsEnabled = !string.IsNullOrWhiteSpace(query.Text);
-			ToolTip.SetTip(ultimateGuitarButton, "Opens the search in your browser, to copy chords or lyrics into a song");
+			ToolTip.SetTip(ultimateGuitarButton, L.T("Opens the search in your browser, to copy chords or lyrics into a song"));
 			ultimateGuitarButton.Click += (_, _) => _ = OpenUltimateGuitarAsync();
 			DockPanel.SetDock(ultimateGuitarButton, Dock.Top);
 			query.KeyDown += (_, e) =>
@@ -61,11 +62,11 @@ namespace Lyrious.UILib.Setlists
 			var searchRow = new DockPanel { Margin = new Thickness(0, 0, 0, 16), Children = { searchButton, query } };
 			DockPanel.SetDock(searchRow, Dock.Top);
 
-			results.Content = Message("Search for a song to add its lyrics to the songbook.");
+			results.Content = Message(L.T("Search for a song to add its lyrics to the songbook."));
 			searchPage = PageLayout.Page(
-				"Find song online",
+				L.T("Find song online"),
 				new DockPanel { Children = { searchRow, ultimateGuitarButton, results } },
-				subtitle: "Lyrics from LRCLIB (lrclib.net)",
+				subtitle: L.T("Lyrics from LRCLIB (lrclib.net)"),
 				closable: true,
 				icon: AppIcons.FindOnline);
 			Content = searchPage;
@@ -94,7 +95,7 @@ namespace Lyrious.UILib.Setlists
 			}
 			catch (Exception ex)
 			{
-				results.Content = Message($"Couldn't search. {ex.Message}");
+				results.Content = Message(L.T("Couldn't search. {0}", ex.Message));
 			}
 			finally
 			{
@@ -114,14 +115,14 @@ namespace Lyrious.UILib.Setlists
 			var uri = new Uri($"https://www.ultimate-guitar.com/search.php?search_type=title&value={Uri.EscapeDataString(text)}");
 			if (!await topLevel.Launcher.LaunchUriAsync(uri))
 			{
-				results.Content = Message($"Couldn't open the browser. The address is {uri}");
+				results.Content = Message(L.T("Couldn't open the browser. The address is {0}", uri));
 			}
 		}
 
 		private void ShowResults()
 		{
 			var rows = lastResults.Select(song => (Control)ResultRow(song)).ToArray();
-			results.Content = PageLayout.List(rows, "No songs found. Try other words, or the artist's name too.");
+			results.Content = PageLayout.List(rows, L.T("No songs found. Try other words, or the artist's name too."));
 		}
 
 		/// <summary>One result: title, then artist, album and length, and whether the band has it already.</summary>
@@ -141,12 +142,12 @@ namespace Lyrious.UILib.Setlists
 			var notes = new List<string>();
 			if (string.IsNullOrWhiteSpace(song.Lyrics))
 			{
-				notes.Add(song.Instrumental ? "instrumental" : "no lyrics");
+				notes.Add(song.Instrumental ? "instrumental" : L.T("no lyrics"));
 			}
 
 			if (songbookNames.Contains(song.Title))
 			{
-				notes.Add("in songbook");
+				notes.Add(L.T("in songbook"));
 			}
 
 			var content = new StackPanel { Spacing = 2 };
@@ -179,7 +180,7 @@ namespace Lyrious.UILib.Setlists
 			var hasLyrics = !string.IsNullOrWhiteSpace(song.Lyrics);
 			var lyrics = new TextBlock
 			{
-				Text = hasLyrics ? song.Lyrics : "This song has no lyrics in the database. It can still be added, and the lyrics typed in later.",
+				Text = hasLyrics ? song.Lyrics : L.T("This song has no lyrics in the database. It can still be added, and the lyrics typed in later."),
 				FontSize = hasLyrics ? 20 : 16,
 				LineHeight = hasLyrics ? 30 : double.NaN,
 				Opacity = hasLyrics ? 1 : 0.7,
@@ -187,11 +188,11 @@ namespace Lyrious.UILib.Setlists
 				Margin = new Thickness(0, 0, 0, 48),
 			};
 
-			var subtitle = songbookNames.Contains(song.Title) ? $"{song.Artist} · a song with this name is in the songbook already" : song.Artist;
+			var subtitle = songbookNames.Contains(song.Title) ? L.T("{0} · a song with this name is in the songbook already", song.Artist) : song.Artist;
 			Content = PageLayout.Page(
 				song.Title,
 				new DockPanel { Children = { add, new ScrollViewer { Content = lyrics } } },
-				backText: "‹ Search results",
+				backText: L.T("‹ Search results"),
 				back: () => Content = searchPage,
 				subtitle: subtitle,
 				closable: true);

@@ -2,6 +2,7 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -54,9 +55,9 @@ namespace Lyrious.UILib.Setlists
 
 				ToolTip.SetTip(button, state switch
 				{
-					TagFilterState.With => $"Only songs tagged {tag}: click to stop",
-					TagFilterState.Without => $"Only songs not tagged {tag}: click to stop",
-					_ => $"Click: only songs tagged {tag}. Hold: only songs without it",
+					TagFilterState.With => L.T("Only songs tagged {0}: click to stop", tag),
+					TagFilterState.Without => L.T("Only songs not tagged {0}: click to stop", tag),
+					_ => L.T("Click: only songs tagged {0}. Hold: only songs without it", tag),
 				});
 			}
 

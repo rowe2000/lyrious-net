@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
@@ -36,13 +37,13 @@ namespace Lyrious.UILib.Login
 		{
 			if (NewPassword != ConfirmPassword)
 			{
-				ErrorMessage = "The new passwords don't match.";
+				ErrorMessage = L.T("The new passwords don't match.");
 				return;
 			}
 
 			if (NewPassword == CurrentPassword)
 			{
-				ErrorMessage = "The new password is the same as the current one.";
+				ErrorMessage = L.T("The new password is the same as the current one.");
 				return;
 			}
 
@@ -51,12 +52,12 @@ namespace Lyrious.UILib.Login
 			{
 				var changedTo = NewPassword;
 				CurrentPassword = NewPassword = ConfirmPassword = "";
-				SuccessMessage = "Your password has been changed.";
+				SuccessMessage = L.T("Your password has been changed.");
 				PasswordChanged?.Invoke(changedTo);
 			}
 			else
 			{
-				ErrorMessage = result.Error ?? "Changing the password failed.";
+				ErrorMessage = result.Error ?? L.T("Changing the password failed.");
 			}
 		});
 	}

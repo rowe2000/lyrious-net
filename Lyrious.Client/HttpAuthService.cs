@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Lyrious.Client.Offline;
 using Lyrious.UILib;
 using Lyrious.UILib.Login;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.Client;
 
@@ -129,7 +130,7 @@ public sealed class HttpAuthService : IAuthService
         if (!System.Uri.TryCreate(text.TrimEnd('/') + "/", System.UriKind.Absolute, out var uri)
             || (uri.Scheme != System.Uri.UriSchemeHttp && uri.Scheme != System.Uri.UriSchemeHttps))
         {
-            return new ServerCheck(null, false, "That isn't a web address. Use for example http://localhost:5180.");
+            return new ServerCheck(null, false, L.T("That isn't a web address. Use for example http://localhost:5180."));
         }
 
         var normalized = uri.ToString().TrimEnd('/');
@@ -141,12 +142,12 @@ public sealed class HttpAuthService : IAuthService
             using var response = await candidate.PostAsync("api/ping", content: null, timeout.Token);
             if (!response.IsSuccessStatusCode || !(await response.Content.ReadAsStringAsync(timeout.Token)).Contains("Pong"))
             {
-                return new ServerCheck(normalized, false, $"{normalized} answered {(int)response.StatusCode} {response.ReasonPhrase}; it doesn't look like a Lyrious server.");
+                return new ServerCheck(normalized, false, L.T("{0} answered {1} {2}; it doesn't look like a Lyrious server.", normalized, (int)response.StatusCode, response.ReasonPhrase));
             }
         }
         catch (System.Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            return new ServerCheck(normalized, false, $"{normalized} doesn't answer right now.");
+            return new ServerCheck(normalized, false, L.T("{0} doesn't answer right now.", normalized));
         }
 
         return new ServerCheck(normalized, true, null);
@@ -208,11 +209,11 @@ public sealed class HttpAuthService : IAuthService
 
             if (offlineLogins.Has(ServerAddress, userName))
             {
-                return LoginResult.Failure("Wrong username or password.");
+                return LoginResult.Failure(L.T("Wrong username or password."));
             }
 
             throw new HttpRequestException(
-                $"The server at {ServerAddress} can't be reached, and you haven't logged in on this device before, so you can't log in offline yet. Check the host (below the form) and that the server is running.", ex);
+                L.T("The server at {0} can't be reached, and you haven't logged in on this device before, so you can't log in offline yet. Check the host (below the form) and that the server is running.", ServerAddress), ex);
         }
     }
 
@@ -258,7 +259,7 @@ public sealed class HttpAuthService : IAuthService
         {
             // The password may have been changed elsewhere: it mustn't keep working offline.
             offlineLogins.Remove(ServerAddress, userName);
-            return LoginResult.Failure("Wrong username or password.");
+            return LoginResult.Failure(L.T("Wrong username or password."));
         }
 
         // The Lyrious API answers a login with 200, 400 or 401. Anything else means it isn't there: a
@@ -266,7 +267,7 @@ public sealed class HttpAuthService : IAuthService
         // Receiver on 5000 and 7000 answers 403). Treat that as unreachable, not as a refusal.
         if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound || (int)response.StatusCode >= 500)
         {
-            throw new HttpRequestException($"The Lyrious server isn't answering ({(int)response.StatusCode} {response.ReasonPhrase}).");
+            throw new HttpRequestException(L.T("The Lyrious server isn't answering ({0} {1}).", (int)response.StatusCode, response.ReasonPhrase));
         }
 
         if (!response.IsSuccessStatusCode)
@@ -277,13 +278,13 @@ public sealed class HttpAuthService : IAuthService
         var body = await response.Content.ReadFromJsonAsync(ClientJsonContext.Default.LoginResponse, cancellationToken);
         if (body is not { Token.Length: > 0, Member: { } member })
         {
-            return LoginResult.Failure("The server sent an unexpected response.");
+            return LoginResult.Failure(L.T("The server sent an unexpected response."));
         }
 
         if (expectedMemberId is { } expected && member.Id != expected)
         {
             return LoginResult.Failure(
-                $"{ServerAddress} has another account called {userName} than the one you logged in with offline, so this session stays offline. Log out and in again to use {ServerAddress}; changes made offline stay on this device.");
+                L.T("{0} has another account called {1} than the one you logged in with offline, so this session stays offline. Log out and in again to use {2}; changes made offline stay on this device.", ServerAddress, userName, ServerAddress));
         }
 
         AccessToken = body.Token;
@@ -336,7 +337,7 @@ public sealed class HttpAuthService : IAuthService
     {
         if (string.IsNullOrEmpty(AccessToken))
         {
-            return AuthResult.Failure(IsOfflineSession ? "Changing your password needs a connection to the server." : "Log in first.");
+            return AuthResult.Failure(IsOfflineSession ? L.T("Changing your password needs a connection to the server.") : L.T("Log in first."));
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/auth/change-password")
@@ -348,7 +349,7 @@ public sealed class HttpAuthService : IAuthService
         using var response = await http.SendAsync(request, cancellationToken);
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
-            return AuthResult.Failure("Your session has expired. Log in again.");
+            return AuthResult.Failure(L.T("Your session has expired. Log in again."));
         }
 
         if (!response.IsSuccessStatusCode)
@@ -439,6 +440,6 @@ public sealed class HttpAuthService : IAuthService
         }
 
         var message = string.Join(" ", messages.Where(m => !string.IsNullOrWhiteSpace(m)));
-        return message.Length > 0 ? message : $"The server answered {(int)response.StatusCode} {response.ReasonPhrase}.";
+        return message.Length > 0 ? message : L.T("The server answered {0} {1}.", (int)response.StatusCode, response.ReasonPhrase);
     }
 }

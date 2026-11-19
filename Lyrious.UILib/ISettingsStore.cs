@@ -56,6 +56,9 @@ namespace Lyrious.UILib
 		/// <summary>"true" shows lyrics with chords as a chord grid (chords only, by bar) in the scroll view; off unless set.</summary>
 		public const string ChordGrid = "chord-grid";
 
+		/// <summary>The language chosen: "sv" or "en"; none for the device's (see <see cref="Localization.Language"/>). Kept with the user.</summary>
+		public const string Language = "language";
+
 		/// <summary>The lyrics' zoom in the scroll view (pinch), e.g. "1.4"; none for normal size.</summary>
 		public const string LyricsZoom = "lyrics-zoom";
 

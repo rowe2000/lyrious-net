@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -25,7 +26,7 @@ namespace Lyrious.UILib.Setlists
 		public static string DescribePitch(double pitch)
 		{
 			var steps = (int)Math.Round(pitch);
-			return steps == 0 ? "As recorded" : $"{steps:+0;-0} semitone{(Math.Abs(steps) == 1 ? "" : "s")}";
+			return steps == 0 ? L.T("As recorded") : $"{steps:+0;-0} semitone{(Math.Abs(steps) == 1 ? "" : "s")}";
 		}
 
 		/// <summary>The sliders for the sounds' speed and pitch (those the store can change).</summary>
@@ -57,8 +58,8 @@ namespace Lyrious.UILib.Setlists
 
 			void Show()
 			{
-				speedText.Text = $"Speed: {DescribeSpeed(speed.Value)}";
-				pitchText.Text = $"Pitch: {DescribePitch(pitch.Value)}";
+				speedText.Text = L.T("Speed: {0}", DescribeSpeed(speed.Value));
+				pitchText.Text = L.T("Pitch: {0}", DescribePitch(pitch.Value));
 			}
 
 			speed.ValueChanged += (_, _) =>
@@ -85,7 +86,7 @@ namespace Lyrious.UILib.Setlists
 				panel.Children.Add(pitch);
 			}
 
-			var reset = new Button { Content = "Reset", HorizontalAlignment = HorizontalAlignment.Right };
+			var reset = new Button { Content = L.T("Reset"), HorizontalAlignment = HorizontalAlignment.Right };
 			reset.Click += (_, _) =>
 			{
 				speed.Value = 1;
@@ -94,7 +95,7 @@ namespace Lyrious.UILib.Setlists
 			panel.Children.Add(reset);
 			panel.Children.Add(new TextBlock
 			{
-				Text = "Speed changes the tempo, not the key; pitch changes the key, not the tempo.",
+				Text = L.T("Speed changes the tempo, not the key; pitch changes the key, not the tempo."),
 				Opacity = 0.7,
 				FontSize = 12,
 				TextWrapping = TextWrapping.Wrap,

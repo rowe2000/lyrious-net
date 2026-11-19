@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Lyrious.UILib.Login;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -42,9 +43,9 @@ namespace Lyrious.UILib.Setlists
 
 			if (offerForgetSavedPassword)
 			{
-				form.Children.Add(Section("Saved password"));
-				var forget = new Button { Content = "Forget saved password" };
-				var forgotten = new TextBlock { Text = "The password is no longer saved on this device.", Opacity = 0.7, IsVisible = false, TextWrapping = TextWrapping.Wrap };
+				form.Children.Add(Section(L.T("Saved password")));
+				var forget = new Button { Content = L.T("Forget saved password") };
+				var forgotten = new TextBlock { Text = L.T("The password is no longer saved on this device."), Opacity = 0.7, IsVisible = false, TextWrapping = TextWrapping.Wrap };
 				forget.Click += (_, _) =>
 				{
 					// Gone once used: there's nothing saved any more.
@@ -52,26 +53,26 @@ namespace Lyrious.UILib.Setlists
 					forgotten.IsVisible = true;
 					ForgetSavedPasswordRequested?.Invoke();
 				};
-				form.Children.Add(Explanation("This device fills in your password when you log in."));
+				form.Children.Add(Explanation(L.T("This device fills in your password when you log in.")));
 				form.Children.Add(forget);
 				form.Children.Add(forgotten);
 			}
 
-			form.Children.Add(Section("Log out"));
-			form.Children.Add(Explanation($"Logged in as {user.UserName} on {auth.ServerAddress}."));
-			var logOut = new Button { Content = "Log out" };
+			form.Children.Add(Section(L.T("Log out")));
+			form.Children.Add(Explanation(L.T("Logged in as {0} on {1}.", user.UserName, auth.ServerAddress)));
+			var logOut = new Button { Content = L.T("Log out") };
 			logOut.Click += (_, _) => LogOutRequested?.Invoke();
 			form.Children.Add(logOut);
 
 			form.Margin = new Thickness(0, 0, 0, 16);
 			var scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-			Content = PageLayout.Page("Profile", scroller, subtitle: user.UserName, closable: true, icon: AppIcons.Profile);
+			Content = PageLayout.Page(L.T("Profile"), scroller, subtitle: user.UserName, closable: true, icon: AppIcons.Profile);
 		}
 
 		private Control NameSection(AuthenticatedUser user, ISetlistService service)
 		{
 			var name = new TextBox { Text = user.DisplayName, MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 240 };
-			var save = new Button { Content = "Save name", IsEnabled = false };
+			var save = new Button { Content = L.T("Save name"), IsEnabled = false };
 			var message = Message();
 			var saved = user.DisplayName;
 
@@ -94,12 +95,12 @@ namespace Lyrious.UILib.Setlists
 				{
 					await service.RenameMeAsync(newName);
 					saved = newName;
-					Show(message, "Your name has been changed.", error: false);
+					Show(message, L.T("Your name has been changed."), error: false);
 					Renamed?.Invoke(newName);
 				}
 				catch (Exception ex)
 				{
-					Show(message, $"Couldn't change your name. {ex.Message}", error: true);
+					Show(message, L.T("Couldn't change your name. {0}", ex.Message), error: true);
 					save.IsEnabled = true;
 				}
 			}
@@ -119,8 +120,8 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 8,
 				Children =
 				{
-					Section("Name"),
-					Explanation("How the band sees you, in the members list and the playback toolbar."),
+					Section(L.T("Name")),
+					Explanation(L.T("How the band sees you, in the members list and the playback toolbar.")),
 					name,
 					save,
 					message,
@@ -140,10 +141,10 @@ namespace Lyrious.UILib.Setlists
 				return box;
 			}
 
-			var current = PasswordBox("Current password", value => model.CurrentPassword = value);
-			var next = PasswordBox("New password", value => model.NewPassword = value);
-			var confirm = PasswordBox("Confirm new password", value => model.ConfirmPassword = value);
-			var change = new Button { Content = "Change password", IsEnabled = false };
+			var current = PasswordBox(L.T("Current password"), value => model.CurrentPassword = value);
+			var next = PasswordBox(L.T("New password"), value => model.NewPassword = value);
+			var confirm = PasswordBox(L.T("Confirm new password"), value => model.ConfirmPassword = value);
+			var change = new Button { Content = L.T("Change password"), IsEnabled = false };
 			var message = Message();
 
 			void Update(object? sender, PropertyChangedEventArgs e)
@@ -185,8 +186,8 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 8,
 				Children =
 				{
-					Section("Password"),
-					Explanation("Enter your current password and choose a new one. Changing it needs a connection to the server."),
+					Section(L.T("Password")),
+					Explanation(L.T("Enter your current password and choose a new one. Changing it needs a connection to the server.")),
 					current,
 					next,
 					confirm,

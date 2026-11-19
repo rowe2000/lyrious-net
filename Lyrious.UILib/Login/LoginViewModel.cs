@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
@@ -51,7 +52,7 @@ namespace Lyrious.UILib.Login
 			}
 			else
 			{
-				ErrorMessage = result.Error ?? "Login failed.";
+				ErrorMessage = result.Error ?? L.T("Login failed.");
 			}
 		});
 	}

@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -99,7 +100,7 @@ namespace Lyrious.UILib.Setlists
 			// The list, rebuilt as the search text or the chosen tags change.
 			var list = new ContentControl();
 			// The search text and tags as they were when the page was last left.
-			var search = PageLayout.WithClearButton(new TextBox { Text = savedSearch, PlaceholderText = "Search songs, artists, lyrics and tags", Margin = new Avalonia.Thickness(0, 0, 0, 16) });
+			var search = PageLayout.WithClearButton(new TextBox { Text = savedSearch, PlaceholderText = L.T("Search songs, artists, lyrics and tags"), Margin = new Avalonia.Thickness(0, 0, 0, 16) });
 			DockPanel.SetDock(search, Dock.Top);
 			// A magnifying glass at the left in the box, dimmed like its placeholder.
 			var searchIcon = LineIcon(SearchIcon, 16);
@@ -126,18 +127,18 @@ namespace Lyrious.UILib.Setlists
 				string emptyText;
 				if (songs.Count == 0)
 				{
-					emptyText = "There are no songs in the songbook yet. Add one with +.";
+					emptyText = L.T("There are no songs in the songbook yet. Add one with +.");
 				}
 				else if (chosenTags.Count == 0 && withoutTags.Count == 0)
 				{
-					emptyText = $"No songs match \"{text}\".";
+					emptyText = L.T("No songs match \"{0}\".", text);
 				}
 				else
 				{
 					var filter = string.Join(", ", chosenTags.Concat(withoutTags.Select(tag => $"not {tag}")));
 					emptyText = text.Length == 0
-						? $"No songs fit these tags: {filter}."
-						: $"No songs with the tags {filter} match \"{text}\".";
+						? L.T("No songs fit these tags: {0}.", filter)
+						: L.T("No songs with the tags {0} match \"{1}\".", filter, text);
 				}
 
 				shownSongs = shown;
@@ -164,7 +165,7 @@ namespace Lyrious.UILib.Setlists
 			}, Avalonia.Threading.DispatcherPriority.Background);
 			ShowList();
 
-			var (nameRow, showNameRow) = PageLayout.NameRow("Name of the new song", name => EmptySongRequested?.Invoke(name));
+			var (nameRow, showNameRow) = PageLayout.NameRow(L.T("Name of the new song"), name => EmptySongRequested?.Invoke(name));
 			DockPanel.SetDock(status, Dock.Top);
 
 			// The songs the setlist tool uses: the checked ones (in the songbook's order), else all listed.
@@ -173,20 +174,20 @@ namespace Lyrious.UILib.Setlists
 
 			// The setlist tool: a popup to play the songs (shown as the setlist in the right drawer, not
 			// saved), or to name a new setlist of them right there; and to clear the checks.
-			var asSetlistButton = HomeView.IconButton(AsSetlistIcon, "Use these songs as a setlist");
+			var asSetlistButton = HomeView.IconButton(AsSetlistIcon, L.T("Use these songs as a setlist"));
 			asSetlistButton.IsEnabled = songs.Count > 0;
 			// (Made on each click, with the songs chosen then.)
 			asSetlistButton.Click += (_, _) =>
 			{
 				var chosen = ChosenSongs();
-				var plural = chosen.Count == 1 ? "" : "s";
+				// Which songs, as the popup's heading says.
 				var which = AnyChecked()
-					? $"The {chosen.Count} checked song{plural}"
-					: chosen.Count == songs.Count ? $"All {chosen.Count} song{plural}" : $"The {chosen.Count} listed song{plural}";
+					? L.Plural(chosen.Count, "The {0} checked song", "The {0} checked songs")
+					: chosen.Count == songs.Count ? L.Plural(chosen.Count, "All {0} song", "All {0} songs") : L.Plural(chosen.Count, "The {0} listed song", "The {0} listed songs");
 				var popup = new Flyout { Placement = PlacementMode.BottomEdgeAlignedRight };
 
 				// Play: shown as the setlist in the right drawer, not saved.
-				var play = PopupItem("Just play them", PlayIcon);
+				var play = PopupItem(L.T("Just play them"), PlayIcon);
 				play.IsEnabled = chosen.Count > 0;
 				play.Click += (_, _) =>
 				{
@@ -197,15 +198,15 @@ namespace Lyrious.UILib.Setlists
 				// A new setlist: "Create a setlist" shows its name box, then ✓ (or Enter) makes it; the
 				// popup stays open until it's made (or closed with its ✕, Escape or a click outside).
 				// As tall as the ✓ and ✕ beside it, with its text in the middle.
-				var name = new TextBox { PlaceholderText = "Name of the new setlist", MinWidth = 200, VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center };
-				var ok = PageLayout.OkButton("Create the setlist");
+				var name = new TextBox { PlaceholderText = L.T("Name of the new setlist"), MinWidth = 200, VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center };
+				var ok = PageLayout.OkButton(L.T("Create the setlist"));
 				ok.IsEnabled = false;
 				// The popup's ✕, at its top right: closes it.
-				var close = PageLayout.CancelButton("Close");
+				var close = PageLayout.CancelButton(L.T("Close"));
 				ok.Margin = new Avalonia.Thickness(8, 0, 0, 0);
 				DockPanel.SetDock(ok, Dock.Right);
 				var nameRow = new DockPanel { IsVisible = false, Children = { ok, name } };
-				var create = PopupItem("Create a setlist", NewSetlistIcon);
+				var create = PopupItem(L.T("Create a setlist"), NewSetlistIcon);
 				create.IsEnabled = chosen.Count > 0;
 				// The name box takes the button's place, with its icon at the left in the box.
 				var nameIcon = LineIcon(NewSetlistIcon, 18);
@@ -281,7 +282,7 @@ namespace Lyrious.UILib.Setlists
 
 				if (AnyChecked())
 				{
-					var clear = PopupItem("Clear the checks", UncheckedIcon);
+					var clear = PopupItem(L.T("Clear the checks"), UncheckedIcon);
 					clear.Click += (_, _) =>
 					{
 						popup.Hide();
@@ -305,14 +306,14 @@ namespace Lyrious.UILib.Setlists
 					: selected != null ? [selected] : [];
 				if (toDelete.Count > 0)
 				{
-					var what = toDelete.Count == 1 ? $"'{toDelete[0].Name}'" : $"the {toDelete.Count} checked songs";
-					var delete = PopupItem(toDelete.Count == 1 ? $"Delete '{toDelete[0].Name}'…" : $"Delete the {toDelete.Count} checked songs…", TrashIcon);
+					var what = toDelete.Count == 1 ? $"'{toDelete[0].Name}'" : L.T("the {0} checked songs", toDelete.Count);
+					var delete = PopupItem(toDelete.Count == 1 ? L.T("Delete '{0}'…", toDelete[0].Name) : L.T("Delete the {0} checked songs…", toDelete.Count), TrashIcon);
 					PageLayout.RedOnHover(delete);
-					var confirm = PageLayout.DangerButton("Delete");
-					var keep = PageLayout.CancelButton("Don't delete");
+					var confirm = PageLayout.DangerButton(L.T("Delete"));
+					var keep = PageLayout.CancelButton(L.T("Don't delete"));
 					var question = new TextBlock
 					{
-						Text = $"Delete {what}? {(toDelete.Count == 1 ? "It's" : "They're")} also removed from every setlist, and this can't be undone.",
+						Text = toDelete.Count == 1 ? L.T("Delete {0}? It's also removed from every setlist, and this can't be undone.", what) : L.T("Delete {0}? They're also removed from every setlist, and this can't be undone.", what),
 						TextWrapping = TextWrapping.Wrap,
 						MaxWidth = 300,
 						Margin = new Avalonia.Thickness(10, 0, 0, 0),
@@ -352,17 +353,17 @@ namespace Lyrious.UILib.Setlists
 				popup.ShowAt(asSetlistButton);
 			};
 
-			var addButton = PageLayout.AddButton("Add song");
-			var empty = new MenuItem { Header = "New empty song…" };
+			var addButton = PageLayout.AddButton(L.T("Add song"));
+			var empty = new MenuItem { Header = L.T("New empty song…") };
 			empty.Click += (_, _) => showNameRow();
-			var import = new MenuItem { Header = "Import from file…" };
+			var import = new MenuItem { Header = L.T("Import from file…") };
 			import.Click += (_, _) => _ = ImportAsync();
-			var internet = new MenuItem { Header = "Find on the internet…" };
+			var internet = new MenuItem { Header = L.T("Find on the internet…") };
 			internet.Click += (_, _) => InternetSearchRequested?.Invoke();
 			addButton.Flyout = new MenuFlyout { Items = { empty, import, internet } };
 
 			Content = PageLayout.Page(
-				"Songbook",
+				L.T("Songbook"),
 				new DockPanel { Children = { SongbookChooser(group, songbooks ?? [], playingSongbookId), nameRow, status, search, tagFilter, list } },
 				titleAction: new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Children = { asSetlistButton, addButton } },
 				closable: true,
@@ -389,7 +390,7 @@ namespace Lyrious.UILib.Setlists
 				// The songbook played as the setlist (see the setlist tool) has the note of the current one.
 				if (songbook.Id == playingSongbookId)
 				{
-					var note = PageLayout.CurrentCheck("Played as the setlist");
+					var note = PageLayout.CurrentCheck(L.T("Played as the setlist"));
 					note.Margin = new Avalonia.Thickness(8, -2, 0, -2);
 					name = new DockPanel { Children = { note, name } };
 				}
@@ -408,7 +409,7 @@ namespace Lyrious.UILib.Setlists
 					button.Click += (_, _) => SongbookChosen?.Invoke(songbook);
 				}
 
-				ToolTip.SetTip(button, songbook.IsPrivate ? "Your private songbook" : $"{songbook.Name}'s songbook");
+				ToolTip.SetTip(button, songbook.IsPrivate ? L.T("Your private songbook") : L.T("{0}'s songbook", songbook.Name));
 				chooser.Children.Add(button);
 			}
 
@@ -467,7 +468,7 @@ namespace Lyrious.UILib.Setlists
 			var row = new DockPanel();
 			if (isCurrent)
 			{
-				row.Children.Add(PageLayout.CurrentCheck("The current song"));
+				row.Children.Add(PageLayout.CurrentCheck(L.T("The current song")));
 			}
 
 			var info = PageLayout.SongInfoText(song, note);
@@ -519,7 +520,7 @@ namespace Lyrious.UILib.Setlists
 				Margin = new Avalonia.Thickness(-6, -6, 10, -6),
 				VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
 			};
-			ToolTip.SetTip(box, $"Choose {song.Name} for a setlist");
+			ToolTip.SetTip(box, L.T("Choose {0} for a setlist", song.Name));
 			box.IsCheckedChanged += (_, _) =>
 			{
 				if (box.IsChecked == true)
@@ -552,12 +553,12 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (!isCurrent)
 			{
-				yield return PageLayout.OpenButton($"Open {song.Name}", () => SongSelected?.Invoke(song));
+				yield return PageLayout.OpenButton(L.T("Open {0}", song.Name), () => SongSelected?.Invoke(song));
 			}
 
 			yield return AddToSetlistButton(song);
-			yield return PageLayout.EditButton($"Edit {song.Name}", () => SongEditRequested?.Invoke(song));
-			yield return PageLayout.DeleteButton($"Delete '{song.Name}'", $"Delete '{song.Name}'? It's also removed from every setlist it's in.", () => SongDeleteRequested?.Invoke(song));
+			yield return PageLayout.EditButton(L.T("Edit {0}", song.Name), () => SongEditRequested?.Invoke(song));
+			yield return PageLayout.DeleteButton($"Delete '{song.Name}'", L.T("Delete '{0}'? It's also removed from every setlist it's in.", song.Name), () => SongDeleteRequested?.Invoke(song));
 		}
 
 		/// <summary>
@@ -566,7 +567,7 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private Button AddToSetlistButton(SongDetails song)
 		{
-			var button = HomeView.IconButton(AddToSetlistIcon, $"Add {song.Name} to a setlist");
+			var button = HomeView.IconButton(AddToSetlistIcon, L.T("Add {0} to a setlist", song.Name));
 			button.Click += async (_, _) =>
 			{
 				if (LoadSetlists is not { } load)
@@ -582,7 +583,7 @@ namespace Lyrious.UILib.Setlists
 				}
 				catch (Exception ex)
 				{
-					ShowStatus($"Couldn't get the setlists. {ex.Message}");
+					ShowStatus(L.T("Couldn't get the setlists. {0}", ex.Message));
 					return;
 				}
 				finally
@@ -593,7 +594,7 @@ namespace Lyrious.UILib.Setlists
 				var menu = new MenuFlyout();
 				if (setlists.Count == 0)
 				{
-					menu.Items.Add(new MenuItem { Header = "There are no setlists yet", IsEnabled = false });
+					menu.Items.Add(new MenuItem { Header = L.T("There are no setlists yet"), IsEnabled = false });
 				}
 
 				foreach (var setlist in setlists)

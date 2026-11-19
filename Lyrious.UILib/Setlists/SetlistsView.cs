@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -68,7 +69,7 @@ namespace Lyrious.UILib.Setlists
 			this.loadEntries = loadEntries;
 
 			// "+" reveals a name box above the list; Add (or Enter) creates the setlist.
-			var (addButton, nameRow) = PageLayout.AddByName("Add setlist", "Name of the new setlist", name => SetlistCreateRequested?.Invoke(name));
+			var (addButton, nameRow) = PageLayout.AddByName(L.T("Add setlist"), L.T("Name of the new setlist"), name => SetlistCreateRequested?.Invoke(name));
 
 			otherSetlists.IsVisible = setlists.Count > 1;
 			var shown = setlists.FirstOrDefault(setlist => setlist.Id == selectedSetlistId)
@@ -79,11 +80,11 @@ namespace Lyrious.UILib.Setlists
 			var column = new StackPanel { Spacing = 16, Children = { nameRow, otherSetlists, details } };
 			if (setlists.Count == 0)
 			{
-				column.Children.Add(new TextBlock { Text = "There are no setlists yet. Add one with +.", Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
+				column.Children.Add(new TextBlock { Text = L.T("There are no setlists yet. Add one with +."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
 			}
 
 			Content = PageLayout.Page(
-				"Setlist",
+				L.T("Setlist"),
 				new ScrollViewer { Content = column, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
 				titleAction: addButton,
 				closable: true,
@@ -121,22 +122,22 @@ namespace Lyrious.UILib.Setlists
 		private Control Details(SetlistSummary setlist)
 		{
 			var isCurrent = setlist.Id == CurrentSetlistId;
-			var songCount = new TextBlock { Text = isCurrent ? "Current setlist" : "Not current", Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
+			var songCount = new TextBlock { Text = isCurrent ? L.T("Current setlist") : L.T("Not current"), Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
 
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
 			if (!isCurrent)
 			{
-				var makeCurrent = new Button { Content = "Make current", Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center, Height = 40, VerticalContentAlignment = VerticalAlignment.Center };
+				var makeCurrent = new Button { Content = L.T("Make current"), Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center, Height = 40, VerticalContentAlignment = VerticalAlignment.Center };
 				makeCurrent.Click += (_, _) => SetlistMadeCurrent?.Invoke(setlist);
 				actions.Children.Add(makeCurrent);
 			}
 
-			var addSongs = HomeView.IconButton(AddIcon, "Add a song to the setlist");
+			var addSongs = HomeView.IconButton(AddIcon, L.T("Add a song to the setlist"));
 			addSongs.Click += (_, _) => AddSongsRequested?.Invoke(setlist, addSongs);
 			actions.Children.Add(addSongs);
 			actions.Children.Add(PageLayout.DeleteButton(
-				$"Delete {setlist.Name}",
-				$"Delete the setlist \"{setlist.Name}\"? Its songs stay in the songbook.",
+				L.T("Delete {0}", setlist.Name),
+				L.T("Delete the setlist \"{0}\"? Its songs stay in the songbook.", setlist.Name),
 				() => SetlistDeleteRequested?.Invoke(setlist)));
 
 			DockPanel.SetDock(actions, Dock.Right);
@@ -158,7 +159,7 @@ namespace Lyrious.UILib.Setlists
 				},
 			};
 
-			var songs = new ContentControl { Content = new TextBlock { Text = "Loading songs…", Opacity = 0.7 } };
+			var songs = new ContentControl { Content = new TextBlock { Text = L.T("Loading songs…"), Opacity = 0.7 } };
 			_ = LoadSongsAsync(setlist, songs, songCount, isCurrent);
 
 			var card = new Border
@@ -188,7 +189,7 @@ namespace Lyrious.UILib.Setlists
 			}
 			catch (Exception ex)
 			{
-				songs.Content = new TextBlock { Text = $"Couldn't get the songs. {ex.Message}", TextWrapping = TextWrapping.Wrap };
+				songs.Content = new TextBlock { Text = L.T("Couldn't get the songs. {0}", ex.Message), TextWrapping = TextWrapping.Wrap };
 				return;
 			}
 
@@ -198,10 +199,10 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var count = entries.Count == 1 ? "1 song" : $"{entries.Count} songs";
-			status.Text = isCurrent ? $"Current setlist · {count}" : count;
+			status.Text = isCurrent ? L.T("Current setlist · {0}", count) : count;
 			if (entries.Count == 0)
 			{
-				songs.Content = new TextBlock { Text = "There are no songs in this setlist yet. Add some with +.", Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
+				songs.Content = new TextBlock { Text = L.T("There are no songs in this setlist yet. Add some with +."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
 				return;
 			}
 

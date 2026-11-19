@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -14,14 +15,14 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 12,
 				Children =
 				{
-					new TextBlock { Text = "Lyrious", FontSize = 24, FontWeight = FontWeight.SemiBold },
-					new TextBlock { Text = $"Version {ReleaseNotes.AppVersion}", Opacity = 0.7 },
+					new TextBlock { Text = L.T("Lyrious"), FontSize = 24, FontWeight = FontWeight.SemiBold },
+					new TextBlock { Text = L.T("Version {0}", ReleaseNotes.AppVersion), Opacity = 0.7 },
 					new TextBlock
 					{
-						Text = "Setlists, songbooks and lyrics for bands: lyrics and chords that scroll in time with the song, shared and followed live by the whole band.",
+						Text = L.T("Setlists, songbooks and lyrics for bands: lyrics and chords that scroll in time with the song, shared and followed live by the whole band."),
 						TextWrapping = TextWrapping.Wrap,
 					},
-					new TextBlock { Text = "Release notes", FontSize = 18, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 12, 0, 0) },
+					new TextBlock { Text = L.T("Release notes"), FontSize = 18, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 12, 0, 0) },
 				},
 			};
 
@@ -31,7 +32,7 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			Content = PageLayout.Page(
-				"About",
+				L.T("About"),
 				new ScrollViewer { Content = column, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
 				closable: true,
 				icon: AppIcons.About);

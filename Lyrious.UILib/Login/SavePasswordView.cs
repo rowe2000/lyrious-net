@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
@@ -22,7 +23,7 @@ namespace Lyrious.UILib.Login
 		{
 			saveButton = new Button
 			{
-				Content = "Save password",
+				Content = L.T("Save password"),
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				HorizontalContentAlignment = HorizontalAlignment.Center,
 				IsDefault = true,
@@ -32,7 +33,7 @@ namespace Lyrious.UILib.Login
 
 			var notNowButton = new Button
 			{
-				Content = "Not now",
+				Content = L.T("Not now"),
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				HorizontalContentAlignment = HorizontalAlignment.Center,
 				IsCancel = true,
@@ -54,7 +55,7 @@ namespace Lyrious.UILib.Login
 					{
 						new TextBlock
 						{
-							Text = "Save password?",
+							Text = L.T("Save password?"),
 							FontSize = 32,
 							FontWeight = FontWeight.Bold,
 							TextWrapping = TextWrapping.Wrap,
@@ -63,7 +64,7 @@ namespace Lyrious.UILib.Login
 						},
 						new TextBlock
 						{
-							Text = $"Save the password for {userName} on this device? Next time you log in, it's filled in for you.",
+							Text = L.T("Save the password for {0} on this device? Next time you log in, it's filled in for you.", userName),
 							TextWrapping = TextWrapping.Wrap,
 							TextAlignment = TextAlignment.Center,
 							Opacity = 0.7,

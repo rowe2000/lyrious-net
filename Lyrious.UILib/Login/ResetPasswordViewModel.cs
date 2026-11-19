@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
@@ -41,13 +42,13 @@ namespace Lyrious.UILib.Login
 			var trimmedCode = new string(Code.Where(c => !char.IsWhiteSpace(c)).ToArray());
 			if (!trimmedCode.All(char.IsDigit))
 			{
-				ErrorMessage = "The code is the 6 digits from the email.";
+				ErrorMessage = L.T("The code is the 6 digits from the email.");
 				return;
 			}
 
 			if (NewPassword != ConfirmPassword)
 			{
-				ErrorMessage = "The new passwords don't match.";
+				ErrorMessage = L.T("The new passwords don't match.");
 				return;
 			}
 
@@ -59,7 +60,7 @@ namespace Lyrious.UILib.Login
 			}
 			else
 			{
-				ErrorMessage = result.Error ?? "Resetting the password failed.";
+				ErrorMessage = result.Error ?? L.T("Resetting the password failed.");
 			}
 		});
 	}

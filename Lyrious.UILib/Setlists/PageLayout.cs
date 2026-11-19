@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -40,7 +41,7 @@ namespace Lyrious.UILib.Setlists
 				return titleAction;
 			}
 
-			var close = EscapeKey.MarkAsClose(HomeView.IconButton(CloseIcon, "Close"));
+			var close = EscapeKey.MarkAsClose(HomeView.IconButton(CloseIcon, L.T("Close")));
 			close.Click += (_, _) => close.RaiseEvent(new RoutedEventArgs(CloseRequestedEvent));
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
 			if (titleAction != null)
@@ -279,9 +280,9 @@ namespace Lyrious.UILib.Setlists
 		public static (Control Row, Action Show) NameRow(string placeholder, Action<string> add, bool closeOnAdd = false)
 		{
 			var nameBox = new TextBox { PlaceholderText = placeholder, VerticalContentAlignment = VerticalAlignment.Center };
-			var confirm = OkButton("Add");
+			var confirm = OkButton(L.T("Add"));
 			confirm.IsEnabled = false;
-			var cancel = CancelButton("Cancel");
+			var cancel = CancelButton(L.T("Cancel"));
 
 			var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(8, 0, 0, 0), Children = { confirm, cancel } };
 			DockPanel.SetDock(buttons, Dock.Right);
@@ -396,7 +397,7 @@ namespace Lyrious.UILib.Setlists
 			var row = (DockPanel)RowContent(text, (string?)null);
 			if (isCurrent)
 			{
-				row.Children.Insert(0, CurrentCheck("The current setlist"));
+				row.Children.Insert(0, CurrentCheck(L.T("The current setlist")));
 			}
 
 			return row;
@@ -459,8 +460,8 @@ namespace Lyrious.UILib.Setlists
 			var button = HomeView.IconButton(TrashIcon, description);
 			RedOnHover(button);
 
-			var confirm = DangerButton("Delete");
-			var cancel = new Button { Content = "Cancel" };
+			var confirm = DangerButton(L.T("Delete"));
+			var cancel = new Button { Content = L.T("Cancel") };
 			var flyout = new Flyout
 			{
 				Content = new StackPanel
@@ -505,7 +506,7 @@ namespace Lyrious.UILib.Setlists
 				Padding = new Thickness(0, 6),
 				VerticalAlignment = VerticalAlignment.Center,
 			};
-			ToolTip.SetTip(title, "Click to rename");
+			ToolTip.SetTip(title, L.T("Click to rename"));
 
 			void Edit()
 			{
@@ -619,7 +620,7 @@ namespace Lyrious.UILib.Setlists
 				Cursor = new Cursor(StandardCursorType.Arrow),
 				IsVisible = !string.IsNullOrEmpty(box.Text),
 			};
-			ToolTip.SetTip(clear, "Clear");
+			ToolTip.SetTip(clear, L.T("Clear"));
 			clear.Click += (_, _) =>
 			{
 				box.Text = string.Empty;

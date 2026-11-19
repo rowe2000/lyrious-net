@@ -1,4 +1,5 @@
 using System;
+using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
@@ -14,17 +15,17 @@ namespace Lyrious.UILib.Login
 		public ResetPasswordView(ResetPasswordViewModel viewModel)
 			: base(
 				viewModel,
-				"Choose a new password",
+				L.T("Choose a new password"),
 				// The server doesn't reveal whether the account exists or has an email address.
-				$"If {viewModel.UserNameOrEmail} has an account with an email address, we've sent it a 6-digit code. It expires in a few minutes.",
-				"Reset password",
+				L.T("If {0} has an account with an email address, we've sent it a 6-digit code. It expires in a few minutes.", viewModel.UserNameOrEmail),
+				L.T("Reset password"),
 				viewModel.ResetAsync)
 		{
-			AddField("Code from the email", () => viewModel.Code, value => viewModel.Code = value);
-			AddField("New password", () => viewModel.NewPassword, value => viewModel.NewPassword = value, isPassword: true);
-			AddField("Confirm new password", () => viewModel.ConfirmPassword, value => viewModel.ConfirmPassword = value, isPassword: true);
-			AddLink("Send a new code", () => NewCodeRequested?.Invoke());
-			AddLink("Back to login", () => LoginRequested?.Invoke());
+			AddField(L.T("Code from the email"), () => viewModel.Code, value => viewModel.Code = value);
+			AddField(L.T("New password"), () => viewModel.NewPassword, value => viewModel.NewPassword = value, isPassword: true);
+			AddField(L.T("Confirm new password"), () => viewModel.ConfirmPassword, value => viewModel.ConfirmPassword = value, isPassword: true);
+			AddLink(L.T("Send a new code"), () => NewCodeRequested?.Invoke());
+			AddLink(L.T("Back to login"), () => LoginRequested?.Invoke());
 		}
 	}
 }
