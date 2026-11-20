@@ -95,16 +95,23 @@ internal class Program
 		var useSqlite = string.IsNullOrWhiteSpace(provider)
 			? !OperatingSystem.IsWindows()
 			: provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase);
+		// The values in logged queries and errors only in development: in production they'd put
+		// members' data (emails, password hashes, ...) in the host's logs.
+		var development = builder.Environment.IsDevelopment();
 		if (useSqlite)
 		{
 			var file = Path.Combine(builder.Environment.ContentRootPath, builder.Configuration["Database:SqliteFile"] ?? "lyrious-api.db");
 			Console.WriteLine($"Database: SQLite ({file})");
-			builder.Services.AddDbContext<LyriousContext>(options => options.UseSqlite($"Data Source={file}"));
+			builder.Services.AddDbContext<LyriousContext>(options => options.UseSqlite($"Data Source={file}")
+				.EnableSensitiveDataLogging(development)
+				.EnableDetailedErrors(development));
 		}
 		else
 		{
 			Console.WriteLine("Database: SQL Server");
-			builder.Services.AddDbContext<LyriousContext>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+			builder.Services.AddDbContext<LyriousContext>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
+				.EnableSensitiveDataLogging(development)
+				.EnableDetailedErrors(development));
 		}
 
 		// Identity for users, roles and password checks only. AddIdentityCore (unlike AddIdentity)

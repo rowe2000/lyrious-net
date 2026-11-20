@@ -374,9 +374,9 @@ public class LyriousContext : LocalContext<Member, Role>
 
 	protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
 	{
-		optionsBuilder.EnableSensitiveDataLogging();
-		optionsBuilder.EnableDetailedErrors();
-		
+		// Sensitive data logging (values in logged queries and errors) is turned on by each app where
+		// it configures the database, and only for development: on a server it'd put members' data in the logs.
+
 		//switch (dbContextType1)
 		//{
 		//	case DbContextType.Sqllite:

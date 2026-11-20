@@ -19,6 +19,9 @@ internal class Program
 		// The local database is a copy of server data, filled one entity type at a time (and groups and
 		// setlists reference each other), so foreign keys can't hold during a sync. The server enforces them.
 		optionsBuilder.UseSqlite("Data Source=lyrious.db;Foreign Keys=False");
+		// A local tool: the values in logged queries and errors help, and stay on this machine.
+		optionsBuilder.EnableSensitiveDataLogging();
+		optionsBuilder.EnableDetailedErrors();
 
 		var repo = new LyriousRepository(new LyriousContext(optionsBuilder.Options, cache)) { RemoteAddress = remoteAddress };
 		repo.RemoteChanged += (entityType, entities) =>
