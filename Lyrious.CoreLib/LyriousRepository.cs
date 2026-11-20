@@ -68,11 +68,22 @@ public class LyriousRepository(LyriousContext context)
 		var group = context.Groups.FirstOrDefault(g => g.IsPrivate && !g.Removed && myGroupIds.Contains(g.Id));
 		if (group == null)
 		{
-			// In this order: the setlist can only be the band's current one once both exist.
 			group = Update(new Group { Name = Group.PrivateName, IsPrivate = true })!;
 			Update(new Membership { GroupId = group.Id, MemberId = meId, RoleEnum = RoleEnum.Admin, MembershipStatusEnum = MembershipStatusEnum.Approved });
-			Update(new Songbook { Name = "Default", GroupId = group.Id });
-			var setlist = Update(new Setlist { Name = "Setlist 1", GroupId = group.Id })!;
+		}
+
+		// Each part is saved by itself, so a band whose making stopped half-way (e.g. a failed
+		// save) gets the rest here, the next time, instead of staying without a songbook for good.
+		var groupId = group.Id;
+		if (!context.Songbooks.Any(b => b.GroupId == groupId && !b.Removed))
+		{
+			Update(new Songbook { Name = "Default", GroupId = groupId });
+		}
+
+		// The setlist can only be the band's current one once both exist.
+		if (!context.Setlists.Any(s => s.GroupId == groupId && !s.Removed))
+		{
+			var setlist = Update(new Setlist { Name = "Setlist 1", GroupId = groupId })!;
 			group.CurrentSetlistId = setlist.Id;
 			group = Update(group) ?? group;
 		}
