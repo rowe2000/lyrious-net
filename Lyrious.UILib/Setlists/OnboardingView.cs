@@ -14,17 +14,36 @@ namespace Lyrious.UILib.Setlists
 	/// what changed in the member's bands since their last visit (bands they were added to, new
 	/// members, new and changed setlists and songs) and the app's release notes since then.
 	/// Continue (or ✕) goes on to the start page.
+	/// <para>
+	/// Bands the member is invited to come first, each with an Accept button that stands out (it joins
+	/// the band); Continue is then a plain button.
+	/// </para>
 	/// </summary>
 	public sealed class OnboardingView : UserControl
 	{
+		/// <summary>A band the member is invited to, and the names of its members.</summary>
+		public sealed record Invitation(GroupSummary Band, IReadOnlyList<string> MemberNames);
+
 		/// <summary>Raised when the member goes on (Continue).</summary>
 		public event Action? Continued;
 
 		/// <param name="lastVisit">When the member last saw this screen on this device; null the first time.</param>
 		/// <param name="changes">The changes since then; null when they couldn't be found out (e.g. offline).</param>
-		public OnboardingView(string memberName, DateTime? lastVisit, IReadOnlyList<Change>? changes)
+		/// <param name="invitations">Bands the member is invited to, shown first.</param>
+		/// <param name="accept">Accepts an invitation (joins the band).</param>
+		public OnboardingView(string memberName, DateTime? lastVisit, IReadOnlyList<Change>? changes,
+			IReadOnlyList<Invitation>? invitations = null, Func<GroupSummary, System.Threading.Tasks.Task>? accept = null)
 		{
 			var column = new StackPanel { Spacing = 12 };
+			var invited = invitations is { Count: > 0 } && accept != null;
+			if (invited)
+			{
+				foreach (var invitation in invitations!)
+				{
+					column.Children.Add(InvitationCard(invitation, accept!));
+				}
+			}
+
 			string title;
 			if (lastVisit is not { } since)
 			{
@@ -74,14 +93,76 @@ namespace Lyrious.UILib.Setlists
 				}
 			}
 
-			var go = new Button { Content = L.T("Continue"), Classes = { "accent" }, Height = 40, VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Thickness(0, 8, 0, 0) };
+			// The invitation's Accept is what stands out then; Continue is plain.
+			var go = new Button { Content = L.T("Continue"), Height = 40, VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Thickness(0, 8, 0, 0) };
+			if (!invited)
+			{
+				go.Classes.Add("accent");
+			}
+
 			go.Click += (_, _) => Continued?.Invoke();
 			column.Children.Add(go);
 
 			Content = PageLayout.Page(
-				title,
+				invited ? L.T("You're invited") : title,
 				new ScrollViewer { Content = column, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
 				closable: true);
+		}
+
+		/// <summary>
+		/// A band the member is invited to: its name, its members, and Accept (large, highlighted), which
+		/// joins it; after that, that they're in the band. What went wrong shows below Accept.
+		/// </summary>
+		private static Control InvitationCard(Invitation invitation, Func<GroupSummary, System.Threading.Tasks.Task> accept)
+		{
+			var heading = new TextBlock { Text = L.T("You're invited to {0}", invitation.Band.Name), FontSize = 20, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
+			var members = new TextBlock
+			{
+				Text = invitation.MemberNames.Count > 0 ? L.T("Members: {0}", string.Join(", ", invitation.MemberNames)) : L.T("Join the band to share its songs and setlists."),
+				Opacity = 0.75,
+				TextWrapping = TextWrapping.Wrap,
+			};
+			var acceptButton = new Button
+			{
+				Content = L.T("Accept"),
+				Classes = { "accent" },
+				FontSize = 18,
+				Height = 48,
+				MinWidth = 160,
+				HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+				VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+				Margin = new Thickness(0, 4, 0, 0),
+			};
+			var problem = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
+			problem.Bind(TextBlock.ForegroundProperty, problem.GetResourceObservable(LyriousTheme.ErrorBrush));
+			acceptButton.Click += async (_, _) =>
+			{
+				acceptButton.IsEnabled = false;
+				problem.IsVisible = false;
+				try
+				{
+					await accept(invitation.Band);
+					heading.Text = L.T("You're now in {0}", invitation.Band.Name);
+					acceptButton.IsVisible = false;
+				}
+				catch (Exception ex)
+				{
+					problem.Text = L.T("Couldn't accept the invitation. {0}", ex.Message);
+					problem.IsVisible = true;
+					acceptButton.IsEnabled = true;
+				}
+			};
+
+			var card = new Border
+			{
+				Padding = new Thickness(16),
+				CornerRadius = new CornerRadius(8),
+				BorderThickness = new Thickness(2),
+				Child = new StackPanel { Spacing = 8, Children = { heading, members, acceptButton, problem } },
+			};
+			card.Bind(Border.BackgroundProperty, card.GetResourceObservable(LyriousTheme.CardBrush));
+			card.Bind(Border.BorderBrushProperty, card.GetResourceObservable(LyriousTheme.SelectionBrush));
+			return card;
 		}
 
 		/// <summary>E.g. "New song: Blackbird", "Changed setlist: Friday", "New member: Anna", "You were added to the band".</summary>

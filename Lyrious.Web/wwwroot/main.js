@@ -46,7 +46,8 @@ globalThis.lyriousMidi = (() => {
         send: messages => {
             if (!navigator.requestMIDIAccess) return;
             const data = messages.split(";").filter(m => m.trim()).map(m => m.trim().split(/\s+/).map(b => parseInt(b, 16)));
-            access ??= navigator.requestMIDIAccess({ sysex: false });
+            // With System Exclusive (the transpose sent to Yamaha keyboards): the browser asks for it.
+            access ??= navigator.requestMIDIAccess({ sysex: true });
             access.then(midi => {
                 for (const output of midi.outputs.values()) {
                     for (const message of data) {
@@ -58,6 +59,43 @@ globalThis.lyriousMidi = (() => {
                 access = null; // Asked again at the next send.
             });
         },
+    };
+})();
+
+// Full screen (BrowserFullScreen.cs): the page on the whole screen while the member wants it. A
+// browser only allows it in answer to a tap or a key, so when it's asked for otherwise (e.g. the
+// setting was on when the app started) it starts at the next one. Leaving it otherwise (Escape, the
+// browser's own) is reported, so the setting goes off instead of full screen coming back.
+globalThis.lyriousFullScreen = (() => {
+    let wanted = false;
+    let exited = null;
+    const page = document.documentElement;
+    const active = () => !!document.fullscreenElement;
+    function enter() {
+        if (wanted && !active() && page.requestFullscreen) {
+            page.requestFullscreen().catch(() => { /* not allowed now: at the next tap or key */ });
+        }
+    }
+    document.addEventListener("pointerup", enter);
+    document.addEventListener("keyup", enter);
+    document.addEventListener("fullscreenchange", () => {
+        if (!active() && wanted) {
+            wanted = false;
+            exited?.();
+        }
+    });
+    return {
+        // Not in Safari on iPhone, which only lets a video be full screen.
+        isSupported: () => typeof page.requestFullscreen === "function",
+        set: on => {
+            wanted = on;
+            if (on) {
+                enter();
+            } else if (active()) {
+                document.exitFullscreen().catch(() => { });
+            }
+        },
+        onExited: callback => { exited = callback; },
     };
 })();
 

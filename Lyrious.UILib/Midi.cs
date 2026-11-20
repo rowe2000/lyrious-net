@@ -75,6 +75,77 @@ namespace Lyrious.UILib
 			}
 		}
 
+		/// <summary>The Yamaha keyboards the transpose can be sent to (see <see cref="YamahaTranspose"/>).</summary>
+		public static readonly IReadOnlyList<string> YamahaModels = ["MODX", "YC", "CK"];
+
+		/// <summary>
+		/// The keyboards chosen in Settings to get the member's transpose (see <see cref="SettingKeys.SendYamahaTranspose"/>):
+		/// some of <see cref="YamahaModels"/>, none when it's off. This device only.
+		/// </summary>
+		public static IReadOnlyList<string> YamahaTransposeModels
+		{
+			get => App.Settings.Get(SettingKeys.SendYamahaTranspose) switch
+			{
+				null or "" => [],
+				// Before the models could be chosen, "true" was all of them.
+				"true" => YamahaModels,
+				var models => YamahaModels.Where(model => models.Split(',').Contains(model, StringComparer.OrdinalIgnoreCase)).ToList(),
+			};
+			set => App.Settings.Set(SettingKeys.SendYamahaTranspose, value.Count == 0 ? null : string.Join(",", YamahaModels.Where(value.Contains)));
+		}
+
+		/// <summary>Sends <see cref="YamahaTranspose"/> to the chosen keyboards (or <paramref name="models"/>), if MIDI can be sent here.</summary>
+		public static void SendYamahaTranspose(int semitones, IReadOnlyList<string>? models = null)
+		{
+			models ??= YamahaTransposeModels;
+			if (models.Count > 0)
+			{
+				App.Midi?.Send(YamahaTranspose(semitones, models));
+			}
+		}
+
+		/// <summary>
+		/// The System Exclusive messages that set the keyboard transpose (in semitones, −12 to +12; 0 for
+		/// none) of a Yamaha MODX, YC (YC61/73/88) and CK (CK61/76/88): one per model, each a Parameter
+		/// Change "F0 43 1n 7F 1C id ah am al dd F7" to device number 1 (n = 0; received by a keyboard set
+		/// to that device number or to All, the default), its data 40 (hex) for 0. Each keyboard takes the
+		/// one with its own model ID and ignores the others, so those of the chosen models go to every output.
+		/// <list type="bullet">
+		/// <item>YC: model ID 09, System Common "Keyboard Transpose" at 20 00 07, data 34–4C (−12–+12):
+		/// from the YC88/YC73/YC61 Supplementary Manual (OS V2.00), MIDI Parameter Change Table.</item>
+		/// <item>CK: model ID 0B, System Common "Keyboard Transpose" at 20 00 07, data 34–4C (−12–+12):
+		/// from the CK88/CK76/CK61 Owner's Manual (MIDI data version 2.0), MIDI Parameter Change Table.</item>
+		/// <item>MODX: model ID 07, System "Keyboard Transpose" at 00 00 07, data 40 for 0: from the MODX
+		/// Data List as quoted on the YamahaSynth forum (not checked against the Data List itself).</item>
+		/// </list>
+		/// </summary>
+		/// <param name="models">The keyboards to send to, of <see cref="YamahaModels"/>.</param>
+		public static IReadOnlyList<byte[]> YamahaTranspose(int semitones, IReadOnlyList<string> models)
+		{
+			var data = (byte)(0x40 + Math.Clamp(semitones, -12, 12));
+			var messages = new List<byte[]>();
+			if (models.Contains("MODX"))
+			{
+				messages.Add(Yamaha(0x07, 0x00, 0x00, 0x07, data));
+			}
+
+			if (models.Contains("YC"))
+			{
+				messages.Add(Yamaha(0x09, 0x20, 0x00, 0x07, data));
+			}
+
+			if (models.Contains("CK"))
+			{
+				messages.Add(Yamaha(0x0B, 0x20, 0x00, 0x07, data));
+			}
+
+			return messages;
+
+			// A Parameter Change of the group 7F 1C (MODX, YC, CK) to device number 1.
+			static byte[] Yamaha(byte modelId, byte high, byte mid, byte low, byte value)
+				=> [0xF0, 0x43, 0x10, 0x7F, 0x1C, modelId, high, mid, low, value, 0xF7];
+		}
+
 		/// <summary>Whether the lyrics have MIDI tags at their start (see <see cref="SongStart"/>).</summary>
 		public static bool HasSongStart(string? lyrics) => StartTags(lyrics).Any();
 

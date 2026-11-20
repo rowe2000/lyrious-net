@@ -19,6 +19,10 @@ namespace Lyrious.UILib.Setlists
 		private readonly List<(T Item, Border Outline, Control Tools)> rows = [];
 
 		private readonly bool activateOnClick;
+		private readonly Thickness rowPadding;
+
+		/// <summary>The room around a row's content, unless the list is given another.</summary>
+		public static readonly Thickness RowPadding = new(16, 12);
 
 		private IDisposable? selectedOutline;
 
@@ -33,6 +37,7 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="tools">The buttons of the toolbar shown beside the selected row.</param>
 		/// <param name="activate">Makes the item current (on a double click).</param>
 		/// <param name="activateOnClick">A click makes the item current at once (no selecting first), e.g. a setlist's songs.</param>
+		/// <param name="rowPadding">The room around a row's content; else <see cref="RowPadding"/>.</param>
 		public SelectableList(
 			IReadOnlyList<T> items,
 			Func<T, Control> content,
@@ -40,9 +45,11 @@ namespace Lyrious.UILib.Setlists
 			Func<T, IEnumerable<Control>> tools,
 			Action<T> activate,
 			string emptyText,
-			bool activateOnClick = false)
+			bool activateOnClick = false,
+			Thickness? rowPadding = null)
 		{
 			this.activateOnClick = activateOnClick;
+			this.rowPadding = rowPadding ?? RowPadding;
 			if (items.Count == 0)
 			{
 				Content = new TextBlock { Text = emptyText, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
@@ -99,7 +106,7 @@ namespace Lyrious.UILib.Setlists
 				Content = content,
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				HorizontalContentAlignment = HorizontalAlignment.Stretch,
-				Padding = new Thickness(16, 12),
+				Padding = rowPadding,
 			};
 			if (isCurrent)
 			{

@@ -1,7 +1,10 @@
 using System;
+using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Lyrious.UILib.Localization;
@@ -36,6 +39,21 @@ namespace Lyrious.UILib.Setlists
 				OffContent = L.T("Off"),
 			};
 			songHeader.IsCheckedChanged += (_, _) => DisplaySettings.ShowSongHeader = songHeader.IsChecked == true;
+			var capoMode = new ToggleSwitch
+			{
+				IsChecked = DisplaySettings.CapoMode,
+				OnContent = L.T("On"),
+				OffContent = L.T("Off"),
+			};
+			capoMode.IsCheckedChanged += (_, _) => DisplaySettings.CapoMode = capoMode.IsChecked == true;
+			var chordGridButton = new ToggleSwitch
+			{
+				IsChecked = DisplaySettings.ChordGridButton,
+				OnContent = L.T("On"),
+				OffContent = L.T("Off"),
+			};
+			chordGridButton.IsCheckedChanged += (_, _) => DisplaySettings.ChordGridButton = chordGridButton.IsChecked == true;
+			Control? chordGridRow = null;
 
 			var dynamicZoom = new ToggleSwitch
 			{
@@ -62,32 +80,9 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 
-			// The interface size: a list of sizes, applied at once.
-			var scale = new ComboBox { MinWidth = 100 };
-			foreach (var choice in UiScale.Choices)
-			{
-				scale.Items.Add(new ComboBoxItem { Content = UiScale.Describe(choice), Tag = choice });
-			}
+			var scale = InterfaceSizeChoice();
 
-			var current = UiScale.Value;
-			var closest = 0;
-			for (var i = 0; i < UiScale.Choices.Count; i++)
-			{
-				if (Math.Abs(UiScale.Choices[i] - current) < Math.Abs(UiScale.Choices[closest] - current))
-				{
-					closest = i;
-				}
-			}
-
-			scale.SelectedIndex = closest;
-			scale.SelectionChanged += (_, _) =>
-			{
-				if (scale.SelectedItem is ComboBoxItem { Tag: double chosen })
-				{
-					UiScale.Value = chosen;
-				}
-			};
-
+			var colorsSection = Section(L.T("Colors"));
 			var form = new StackPanel
 			{
 				Spacing = 16,
@@ -106,6 +101,10 @@ namespace Lyrious.UILib.Setlists
 						L.T("Song title above the lyrics"),
 						L.T("Shows the song's name, key, tempo and beat above the lyrics. The song's name is in the drawer either way."),
 						songHeader),
+					(chordGridRow = Setting(
+						L.T("Chord grid button"),
+						L.T("Shows the button on the lyrics page that shows a song's chords as a grid, by bar. Off, the chords show over the words. Yours on all your devices."),
+						chordGridButton)),
 					Setting(
 						L.T("Dynamic zoom"),
 						L.T("Sizes the whole app, lyrics included, to the window: the smaller of its width and height sets the zoom, where 500 px is 100 %. The interface size above and the lyrics' own zoom apply on top."),
@@ -115,7 +114,11 @@ namespace Lyrious.UILib.Setlists
 						L.T("Next song when stopping at the end"),
 						L.T("When the lyrics have scrolled all the way to the bottom, pressing stop also goes on to the next song in the setlist."),
 						nextOnStop),
-					Section(L.T("Colors")),
+					(capoRow = Setting(
+						L.T("Count my transpose as a capo"),
+						L.T("On: + in the transpose dialog puts the capo a fret higher, which moves the chords down (capo +1 makes G F#). Off: a transpose in semitones, which moves them up. Yours on all your devices."),
+						capoMode)),
+					colorsSection,
 					new TextBlock { Text = L.T("Yours on all your devices."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
 					ColorSetting(
 						L.T("Highlight"),
@@ -178,10 +181,59 @@ namespace Lyrious.UILib.Setlists
 				}
 			}
 
+			// Where the app can be full screen (desktop, most browsers): after the chord grid button.
+			if (FullScreen.IsSupported)
+			{
+				var fullScreen = new ToggleSwitch { IsChecked = DisplaySettings.FullScreen, OnContent = L.T("On"), OffContent = L.T("Off") };
+				fullScreen.IsCheckedChanged += (_, _) => DisplaySettings.FullScreen = fullScreen.IsChecked == true;
+				form.Children.Insert(form.Children.IndexOf(chordGridRow!) + 1, Setting(
+					L.T("Full screen"),
+					L.T("Shows the app on the whole screen, without the window's frame or the browser's bars. In a browser it starts at your first tap or key. F11 turns it on and off too. Yours on all your devices."),
+					fullScreen));
+			}
+
+			// Where MIDI can be sent: which Yamaha keyboards get the member's transpose (at the end of Playback).
+			if (App.Midi != null)
+			{
+				form.Children.Insert(form.Children.IndexOf(colorsSection), Setting(
+					L.T("Transpose to Yamaha keyboards"),
+					L.T("Sets the keyboard transpose of the chosen keyboards on the MIDI outputs to your transpose or capo for each song (by MIDI System Exclusive). On this device."),
+					YamahaTransposeChoice()));
+			}
+
 			// Scrolls when the settings don't fit (a short window or a large interface size).
 			form.Margin = new Thickness(0, 0, 0, 16);
-			var scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
+			scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
 			Content = PageLayout.Page(L.T("Settings"), scroller, subtitle: L.T("Kept on this device"), closable: true, icon: AppIcons.Settings);
+		}
+
+		private readonly ScrollViewer scroller;
+
+		// The first of the capo settings (capo or transpose), to scroll to (see ScrollToCapo).
+		private readonly Control capoRow;
+
+		/// <summary>
+		/// Once the page is laid out, scrolls it so the capo settings are at the top (as far as it
+		/// scrolls), e.g. when it's opened from the transpose dialog.
+		/// </summary>
+		public void ScrollToCapo()
+		{
+			void OnLayout(object? sender, EventArgs e)
+			{
+				if (scroller.Viewport.Height <= 0 || capoRow.Bounds.Height <= 0 || scroller.Content is not Control form)
+				{
+					return; // Not laid out yet.
+				}
+
+				scroller.LayoutUpdated -= OnLayout;
+				if (capoRow.TranslatePoint(default, form) is { } top)
+				{
+					var room = Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height);
+					scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(top.Y, 0, room));
+				}
+			}
+
+			scroller.LayoutUpdated += OnLayout;
 		}
 
 		/// <summary>
@@ -229,7 +281,7 @@ namespace Lyrious.UILib.Setlists
 						new TextBlock { Text = L.T("Convert the songs to Lyrious format?"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
 						new TextBlock
 						{
-							Text = L.T("Each song then starts with a heading of its key and name (\"# [D]Amazing Grace\"), comments such as {c: Verse 1} become headings (\"## Verse 1\"), and a heading like \"# [d] Intro\" becomes \"# [D]Intro\". Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist, and a ✓ in a name or the lyrics becomes the tag ✓."),
+							Text = L.T("Comments such as {c: Verse 1} then become headings (\"## Verse 1\"), and a heading like \"# [d] Intro\" becomes \"# [D]Intro\". Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist, and a ✓ in a name or the lyrics becomes the tag ✓."),
 							TextWrapping = TextWrapping.Wrap,
 							Opacity = 0.8,
 						},
@@ -354,7 +406,8 @@ namespace Lyrious.UILib.Setlists
 		private static Control ColorSetting(string name, string explanation, Func<Color?> get, Action<Color?> set, string defaultName, string defaultResource)
 		{
 			var swatch = new Border { Width = 28, Height = 28, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.Gray, 0.6) };
-			var label = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 4, 0), TextTrimming = TextTrimming.CharacterEllipsis };
+			var label = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 4, 0) };
+
 			var button = new Button
 			{
 				Padding = new Thickness(6),
@@ -383,8 +436,8 @@ namespace Lyrious.UILib.Setlists
 				swatch.IsVisible = shown != null;
 				label.Text = (chosen, themeColor) switch
 				{
+					// A colour of one's own by its value; the theme's by its name only.
 					({ } value, _) => ColorSettings.ToHex(value),
-					(null, { } theme) => $"{ColorSettings.ToHex(theme)} · {defaultName}",
 					_ => defaultName,
 				};
 				preview.Background = swatch.Background;
@@ -519,6 +572,138 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		/// <summary>
+		/// The interface size (see <see cref="UiScale"/>): a list of sizes, applied when picked, whose box
+		/// can be typed in too: a whole percentage from 30 to 300 (only digits can be typed, never more than
+		/// 300), applied with Enter or when the box is left; anything else gives the size back as it was.
+		/// </summary>
+		private static ComboBox InterfaceSizeChoice()
+		{
+			const int least = 30, most = 300;
+			var scale = new ComboBox
+			{
+				IsEditable = true,
+				Width = 110,
+				ItemsSource = UiScale.Choices.Select(UiScale.Describe).ToList(),
+				Text = UiScale.Describe(UiScale.Value),
+			};
+
+			// The percentage in the box ("125", "125%", "125 %"), if it's a whole number.
+			static int? Percent(string? text)
+				=> int.TryParse((text ?? "").Replace("%", "").Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var value) ? value : null;
+
+			void ShowCurrent() => scale.Text = UiScale.Describe(UiScale.Value);
+
+			// The size in the box, if it's one (30–300 %); else the size back as it was.
+			void Apply()
+			{
+				if (Percent(scale.Text) is >= least and <= most and var percent)
+				{
+					if (Math.Abs(UiScale.Value * 100 - percent) > 0.01)
+					{
+						UiScale.Value = percent / 100.0;
+					}
+				}
+
+				ShowCurrent();
+			}
+
+			// Picked in the list: applied at once.
+			scale.SelectionChanged += (_, _) =>
+			{
+				if (scale.IsDropDownOpen && scale.SelectedItem is string)
+				{
+					Avalonia.Threading.Dispatcher.UIThread.Post(Apply);
+				}
+			};
+			scale.DropDownClosed += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(Apply);
+
+			// Typed: only digits, without a 0 first, never more than 300 (checked before it's in the text).
+			scale.AddHandler(InputElement.TextInputEvent, (_, e) =>
+			{
+				if (e.Source is not TextBox input || string.IsNullOrEmpty(e.Text))
+				{
+					return;
+				}
+
+				e.Handled = true;
+				var text = (input.Text ?? "").Replace("%", "").Trim();
+				var start = Math.Clamp(Math.Min(input.SelectionStart, input.SelectionEnd), 0, text.Length);
+				var end = Math.Clamp(Math.Max(input.SelectionStart, input.SelectionEnd), 0, text.Length);
+				var typed = new string(e.Text.Where(char.IsAsciiDigit).ToArray());
+				var result = text[..start] + typed + text[end..];
+				if (typed.Length == 0 || result.StartsWith('0') || result.Length > 3 || Percent(result) > most)
+				{
+					return;
+				}
+
+				input.Text = result;
+				input.SelectionStart = input.SelectionEnd = input.CaretIndex = start + typed.Length;
+			}, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
+			// Enter, or the box left: the size typed.
+			scale.AddHandler(InputElement.KeyDownEvent, (_, e) =>
+			{
+				if (e.Key == Key.Enter && !scale.IsDropDownOpen)
+				{
+					e.Handled = true;
+					Apply();
+				}
+			}, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+			scale.LostFocus += (_, _) =>
+			{
+				if (!scale.IsKeyboardFocusWithin && !scale.IsDropDownOpen)
+				{
+					Apply();
+				}
+			};
+			return scale;
+		}
+
+		/// <summary>
+		/// The Yamaha keyboards that get the member's transpose (see <see cref="Midi.YamahaTransposeModels"/>):
+		/// a drop-down of check boxes, one per model, saved at once; the button says which are chosen.
+		/// A keyboard taken off the list gets its transpose back to 0, so it isn't left transposed.
+		/// </summary>
+		private static Control YamahaTransposeChoice()
+		{
+			var button = new DropDownButton { MinWidth = 100 };
+			void ShowChosen()
+			{
+				var chosen = Midi.YamahaTransposeModels;
+				button.Content = chosen.Count == 0 ? L.T("None") : string.Join(", ", chosen);
+			}
+
+			var list = new StackPanel { Spacing = 4 };
+			foreach (var model in Midi.YamahaModels)
+			{
+				var box = new CheckBox { Content = model, IsChecked = Midi.YamahaTransposeModels.Contains(model) };
+				box.IsCheckedChanged += (_, _) =>
+				{
+					var models = Midi.YamahaTransposeModels.ToList();
+					if (box.IsChecked == true)
+					{
+						if (!models.Contains(model))
+						{
+							models.Add(model);
+						}
+					}
+					else if (models.Remove(model))
+					{
+						Midi.SendYamahaTranspose(0, [model]);
+					}
+
+					Midi.YamahaTransposeModels = models;
+					ShowChosen();
+				};
+				list.Children.Add(box);
+			}
+
+			button.Flyout = new Flyout { Content = list, Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedRight };
+			ShowChosen();
+			return button;
+		}
+
 		/// <summary>One setting: its name and an explanation, with its control at the right.</summary>
 		private static Control Setting(string name, string explanation, Control control)
 		{
@@ -560,6 +745,62 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Raised when <see cref="ShowSongHeader"/> changes.</summary>
 		public static event Action? ShowSongHeaderChanged;
+
+		/// <summary>
+		/// Whether the member counts their own transpose as a capo (see <see cref="SettingKeys.CapoMode"/>):
+		/// capo n moves the chords n semitones down (capo +1 makes G F#), −11 to +11; else a transpose in
+		/// semitones. Only how it's shown and stepped: a song keeps its transpose (capo n is the transpose −n).
+		/// Kept with the user (see <see cref="UserSettings"/>); off unless turned on.
+		/// </summary>
+		public static bool CapoMode
+		{
+			get => App.Settings.Get(SettingKeys.CapoMode) == "true";
+			set
+			{
+				App.Settings.Set(SettingKeys.CapoMode, value ? "true" : null);
+				UserSettings.ChangedHere();
+				CapoModeChanged?.Invoke();
+			}
+		}
+
+		/// <summary>Raised when <see cref="CapoMode"/> is changed here (a change from another device raises <see cref="UserSettings.Changed"/>).</summary>
+		public static event Action? CapoModeChanged;
+
+		/// <summary>
+		/// Whether the lyrics page has the chord grid button (see <see cref="SettingKeys.ChordGridButton"/>);
+		/// without it the lyrics show chords over the words. Kept with the user; on unless turned off.
+		/// </summary>
+		public static bool ChordGridButton
+		{
+			get => App.Settings.Get(SettingKeys.ChordGridButton) != "false";
+			set
+			{
+				App.Settings.Set(SettingKeys.ChordGridButton, value ? null : "false");
+				UserSettings.ChangedHere();
+				ChordGridButtonChanged?.Invoke();
+			}
+		}
+
+		/// <summary>Raised when <see cref="ChordGridButton"/> is changed here (a change from another device raises <see cref="UserSettings.Changed"/>).</summary>
+		public static event Action? ChordGridButtonChanged;
+
+		/// <summary>
+		/// Whether the app is shown full screen (the desktop's window; see <see cref="MainWindow"/>; F11
+		/// turns it on and off too). Kept with the user; off unless turned on.
+		/// </summary>
+		public static bool FullScreen
+		{
+			get => App.Settings.Get(SettingKeys.FullScreen) == "true";
+			set
+			{
+				App.Settings.Set(SettingKeys.FullScreen, value ? "true" : null);
+				UserSettings.ChangedHere();
+				FullScreenChanged?.Invoke();
+			}
+		}
+
+		/// <summary>Raised when <see cref="FullScreen"/> is changed here (a change from another device raises <see cref="UserSettings.Changed"/>).</summary>
+		public static event Action? FullScreenChanged;
 
 		/// <summary>The smaller of the window's width and height at which <see cref="DynamicZoom"/> is 100 %.</summary>
 		public const double DynamicZoomSize = 500;

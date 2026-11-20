@@ -2303,11 +2303,36 @@ namespace Lyrious.UILib.Setlists
 				}
 			}
 
-			// Shown the first time, and later only when something is new: changes, or release notes.
-			var anythingNew = lastVisit == null || changes is { Count: > 0 } || ReleaseNotes.Since(lastVisit).Count > 0;
+			// Bands the member is invited to (not accepted yet): shown first, with Accept.
+			var invitations = new List<OnboardingView.Invitation>();
+			try
+			{
+				var groups = await service.GetGroupsAsync();
+				var members = await service.GetGroupMembersAsync();
+				foreach (var group in groups.Where(g => !g.IsPrivate))
+				{
+					if (members.TryGetValue(group.Id, out var list) && list.FirstOrDefault(m => m.IsMe) is { Approved: false })
+					{
+						invitations.Add(new OnboardingView.Invitation(group, list.Where(m => m.Approved && !m.IsMe).Select(m => m.Name).ToList()));
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				// Without them (e.g. offline): the bands page still shows them, with Accept and join.
+				System.Diagnostics.Debug.WriteLine($"Couldn't get the invitations: {ex.Message}");
+			}
+
+			// Shown the first time, and later only when something is new: an invitation, changes, or release notes.
+			var anythingNew = lastVisit == null || invitations.Count > 0 || changes is { Count: > 0 } || ReleaseNotes.Since(lastVisit).Count > 0;
 			if (anythingNew)
 			{
-				var view = new OnboardingView(user.DisplayName, lastVisit, changes);
+				var view = new OnboardingView(user.DisplayName, lastVisit, changes, invitations, async band =>
+				{
+					// Joining accepts the invitation; the band becomes the current one (the menu follows).
+					await service.SelectGroupAsync(band.Id);
+					await OpenStartPageAsync(showPage: false);
+				});
 				view.Continued += GoBack;
 				page.Content = view;
 			}
@@ -2760,6 +2785,7 @@ namespace Lyrious.UILib.Setlists
 			ShowMidiProblems(view, group.Id);
 			// Back to the songbook it was opened from (nothing changed), which ✕ then leaves as usual.
 			view.EditCancelled += GoBack;
+			view.SettingsRequested += ShowCapoSettings;
 			view.SongSaved += saved => _ = RunAsync(async () =>
 			{
 				SongEdited(saved);
@@ -2898,6 +2924,8 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="groupId">The band the song is shown from (its MIDI commands are sent when it starts and stops).</param>
 		private void ShowLyricsPage(LyricScrollView view, Guid groupId)
 		{
+			// From the transpose dialog (capo or transpose is chosen there); its ✕ comes back to the song.
+			view.SettingsRequested += ShowCapoSettings;
 			// A tap on the lyrics shows the toolbars when they're hidden; it hides them only while the
 			// lyrics scroll by themselves (when stopped, they stay, as a tap is then likely a mistake).
 			view.FocusModeToggled += () =>
@@ -3135,21 +3163,37 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
-		/// <summary>The settings page; its ✕ goes back to the page before.</summary>
-		private void ShowSettings()
+		/// <summary>The settings page, with the band's settings when there's a band; its ✕ goes back to the page before.</summary>
+		/// <param name="toCapo">Scrolled to the capo settings (from the transpose dialog).</param>
+		private void ShowSettings(bool toCapo)
 		{
+			SettingsView view;
 			if (currentGroup is not { } group)
 			{
-				page.Content = new SettingsView();
-				return;
+				view = new SettingsView();
+			}
+			else
+			{
+				// The band settings are made once the band (and the member's role in it) is read: an empty
+				// place for them until then.
+				var bandSettings = new ContentControl();
+				view = new SettingsView((anchor, convert) => ImportSongbookProAsync(anchor, group, convert), () => ClearSongbookAsync(group), group.Name, bandSettings);
+				_ = ShowBandSettingsAsync(group.Id, bandSettings);
 			}
 
-			// The band settings are made once the band (and the member's role in it) is read: an empty
-			// place for them until then.
-			var bandSettings = new ContentControl();
-			page.Content = new SettingsView((anchor, convert) => ImportSongbookProAsync(anchor, group, convert), () => ClearSongbookAsync(group), group.Name, bandSettings);
-			_ = ShowBandSettingsAsync(group.Id, bandSettings);
+			if (toCapo)
+			{
+				view.ScrollToCapo();
+			}
+
+			page.Content = view;
 		}
+
+		/// <summary>The settings page; its ✕ goes back to the page before.</summary>
+		private void ShowSettings() => ShowSettings(toCapo: false);
+
+		/// <summary>The settings page at its capo settings (the transpose dialog's link); its ✕ goes back to the song.</summary>
+		private void ShowCapoSettings() => ShowSettings(toCapo: true);
 
 		/// <summary>
 		/// The band's settings (its MIDI for every song), saved with the band so they're the same for all

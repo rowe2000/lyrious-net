@@ -215,12 +215,13 @@ namespace Lyrious.UILib.Setlists
 			var current = isCurrent ? currentEntryId : null;
 			songs.Content = new SelectableList<SetlistEntry>(
 				entries,
-				entry => SongsView.SongRow(entry.Song, null, entry.Id == current),
+				entry => SongsView.SongRow(entry.Song, null, entry.Id == current, SongsView.SongListExtraHeight),
 				entry => entry.Id == current,
 				_ => [],
 				entry => SongSelected?.Invoke(setlist, entry),
 				L.T("There are no songs in this setlist yet. Add some with +."),
-				activateOnClick: true);
+				activateOnClick: true,
+				rowPadding: SongsView.SongListRowPadding);
 		}
 	}
 }

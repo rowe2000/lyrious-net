@@ -67,6 +67,7 @@ namespace Lyrious.UILib
 			ColorSettings.Apply();
 			EscapeKey.Register();
 			TextBoxFocus.Register();
+			FullScreen.Register();
 			UiScale.RegisterPopups();
 			StartMainView();
 		}

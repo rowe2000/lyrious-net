@@ -455,29 +455,16 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>
 		/// A song's row as the songbook shows it: its name, and at the right its tags, then its key, tempo
 		/// and beat at the right, after <paramref name="note"/> (e.g. "in setlist") when there is one;
-		/// the current song has a check at the very right.
+		/// the current song has a check at the very right. When the name wouldn't fit, the tags, media
+		/// and details go on two lines to give it room (see <see cref="SongLinePanel"/>).
 		/// </summary>
-		internal static Control SongRow(SongDetails song, string? note, bool isCurrent = false)
+		/// <param name="oneLineExtraHeight">Added to the row's height on one line, as its least height (see <see cref="SongLinePanel.OneLineExtraHeight"/>).</param>
+		internal static Control SongRow(SongDetails song, string? note, bool isCurrent = false, double oneLineExtraHeight = 0)
 		{
-			// At the right the key, tempo and beat, and before them the tags: docked, they keep their
-			// room, and the name (last, filling the rest) is trimmed with "…" when it doesn't fit.
-			var row = new DockPanel();
-			if (isCurrent)
-			{
-				row.Children.Add(PageLayout.CurrentCheck(L.T("The current song")));
-			}
-
-			var info = PageLayout.SongInfoText(song, note);
-			info.Margin = new Avalonia.Thickness(12, 0, 0, 0);
-			DockPanel.SetDock(info, Dock.Right);
-			row.Children.Add(info);
-			// The media icons between the tags and the key, tempo and beat.
-			if (MediaIcons(song) is { } media)
-			{
-				media.Margin = new Avalonia.Thickness(10, 0, 0, 0);
-				DockPanel.SetDock(media, Dock.Right);
-				row.Children.Add(media);
-			}
+			// The name, then at the right the tags, the media icons, and the key, tempo and beat; the name
+			// is trimmed with "…" when it doesn't fit even with those on two lines.
+			var line = new SongLinePanel { OneLineExtraHeight = oneLineExtraHeight };
+			line.Children.Add(new TextBlock { Text = song.Name, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
 
 			var tags = SongTags.Sorted(song.Tags);
 			if (tags.Count > 0)
@@ -485,11 +472,28 @@ namespace Lyrious.UILib.Setlists
 				var chips = PageLayout.TagChips(tags);
 				chips.Margin = new Avalonia.Thickness(10, 0, 0, 0);
 				chips.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
-				DockPanel.SetDock(chips, Dock.Right);
-				row.Children.Add(chips);
+				line.Children.Add(chips);
 			}
 
-			row.Children.Add(new TextBlock { Text = song.Name, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+			// The media icons between the tags and the key, tempo and beat.
+			if (MediaIcons(song) is { } media)
+			{
+				media.Margin = new Avalonia.Thickness(10, 0, 0, 0);
+				line.Children.Add(media);
+			}
+
+			var info = PageLayout.SongInfoText(song, note);
+			info.Margin = new Avalonia.Thickness(12, 0, 0, 0);
+			line.Children.Add(info);
+
+			var row = new DockPanel();
+			if (isCurrent)
+			{
+				// Docked at the very right.
+				row.Children.Add(PageLayout.CurrentCheck(L.T("The current song")));
+			}
+
+			row.Children.Add(line);
 			return row;
 		}
 
@@ -545,14 +549,25 @@ namespace Lyrious.UILib.Setlists
 			checkBoxes.Clear();
 			var list = new SelectableList<SongDetails>(
 				songs,
-				song => CheckableRow(song, SongRow(song, null, song.Id == currentSongId)),
+				song => CheckableRow(song, SongRow(song, null, song.Id == currentSongId, SongListExtraHeight)),
 				song => song.Id == currentSongId,
 				song => SongTools(song, song.Id == currentSongId),
 				song => SongSelected?.Invoke(song),
-				emptyText);
+				emptyText,
+				rowPadding: SongListRowPadding);
 			DimCheckBoxes();
 			return list;
 		}
+
+		/// <summary>
+		/// The room above and below the songs in the songbook and setlists: less than other lists, so a
+		/// song on two lines (a long name) takes little more room; on one line a song row keeps the usual
+		/// height by <see cref="SongListExtraHeight"/>.
+		/// </summary>
+		internal static readonly Avalonia.Thickness SongListRowPadding = new(SelectableList<SongDetails>.RowPadding.Left, 4);
+
+		/// <summary>What a song row on one line adds for the room the song lists leave out (see <see cref="SongListRowPadding"/>).</summary>
+		internal static readonly double SongListExtraHeight = SelectableList<SongDetails>.RowPadding.Top + SelectableList<SongDetails>.RowPadding.Bottom - SongListRowPadding.Top - SongListRowPadding.Bottom;
 
 		/// <summary>A song's row with a check box at its left, to choose several songs for the setlist tool.</summary>
 		private Control CheckableRow(SongDetails song, Control row)

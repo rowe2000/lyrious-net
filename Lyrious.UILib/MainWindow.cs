@@ -11,13 +11,18 @@ namespace Lyrious.UILib
 	/// The app's window (desktop). It opens where it was when the app last closed: the same place, size
 	/// and maximized or not (see <see cref="SettingKeys.WindowPlacement"/>), unless that place is no
 	/// longer on any screen (e.g. a screen that was unplugged); then where the system puts it.
+	/// It's the desktop's way of showing the app full screen (see <see cref="FullScreen"/>).
 	/// </summary>
-	public class MainWindow : Window
+	public class MainWindow : Window, IFullScreenHost
 	{
 		// The window's place and size while it was last neither maximized nor minimized, kept when it's
 		// maximized, so it goes back to it.
 		private PixelPoint normalPosition;
 		private Size normalSize;
+
+		// Maximized or not before full screen, to go back to; and whether a change of state is ours.
+		private WindowState beforeFullScreen = WindowState.Normal;
+		private bool settingState;
 
 		public MainWindow()
 		{
@@ -27,6 +32,49 @@ namespace Lyrious.UILib
 			PositionChanged += (_, _) => RememberNormal();
 			Resized += (_, _) => RememberNormal();
 			Closing += (_, _) => SavePlacement();
+			// Shown (and placed): full screen if the member wants it.
+			Opened += (_, _) => FullScreen.Host = this;
+		}
+
+		public bool IsSupported => true;
+
+		public event Action? Exited;
+
+		public void Set(bool on)
+		{
+			if (on == (WindowState == WindowState.FullScreen))
+			{
+				return;
+			}
+
+			settingState = true;
+			try
+			{
+				if (on)
+				{
+					beforeFullScreen = WindowState == WindowState.Maximized ? WindowState.Maximized : WindowState.Normal;
+					WindowState = WindowState.FullScreen;
+				}
+				else
+				{
+					WindowState = beforeFullScreen;
+				}
+			}
+			finally
+			{
+				settingState = false;
+			}
+		}
+
+		protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+		{
+			base.OnPropertyChanged(change);
+			// Out of full screen otherwise than by Set (e.g. by the system): the setting follows.
+			if (change.Property == WindowStateProperty && !settingState
+			    && change.OldValue is WindowState.FullScreen && change.NewValue is not WindowState.FullScreen)
+			{
+				Exited?.Invoke();
+			}
 		}
 
 		private void RememberNormal()
@@ -92,7 +140,8 @@ namespace Lyrious.UILib
 				normalPosition.Y.ToString(CultureInfo.InvariantCulture),
 				Math.Round(normalSize.Width).ToString(CultureInfo.InvariantCulture),
 				Math.Round(normalSize.Height).ToString(CultureInfo.InvariantCulture));
-			if (WindowState == WindowState.Maximized)
+			// Full screen comes from its own setting; the placement keeps what it was before it.
+			if (WindowState == WindowState.Maximized || (WindowState == WindowState.FullScreen && beforeFullScreen == WindowState.Maximized))
 			{
 				placement += ",max";
 			}

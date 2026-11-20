@@ -30,12 +30,13 @@ namespace Lyrious.UILib.Setlists
 
 			var list = new SelectableList<SetlistEntry>(
 				entries,
-				entry => SongsView.SongRow(entry.Song, null, entry.Id == currentEntryId),
+				entry => SongsView.SongRow(entry.Song, null, entry.Id == currentEntryId, SongsView.SongListExtraHeight),
 				entry => entry.Id == currentEntryId,
 				_ => [],
 				entry => SongSelected?.Invoke(entry),
 				L.T("There are no songs in this setlist yet."),
-				activateOnClick: true);
+				activateOnClick: true,
+				rowPadding: SongsView.SongListRowPadding);
 
 			Content = PageLayout.Page(
 				setlist.Name,

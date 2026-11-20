@@ -25,7 +25,7 @@ namespace Lyrious.UILib.Setlists
 			RoutedEvent.Register<Control, RoutedEventArgs>("PageCloseRequested", RoutingStrategies.Bubble);
 
 		/// <summary>
-		/// A centered, width-limited column with an optional back link, a title and content.
+		/// A page as wide as the app, with an optional back link, a title and content.
 		/// <paramref name="titleAction"/> is a control (e.g. an add button) shown at the right of the title.
 		/// <paramref name="closable"/> adds a ✕ at the far right that goes back to the page before.
 		/// </summary>
@@ -62,7 +62,8 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private static Control Page(string title, Control content, Control? backLink, string? subtitle = null, Control? titleAction = null, string? icon = null)
 		{
-			var column = new DockPanel { MaxWidth = 640, Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Stretch };
+			// The whole width of the app (as the song pages), not a narrow column in the middle.
+			var column = new DockPanel { Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Stretch };
 
 			// A header with an icon (a page from the left drawer) has 4px more room below it.
 			var header = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, icon != null ? 8 : 4) };
@@ -345,6 +346,12 @@ namespace Lyrious.UILib.Setlists
 		{
 			var button = HomeView.IconButton(OkIcon, description);
 			button.Classes.Add("accent");
+			// The check bolder than the other icons' lines.
+			if (button.Content is Avalonia.Controls.Shapes.Shape check)
+			{
+				check.StrokeThickness = 3;
+			}
+
 			return button;
 		}
 
@@ -559,20 +566,44 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// Gives an icon button (e.g. the trash) a red background with a white icon while the
-		/// pointer is over it or it's pressed.
+		/// pointer is over it or it's pressed. Only the button itself: the buttons in a popup it opens
+		/// (e.g. Cancel in "Delete?") hover grey as usual. (Through the button's resources they'd be
+		/// red too, as a popup's content takes its owner's resources.)
 		/// </summary>
 		public static void RedOnHover(Button button)
 		{
-			button.Resources["ButtonBackgroundPointerOver"] = new SolidColorBrush(Color.Parse("#D13438"));
-			button.Resources["ButtonBackgroundPressed"] = new SolidColorBrush(Color.Parse("#A4262C"));
-			button.Resources["ButtonForegroundPointerOver"] = Brushes.White;
-			button.Resources["ButtonForegroundPressed"] = Brushes.White;
+			button.Classes.Add(RedHoverClass);
+			button.Styles.Add(RedHoverStyle(":pointerover", "#D13438"));
+			button.Styles.Add(RedHoverStyle(":pressed", "#A4262C"));
 			// The icon follows the button's text colour (white over the red), instead of the theme's.
 			if (button.Content is Avalonia.Controls.Shapes.Shape icon)
 			{
 				icon.Bind(Avalonia.Controls.Shapes.Shape.StrokeProperty, icon.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
 			}
 		}
+
+		// Marks the buttons that hover red (see RedOnHover).
+		private const string RedHoverClass = "red-hover";
+
+		/// <summary>
+		/// The red of a <see cref="RedOnHover"/> button in a state (":pointerover" or ":pressed"): on the
+		/// part of its template that draws the background, as the theme's own hover does, and with a white icon.
+		/// </summary>
+		private static Avalonia.Styling.Style RedHoverStyle(string state, string color) => new(x =>
+			Avalonia.Styling.Selectors.Name(
+				Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Presenters.ContentPresenter>(
+					Avalonia.Styling.Selectors.Template(
+						Avalonia.Styling.Selectors.Class(
+							Avalonia.Styling.Selectors.Class(Avalonia.Styling.Selectors.OfType<Button>(x), RedHoverClass),
+							state))),
+				"PART_ContentPresenter"))
+		{
+			Setters =
+			{
+				new Avalonia.Styling.Setter(Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, new SolidColorBrush(Color.Parse(color))),
+				new Avalonia.Styling.Setter(Avalonia.Controls.Presenters.ContentPresenter.ForegroundProperty, Brushes.White),
+			},
+		};
 
 		/// <summary>A strong red button with bold white text, for confirming a delete or remove.</summary>
 		public static Button DangerButton(string text)

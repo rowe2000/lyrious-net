@@ -46,6 +46,8 @@ internal sealed partial class Program
         App.SoundStore = new BrowserSoundStore();
         // The MIDI tags in songs go to every MIDI output the browser offers.
         App.Midi = new BrowserMidiOutput();
+        // Full screen as the member chose (Settings), at their first tap or key when it can't be at once.
+        FullScreen.Host = new BrowserFullScreen();
 
         return BuildAvaloniaApp()
             .WithInterFont()

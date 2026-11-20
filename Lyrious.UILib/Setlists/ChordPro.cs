@@ -25,9 +25,9 @@ namespace Lyrious.UILib.Setlists
 	/// {chorus} as "Chorus"; {start_of_chorus}/{soc} … {end_of_chorus}/{eoc} is indented with a bar;
 	/// {start_of_tab}/{sot} … {end_of_tab}/{eot} is shown in a fixed-width font. Title, artist, key,
 	/// tempo and other directives are left out (the song's header shows those).</item>
-	/// <item>Headings as in Markdown: "# " is heading 1, "## " heading 2, … "###### " heading 6.
-	/// A '#' not followed by a space is a ChordPro comment and isn't shown. Time tags may come before
-	/// the '#' (e.g. "[0:12]# Verse"): the line is still a heading (or comment), marked at that time.</item>
+	/// <item>Headings as in Markdown: "# " is heading 1, "## " heading 2, … "###### " heading 6; the
+	/// space may be left out ("#Verse", "##Chorus"). A line of only '#'s isn't shown. Time tags may come
+	/// before the '#' (e.g. "[0:12]# Verse"): the line is still a heading, marked at that time.</item>
 	/// <item>Time tags (not shown): "[1:23]" is a time from the start of the song (minutes:seconds,
 	/// tenths allowed); "[12]" is a bar count from the start, turned into a time with the song's tempo
 	/// and beats per bar. Their places in the lyrics come back as <see cref="TimeMarker"/>s, so the
@@ -217,12 +217,37 @@ namespace Lyrious.UILib.Setlists
 				{
 					var level = heading.Groups[1].Length;
 					var headingText = heading.Groups[2].Value;
+
+					// Headings of other levels further on the line ("#Title ####tags"): side by side.
+					var parts = HeadingParts(level, headingText);
+					if (parts.Count > 1)
+					{
+						var row = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, fontSize * 0.5, 0, fontSize * 0.2) };
+						foreach (var (partLevel, partText) in parts)
+						{
+							var part = BracketTag().Matches(partText).Any(tag => IsChord(tag.Groups[1].Value))
+								? HeadingStyle(ChordLine(partText, Math.Round(fontSize * HeadingScale(partLevel)), lineHeight * HeadingScale(partLevel), Resolve, markers, compact: true), partLevel, fontSize)
+								: (Control)Heading(partLevel, BracketTag().Replace(partText, "").Trim(), fontSize);
+							// In the row's room (not each its own), on the row's bottom, a space apart.
+							part.Margin = new Thickness(0, 0, fontSize * 0.5, 0);
+							part.VerticalAlignment = VerticalAlignment.Bottom;
+							row.Children.Add(part);
+						}
+
+						row.Classes.Add(LyricsClasses.Heading);
+						Mark(TimesOn(trimmed[..trimmed.IndexOf('#')]), row);
+						current.Children.Add(row);
+						continue;
+					}
+
+					headingText = parts.Count == 1 ? parts[0].Text : headingText;
 					if (BracketTag().Matches(headingText).Any(tag => IsChord(tag.Groups[1].Value)))
 					{
 						// Chords in the heading: over its words, as on a lyrics line, in the heading's size and colour.
 						// The time tags before the '#' come first (a '+' tag counts from the one before it).
 						var before = TimesOn(trimmed[..trimmed.IndexOf('#')]);
-						var row = HeadingStyle(ChordLine(headingText, Math.Round(fontSize * HeadingScale(level)), lineHeight * HeadingScale(level), Resolve, markers), level, fontSize);
+						// Compact: when the heading wraps, its lines are as close as plain text's.
+						var row = HeadingStyle(ChordLine(headingText, Math.Round(fontSize * HeadingScale(level)), lineHeight * HeadingScale(level), Resolve, markers, compact: true), level, fontSize);
 						Mark(before, row);
 						current.Children.Add(row);
 						continue;
@@ -236,7 +261,7 @@ namespace Lyrious.UILib.Setlists
 
 				if (!inTab && LeadingTimeTags().Replace(trimmed, "").StartsWith('#'))
 				{
-					// A ChordPro comment ('#' with no space after it), for the writer only. A time tag
+					// Only '#'s (no heading after them, or more than six): nothing to show. A time tag
 					// before it still marks its place.
 					if (TimesOn(line) is { Count: > 0 } commentTimes)
 					{
@@ -473,7 +498,12 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		/// <param name="timeOf">A time tag's time (called once per tag, in order).</param>
 		/// <param name="markers">Time tags on the line are added here, each at its place in the row.</param>
-		private static Control ChordLine(string line, double fontSize, double lineHeight, Func<string, TimeSpan?> timeOf, List<TimeMarker> markers)
+		/// <param name="compact">
+		/// For a heading: words without a chord keep no room for one (they sit at the bottom of their
+		/// line, on the line's baseline) and the words have the font's own line spacing, so a heading
+		/// that wraps has its lines as close as in plain text; only a line with a chord is taller.
+		/// </param>
+		private static Control ChordLine(string line, double fontSize, double lineHeight, Func<string, TimeSpan?> timeOf, List<TimeMarker> markers, bool compact = false)
 		{
 			var chordSize = fontSize; // Chords as large as the lyrics.
 			var chordHeight = Math.Round(chordSize * 1.35);
@@ -492,7 +522,7 @@ namespace Lyrious.UILib.Setlists
 					// An invisible, zero-width mark where the time tag was: it wraps with the words around it.
 					if (timeOf(timeTag) is { } time)
 					{
-						var place = new Border { Width = 0, Height = chordHeight + lineHeight };
+						var place = new Border { Width = 0, Height = compact ? 0 : chordHeight + lineHeight };
 						markers.Add(new TimeMarker(time, place));
 						row.Children.Add(place);
 					}
@@ -511,14 +541,23 @@ namespace Lyrious.UILib.Setlists
 						continue;
 					}
 
-					var wordBlock = new TextBlock { FontSize = fontSize, LineHeight = lineHeight };
+					var wordBlock = compact ? new TextBlock { FontSize = fontSize } : new TextBlock { FontSize = fontSize, LineHeight = lineHeight };
 					SetStyledText(wordBlock, words, styles, offset, pieces[i].Length);
 					offset += pieces[i].Length;
 					if (chordText == null)
 					{
 						// Most words have no chord: just the word, where it would be under one (a long
-						// song has hundreds of these, so each is one control, not three).
-						wordBlock.Margin = new Thickness(0, chordHeight, 0, 0);
+						// song has hundreds of these, so each is one control, not three). In a compact
+						// line, at the bottom of its line instead, without the room for a chord.
+						if (compact)
+						{
+							wordBlock.VerticalAlignment = VerticalAlignment.Bottom;
+						}
+						else
+						{
+							wordBlock.Margin = new Thickness(0, chordHeight, 0, 0);
+						}
+
 						row.Children.Add(wordBlock);
 						continue;
 					}
@@ -533,7 +572,7 @@ namespace Lyrious.UILib.Setlists
 						Margin = new Thickness(0, 0, chordSize * 0.4, 0),
 					};
 					chordBlock.Bind(TextBlock.ForegroundProperty, chordBlock.GetResourceObservable(LyriousTheme.ChordBrush));
-					row.Children.Add(new StackPanel { Orientation = Orientation.Vertical, Children = { chordBlock, wordBlock } });
+					row.Children.Add(new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = compact ? VerticalAlignment.Bottom : VerticalAlignment.Top, Children = { chordBlock, wordBlock } });
 				}
 			}
 
@@ -833,11 +872,53 @@ namespace Lyrious.UILib.Setlists
 		private static partial Regex TimeTag();
 
 		/// <summary>
-		/// A Markdown heading line: one to six '#', a space, then the heading. Hidden tags (time
-		/// tags, "midi:" tags) may come before the '#', e.g. "[0:12]# Verse".
+		/// A Markdown heading line: one to six '#', then the heading, with or without a space between
+		/// ("# Verse" or "#Verse"; the heading doesn't start with another '#'). Hidden tags (time tags,
+		/// "midi:" tags) may come before the '#', e.g. "[0:12]# Verse".
 		/// </summary>
-		[GeneratedRegex(@"^\s*(?:\[\s*(?:\+?\d|[Mm][Ii][Dd][Ii]:)[^\]\n]*\]\s*)*(#{1,6})\s+(.*\S)\s*$", RegexOptions.Multiline)]
+		[GeneratedRegex(@"^\s*(?:\[\s*(?:\+?\d|[Mm][Ii][Dd][Ii]:)[^\]\n]*\]\s*)*(#{1,6})\s*([^#\s](?:.*\S)?)\s*$", RegexOptions.Multiline)]
 		private static partial Regex HeadingLine();
+
+		/// <summary>
+		/// A heading's text in its parts, each with its level: further headings on the same line start
+		/// with one to six '#' after a space ("Title ####tags" is "Title" at the heading's level and
+		/// "tags" at level 4). '#' right after another character (e.g. "C#") isn't one. A '#' run with
+		/// nothing after it (e.g. "Title ####" when the tags were empty) is left out.
+		/// </summary>
+		private static List<(int Level, string Text)> HeadingParts(int level, string text)
+		{
+			var parts = new List<(int Level, string Text)>();
+			var marks = InlineHeading().Matches(text);
+			var start = 0;
+			var partLevel = level;
+			foreach (Match mark in marks)
+			{
+				Add(partLevel, text[start..mark.Index]);
+				partLevel = mark.Groups[1].Length;
+				start = mark.Index + mark.Length;
+			}
+
+			Add(partLevel, text[start..]);
+			return parts;
+
+			void Add(int partLevel, string partText)
+			{
+				// Without a '#' run at its end that has nothing after it.
+				partText = TrailingHashes().Replace(partText, "").Trim();
+				if (partText.Length > 0)
+				{
+					parts.Add((partLevel, partText));
+				}
+			}
+		}
+
+		/// <summary>A further heading on a heading line: a space, one to six '#' (group 1), the spaces after them, and then text.</summary>
+		[GeneratedRegex(@"\s(#{1,6})\s*(?=[^#\s])")]
+		private static partial Regex InlineHeading();
+
+		/// <summary>'#'s at the end of a heading part with nothing after them (after a space, or the part is only them).</summary>
+		[GeneratedRegex(@"(?:^|\s)#+\s*$")]
+		private static partial Regex TrailingHashes();
 
 		/// <summary>Hidden tags (time tags, "midi:" tags) at the start of a line, and the spaces after them.</summary>
 		[GeneratedRegex(@"^(?:\[\s*(?:\+?\d|[Mm][Ii][Dd][Ii]:)[^\]\n]*\]\s*)+")]

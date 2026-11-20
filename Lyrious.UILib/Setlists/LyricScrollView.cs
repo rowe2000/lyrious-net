@@ -97,7 +97,11 @@ namespace Lyrious.UILib.Setlists
 		private readonly DispatcherTimer scrollTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
 		private readonly System.Diagnostics.Stopwatch scrollClock = new();
 		private ScrollViewer? scroller;
-		private double scrollRemainder;
+
+		// Scrolling by itself (without time tags): the exact position, null until it starts (or after the
+		// lyrics were put at the top), and the offset last shown (on a whole pixel), to notice a scroll by hand.
+		private double? scrollPosition;
+		private double shownScrollOffset;
 
 		// Timed scrolling: the lyrics' time tags, and from them a timeline of (seconds, content y)
 		// that should be at the middle of the view at that time. Rebuilt when the layout changes.
@@ -191,6 +195,7 @@ namespace Lyrious.UILib.Setlists
 			set
 			{
 				mySetting = value ?? MySongSetting.None;
+				SendKeyboardTranspose();
 				if (!IsEditing)
 				{
 					ShowSongHeader();
@@ -220,6 +225,8 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			mySetting = loaded;
+			// The song shown: the keyboards take its transpose (0 when the member has none for it).
+			SendKeyboardTranspose();
 			if (IsEditing)
 			{
 				// The editor opened with the view: again, now offering the member's own lyrics too.
@@ -275,9 +282,11 @@ namespace Lyrious.UILib.Setlists
 				return info;
 			}
 
+			// As the member counts it: a capo "Me: F# (capo I)", else semitones "Me: F# (−1)".
+			var amount = CapoMode ? L.T("capo {0}", TransposeText(mySetting.Transpose)) : Signed(mySetting.Transpose);
 			var mine = string.IsNullOrWhiteSpace(song.PlayingKey)
-				? L.T("Me: {0}", Signed(mySetting.Transpose))
-				: L.T("Me: {0} ({1})", ShownKey, Signed(mySetting.Transpose));
+				? L.T("Me: {0}", amount)
+				: L.T("Me: {0} ({1})", ShownKey, amount);
 			return info.Length == 0 ? mine : $"{info} · {mine}";
 		}
 
@@ -303,28 +312,114 @@ namespace Lyrious.UILib.Setlists
 			return button;
 		}
 
-		/// <summary>The member's transpose: − and + by a semitone (−11 to +11), and back to none; saved at once.</summary>
+		/// <summary>Whether the member counts their own transpose as a capo (chosen in Settings, see <see cref="DisplaySettings.CapoMode"/>).</summary>
+		private static bool CapoMode => DisplaySettings.CapoMode;
+
+		/// <summary>Raised when the member wants the Settings page (from the transpose dialog, where capo or transpose is chosen).</summary>
+		public event Action? SettingsRequested;
+
+		/// <summary>Capo or transpose was changed (in Settings, or on another device): the button and the header say it the new way.</summary>
+		private void OnCapoModeChanged() => Dispatcher.UIThread.Post(() =>
+		{
+			ShowMySettingButtons(shownWithChords);
+			ShowSongHeader();
+		});
+
+		// Whether the chord grid button was wanted when the lyrics were last shown.
+		private bool shownGridButton = DisplaySettings.ChordGridButton;
+
+		/// <summary>
+		/// The chord grid button turned on or off (in Settings, or on another device): the lyrics again,
+		/// with or without it (not while editing: the editor keeps what's typed).
+		/// </summary>
+		private void OnChordGridButtonChanged() => Dispatcher.UIThread.Post(() =>
+		{
+			if (DisplaySettings.ChordGridButton != shownGridButton && !IsEditing)
+			{
+				ShowLyrics();
+			}
+		});
+
+		/// <summary>
+		/// Sets the Yamaha keyboards chosen in Settings (see <see cref="Midi.YamahaTransposeModels"/>) to
+		/// the member's transpose for this song (0 when it's off or none), when MIDI can be sent here. Not
+		/// for the editor on its own.
+		/// </summary>
+		private void SendKeyboardTranspose()
+		{
+			if (!EditorOnly)
+			{
+				Midi.SendYamahaTranspose(mySetting.ActiveTranspose);
+			}
+		}
+
+		/// <summary>A transpose as the member counts it, in semitones: as a capo the other way round (the transpose −1 is capo "+1"), else as it is ("+2", "−3").</summary>
+		private static string TransposeText(int transpose) => Signed(CapoMode ? -transpose : transpose);
+
+		// Whether the song's lyrics have chords, as the toolbar was last shown (for showing it again).
+		private bool shownWithChords;
+
+		// The transpose button's text ("♯♭", or the value), centred by its letters.
+		private readonly InkCenteredText transposeText = new();
+
+		/// <summary>
+		/// The member's transpose: − and + by a semitone (−11 to +11), and back to none; saved at once.
+		/// Counted as a capo instead when they choose so at the bottom (+ a fret higher, the chords a semitone lower).
+		/// </summary>
 		private void ShowTransposeMenu()
 		{
 			var value = new TextBlock { FontSize = 20, FontWeight = FontWeight.Bold, MinWidth = 48, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
 			var key = new TextBlock { Opacity = 0.7, HorizontalAlignment = HorizontalAlignment.Center };
-			var down = new Button { Content = "−", FontSize = 20, MinWidth = 44 };
-			var up = new Button { Content = "+", FontSize = 20, MinWidth = 44 };
+			// − and + drawn (not typed), so they're right in the middle of their buttons, both ways.
+			Button StepButton(string pathData)
+			{
+				var icon = new Avalonia.Controls.Shapes.Path
+				{
+					Data = Geometry.Parse(pathData),
+					StrokeThickness = 2,
+					StrokeLineCap = PenLineCap.Round,
+					Width = 24,
+					Height = 24,
+				};
+				// The button's text colour, so it dims with the button when disabled.
+				icon.Bind(Avalonia.Controls.Shapes.Shape.StrokeProperty, icon.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
+				return new Button
+				{
+					Content = icon,
+					MinWidth = 44,
+					Padding = new Thickness(8, 6),
+					HorizontalContentAlignment = HorizontalAlignment.Center,
+					VerticalContentAlignment = VerticalAlignment.Center,
+				};
+			}
+
+			var down = StepButton("M6,12 H18");
+			var up = StepButton("M12,6 V18 M6,12 H18");
 			var reset = new Button { Content = L.T("Reset"), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
-			ToolTip.SetTip(down, L.T("A semitone lower"));
-			ToolTip.SetTip(up, L.T("A semitone higher"));
+			var title = new TextBlock { FontWeight = FontWeight.SemiBold };
 			// On or off, the value kept (as holding the toolbar button does).
-			var enabled = new CheckBox { Content = L.T("Transpose on") };
-			ToolTip.SetTip(enabled, L.T("Off, the band's chords show; your transpose is kept for later"));
+			var enabled = new CheckBox();
+			// At the very bottom: to Settings, where capo or transpose is chosen.
+			var toSettings = new HyperlinkButton { Content = L.T("Capo or transpose: Settings…"), Padding = new Thickness(0), FontSize = 12 };
 
 			void Show()
 			{
+				var capo = CapoMode;
 				var t = mySetting.Transpose;
-				value.Text = Signed(t);
-				key.Text = string.IsNullOrWhiteSpace(song.PlayingKey) ? "" : L.T("{0} becomes {1}", song.PlayingKey, KeyMovedBy(t));
-				key.IsVisible = t != 0 && key.Text.Length > 0;
-				down.IsEnabled = t > MySongSetting.MinTranspose;
-				up.IsEnabled = t < MySongSetting.MaxTranspose;
+				title.Text = capo ? L.T("Capo") : L.T("Transpose");
+				enabled.Content = capo ? L.T("Capo on") : L.T("Transpose on");
+				ToolTip.SetTip(enabled, capo ? L.T("Off, the band's chords show; your capo is kept for later") : L.T("Off, the band's chords show; your transpose is kept for later"));
+				ToolTip.SetTip(down, capo ? L.T("Capo a fret lower") : L.T("A semitone lower"));
+				ToolTip.SetTip(up, capo ? L.T("Capo a fret higher") : L.T("A semitone higher"));
+				value.Text = TransposeText(t);
+				// "C becomes C#" only with a transpose and a key, but its room always kept, so nothing below
+				// it moves (an empty line is a no-break space, to keep its height).
+				var shown = t != 0 && !string.IsNullOrWhiteSpace(song.PlayingKey);
+				key.Text = shown ? L.T("{0} becomes {1}", song.PlayingKey, KeyMovedBy(t)) : " ";
+				key.Opacity = shown ? 0.7 : 0;
+				// As a capo + lowers the transpose, − raises it.
+				down.IsEnabled = capo ? t < MySongSetting.MaxTranspose : t > MySongSetting.MinTranspose;
+				up.IsEnabled = capo ? t > MySongSetting.MinTranspose : t < MySongSetting.MaxTranspose;
 				reset.IsEnabled = t != 0;
 				enabled.IsEnabled = t != 0;
 				enabled.IsChecked = t != 0 && !mySetting.TransposeOff;
@@ -338,8 +433,9 @@ namespace Lyrious.UILib.Setlists
 				Show();
 			}
 
-			down.Click += (_, _) => Change(mySetting.Transpose - 1);
-			up.Click += (_, _) => Change(mySetting.Transpose + 1);
+			// A capo a fret higher moves the chords a semitone lower (capo n is the transpose −n).
+			down.Click += (_, _) => Change(CapoMode ? mySetting.Transpose + 1 : mySetting.Transpose - 1);
+			up.Click += (_, _) => Change(CapoMode ? mySetting.Transpose - 1 : mySetting.Transpose + 1);
 			reset.Click += (_, _) => Change(0);
 			enabled.IsCheckedChanged += (_, _) =>
 			{
@@ -351,24 +447,39 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 			Show();
-			new Flyout
+
+			// On or off and Reset on one line: the check box at the left, Reset at the right.
+			reset.HorizontalAlignment = HorizontalAlignment.Right;
+			reset.VerticalAlignment = VerticalAlignment.Center;
+			enabled.VerticalAlignment = VerticalAlignment.Center;
+			enabled.Margin = new Thickness(0, 0, 12, 0);
+			DockPanel.SetDock(reset, Dock.Right);
+			var onAndReset = new DockPanel { Children = { reset, enabled } };
+
+			var flyout = new Flyout
 			{
 				Placement = PlacementMode.BottomEdgeAlignedRight,
 				Content = new StackPanel
 				{
 					Spacing = 8,
-					MinWidth = 180,
+					MinWidth = 200,
 					Children =
 					{
-						new TextBlock { Text = L.T("My transpose"), FontWeight = FontWeight.SemiBold },
-						new TextBlock { Text = L.T("Only you see the chords moved."), FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, MaxWidth = 200 },
+						title,
+						new TextBlock { Text = L.T("Only you see the chords moved."), FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, MaxWidth = 220 },
 						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, Children = { down, value, up } },
 						key,
-						enabled,
-						reset,
+						onAndReset,
+						toSettings,
 					},
 				},
-			}.ShowAt(transposeButton);
+			};
+			toSettings.Click += (_, _) =>
+			{
+				flyout.Hide();
+				SettingsRequested?.Invoke();
+			};
+			flyout.ShowAt(transposeButton);
 		}
 
 		/// <summary>Shows the lyrics with the member's changed settings, and stores them.</summary>
@@ -376,7 +487,17 @@ namespace Lyrious.UILib.Setlists
 		{
 			mySetting = changed;
 			ShowSongHeader();
-			ShowLyrics();
+			// While editing (the capo is there too): only its button; the lyrics are shown again after.
+			if (IsEditing)
+			{
+				ShowMySettingButtons(shownWithChords);
+			}
+			else
+			{
+				ShowLyrics();
+			}
+
+			SendKeyboardTranspose();
 			if (SaveMySetting is { } save)
 			{
 				try
@@ -393,28 +514,58 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The toolbar's buttons for the member's own settings, as the song and its settings are now.</summary>
 		private void ShowMySettingButtons(bool hasChords)
 		{
+			shownWithChords = hasChords;
 			var t = mySetting.Transpose;
 			var on = t != 0 && !mySetting.TransposeOff;
-			transposeButton.IsVisible = SaveMySetting != null && (hasChords || t != 0);
-			transposeButton.Content = t == 0 ? "♯♭" : Signed(t);
+			var capo = CapoMode;
+			// In the editor always (the chords may be being added); else for lyrics with chords, or a transpose set.
+			transposeButton.IsVisible = SaveMySetting != null && (IsEditing || hasChords || t != 0);
+			// Its letters right in the middle, both ways (a plain text sits higher or lower, by its letters).
+			transposeText.Text = t == 0 ? "♯♭" : TransposeText(t);
+			transposeButton.Content = transposeText;
+			// The ♯♭ 1.65 times the toolbar's text (it stands for the icon); the number as the text.
+			transposeButton.FontSize = t == 0 ? 15 * 1.65 : 15;
+			// The value ("+2") in bold; the ♯♭ as it is.
+			transposeButton.FontWeight = t == 0 ? FontWeight.Normal : FontWeight.Bold;
 			// Turned off, the value still shows, dimmed.
 			transposeButton.Opacity = t != 0 && mySetting.TransposeOff ? 0.5 : 1;
-			if (on)
+			// On: in the chord colour (the colour of the chords it moves), its text black or white, whichever
+			// reads on it. Off: plain, as the other tools.
+			if (chordHoverStyle != null)
 			{
-				transposeButton.Classes.Add("accent");
-				transposeButton.ClearValue(BackgroundProperty);
+				transposeButton.Styles.Remove(chordHoverStyle);
+			}
+
+			if (chordPressedStyle != null)
+			{
+				transposeButton.Styles.Remove(chordPressedStyle);
+			}
+			if (on && this.TryFindResource(LyriousTheme.ChordBrush, ActualThemeVariant, out var chord) && chord is ISolidColorBrush chordBrush)
+			{
+				var c = chordBrush.Color;
+				var light = (0.299 * c.R + 0.587 * c.G + 0.114 * c.B) / 255 > 0.55;
+				var text = light ? Brushes.Black : Brushes.White;
+				transposeButton.Background = chordBrush;
+				transposeButton.Foreground = text;
+				// Hovered and pressed, the chord colour changes as the highlight colour does on its buttons.
+				chordHoverStyle = ChordStateStyle(":pointerover", AsAccentChanges(c, "AccentButtonBackgroundPointerOver"), text);
+				chordPressedStyle = ChordStateStyle(":pressed", AsAccentChanges(c, "AccentButtonBackgroundPressed"), text);
+				transposeButton.Styles.Add(chordHoverStyle);
+				transposeButton.Styles.Add(chordPressedStyle);
+				transposeButton.Classes.Add(ChordOnClass);
 			}
 			else
 			{
-				transposeButton.Classes.Remove("accent");
 				transposeButton.Background = Brushes.Transparent;
+				transposeButton.ClearValue(ForegroundProperty);
+				transposeButton.Classes.Remove(ChordOnClass);
 			}
 
 			ToolTip.SetTip(transposeButton, t == 0
-				? L.T("My transpose: move the chords for me only")
+				? capo ? L.T("Capo: move the chords for me only") : L.T("Transpose: move the chords for me only")
 				: mySetting.TransposeOff
-					? L.T("My transpose {0} is off. Hold to turn it on", Signed(t))
-					: L.T("My transpose: {0}. Hold to turn it off", Signed(t)));
+					? capo ? L.T("Capo {0} is off. Hold to turn it on", TransposeText(t)) : L.T("Transpose {0} is off. Hold to turn it on", TransposeText(t))
+					: capo ? L.T("Capo: {0}. Hold to turn it off", TransposeText(t)) : L.T("Transpose: {0}. Hold to turn it off", TransposeText(t)));
 
 			lyricsSourceButton.IsVisible = mySetting.HasLyrics;
 			lyricsSourceButton.Content = ShowBandLyrics ? L.T("The band's") : L.T("Mine");
@@ -442,6 +593,78 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Raised when the user taps the lyrics, to turn focus mode on or off.</summary>
 		public event Action? FocusModeToggled;
+
+		// The transpose button's chord colour while hovered and pressed (see ShowMySettingButtons).
+		private Avalonia.Styling.Style? chordHoverStyle;
+		private Avalonia.Styling.Style? chordPressedStyle;
+
+		// Marks the transpose button while it's in the chord colour (its hover and pressed styles are for it only).
+		private const string ChordOnClass = "chord-on";
+
+		/// <summary>
+		/// <paramref name="color"/> changed as the theme changes its highlight colour on a highlighted
+		/// button in a state (the resource <paramref name="accentStateKey"/>, e.g. hovered): relatively as
+		/// much lighter (the same share of the way to white) or darker (of the way to black), and as
+		/// see-through, as that is next to the button's normal highlight colour.
+		/// </summary>
+		private Color AsAccentChanges(Color color, string accentStateKey)
+		{
+			if (!TryAccentColor("AccentButtonBackground", out var normal) || !TryAccentColor(accentStateKey, out var state))
+			{
+				return color;
+			}
+
+			var from = normal.ToHsl();
+			var to = state.ToHsl();
+			var hsl = color.ToHsl();
+			// Lighter: the same share of the way from the colour to white; darker: of the way to black.
+			var lightness = to.L >= from.L
+				? hsl.L + (from.L >= 1 ? 0 : (to.L - from.L) / (1 - from.L)) * (1 - hsl.L)
+				: hsl.L * (from.L <= 0 ? 1 : to.L / from.L);
+			lightness = Math.Clamp(lightness, 0, 1);
+			var alpha = normal.A == 0 ? 1 : (double)state.A / normal.A;
+			var changed = new HslColor(hsl.A, hsl.H, hsl.S, lightness).ToRgb();
+			return Color.FromArgb((byte)Math.Clamp(Math.Round(color.A * alpha), 0, 255), changed.R, changed.G, changed.B);
+
+			bool TryAccentColor(string key, out Color accent)
+			{
+				accent = default;
+				if (!this.TryFindResource(key, ActualThemeVariant, out var found))
+				{
+					return false;
+				}
+
+				switch (found)
+				{
+					case ISolidColorBrush brush:
+						// The brush's own opacity as the colour's.
+						accent = Color.FromArgb((byte)Math.Round(brush.Color.A * brush.Opacity), brush.Color.R, brush.Color.G, brush.Color.B);
+						return true;
+					case Color c:
+						accent = c;
+						return true;
+					default:
+						return false;
+				}
+			}
+		}
+
+		/// <summary>The transpose button's look in a state (":pointerover", ":pressed"), on the part that draws its background (as the theme's own).</summary>
+		private static Avalonia.Styling.Style ChordStateStyle(string state, Color background, IBrush foreground) => new(x =>
+			Avalonia.Styling.Selectors.Name(
+				Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Presenters.ContentPresenter>(
+					// A Button (as the long-click button is styled), marked as in the chord colour: the transpose
+					// button only, not the buttons in its dialog.
+					Avalonia.Styling.Selectors.Template(Avalonia.Styling.Selectors.Class(
+						Avalonia.Styling.Selectors.Class(Avalonia.Styling.Selectors.OfType<Button>(x), ChordOnClass), state))),
+				"PART_ContentPresenter"))
+		{
+			Setters =
+			{
+				new Avalonia.Styling.Setter(Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, new SolidColorBrush(background)),
+				new Avalonia.Styling.Setter(Avalonia.Controls.Presenters.ContentPresenter.ForegroundProperty, foreground),
+			},
+		};
 
 		/// <summary>
 		/// Whether the view is there only for its editor (Edit in the songbook, a new song): whoever
@@ -495,8 +718,17 @@ namespace Lyrious.UILib.Setlists
 				() => this.song.Artist,
 				ShowProblemAt);
 			// The member's own transpose and lyrics (only they see them).
-			transposeButton = TextButton<LongClickButton>(L.T("My transpose: move the chords for me only"));
+			transposeButton = TextButton<LongClickButton>(L.T("Capo: move the chords for me only"));
+			// Square whatever it shows ("♯♭", "+2", "−11"), as tall as the toolbar's buttons, its text in the middle.
+			transposeButton.Width = 40;
+			transposeButton.Height = 40;
+			transposeButton.MinWidth = 0;
+			transposeButton.Padding = new Thickness(0);
+			transposeButton.HorizontalContentAlignment = HorizontalAlignment.Center;
+			transposeButton.VerticalContentAlignment = VerticalAlignment.Center;
 			transposeButton.Click += (_, _) => ShowTransposeMenu();
+			// Light or dark: the transpose button's chord colour is that theme's.
+			ActualThemeVariantChanged += (_, _) => ShowMySettingButtons(shownWithChords);
 			// Held: the transpose off or on again, its value kept.
 			transposeButton.LongClick += () =>
 			{
@@ -523,7 +755,7 @@ namespace Lyrious.UILib.Setlists
 			DragDrop.SetAllowDrop(this, true);
 			AddHandler(DragDrop.DragOverEvent, OnMediaDraggedOver, RoutingStrategies.Tunnel, handledEventsToo: true);
 			AddHandler(DragDrop.DropEvent, OnMediaDropped, RoutingStrategies.Tunnel, handledEventsToo: true);
-			scrollTimer.Tick += (_, _) => ScrollStep();
+			scrollTimer.Tick += (_, _) => ScrollStepUnlessFrames();
 			nudgeTimer.Tick += (_, _) => NudgeStep();
 
 			if (startEditing)
@@ -571,6 +803,12 @@ namespace Lyrious.UILib.Setlists
 			base.OnAttachedToVisualTree(e);
 			DisplaySettings.ShowSongHeaderChanged += ShowTitle;
 			LyricsHeader.Changed += OnLyricsHeaderChanged;
+			DisplaySettings.CapoModeChanged += OnCapoModeChanged;
+			UserSettings.Changed += OnCapoModeChanged;
+			DisplaySettings.ChordGridButtonChanged += OnChordGridButtonChanged;
+			UserSettings.Changed += OnChordGridButtonChanged;
+			// On screen now, the theme's colours can be found (the transpose button's chord colour).
+			ShowMySettingButtons(shownWithChords);
 			ShowTime();
 			clockTimer.Start();
 			ShowTitle();
@@ -605,12 +843,13 @@ namespace Lyrious.UILib.Setlists
 			{
 				StopNudge();
 				scroller.Offset = new Vector(scroller.Offset.X, 0);
-				scrollRemainder = 0;
+				scrollPosition = null;
 				if (IsTimed && scrollTimer.IsEnabled)
 				{
 					// Back to the start of the song's timeline.
 					playbackStart = 0;
 					scrollClock.Restart();
+					ScrollClockRestarted();
 				}
 			}
 		}
@@ -638,23 +877,115 @@ namespace Lyrious.UILib.Setlists
 					scroller.Offset = new Vector(scroller.Offset.X, 0);
 				}
 
-				scrollRemainder = 0;
+				scrollPosition = null;
 				timedPoints = null;
 				// Timed: pick up the song's timeline where the lyrics are now (0:00 at the top).
 				playbackStart = IsTimed && scroller.Offset.Y > 0 && Timeline() is { } points
 					? TimeAt(points, scroller.Offset.Y + scroller.Viewport.Height / 2)
 					: 0;
 				scrollClock.Restart();
+				ScrollClockRestarted();
 				scrollTimer.Start();
+				// A step at each frame the screen draws (smooth); the timer only steps when frames don't come.
+				RequestScrollFrame();
 			}
 			else
 			{
 				scrollTimer.Stop();
 				scrollClock.Reset();
+				ScrollClockRestarted();
 				ShowCurrentPart(null);
 			}
 
 			AutoScrollChanged?.Invoke();
+		}
+
+		// When the last frame's step was made (Stopwatch ticks), so the timer knows frames are coming.
+		private long lastScrollFrame;
+
+		/// <summary>Asks for the next frame the screen draws, to move the lyrics on in it (while they scroll).</summary>
+		private void RequestScrollFrame()
+		{
+			TopLevel.GetTopLevel(this)?.RequestAnimationFrame(frameTime =>
+			{
+				if (!scrollTimer.IsEnabled)
+				{
+					return;
+				}
+
+				lastScrollFrame = System.Diagnostics.Stopwatch.GetTimestamp();
+				// The time for this frame from the frames' own times (evenly spaced, as the screen shows
+				// them), tied to the scroll clock; tied again if they drift apart (e.g. after a pause).
+				var clock = scrollClock.Elapsed.TotalSeconds;
+				var seconds = frameOrigin is { } origin ? frameOriginClock + (frameTime - origin).TotalSeconds : double.NaN;
+				if (double.IsNaN(seconds) || Math.Abs(seconds - clock) > 0.1)
+				{
+					frameOrigin = frameTime;
+					frameOriginClock = clock;
+					seconds = clock;
+				}
+
+				frameSeconds = seconds;
+				try
+				{
+					ScrollStep();
+				}
+				finally
+				{
+					frameSeconds = null;
+				}
+
+				RequestScrollFrame();
+			});
+		}
+
+		// The frames' clock: the frame time the scroll clock was tied to, and the clock then; the time of
+		// the frame being stepped (null outside a frame).
+		private TimeSpan? frameOrigin;
+		private double frameOriginClock;
+		private double? frameSeconds;
+
+		// The scroll clock at the last step of scrolling by itself (without time tags), for the time between steps.
+		private double lastStepSeconds;
+
+		/// <summary>The seconds on the scroll clock now: in a frame, that frame's (see RequestScrollFrame).</summary>
+		private double ScrollSeconds => frameSeconds ?? scrollClock.Elapsed.TotalSeconds;
+
+		/// <summary>The scroll clock started again: the frames are tied to it afresh, and the steps count from 0.</summary>
+		private void ScrollClockRestarted()
+		{
+			frameOrigin = null;
+			lastStepSeconds = 0;
+		}
+
+		/// <summary>
+		/// The timer's step: only when no frame has come for a while (e.g. the window isn't drawn), as the
+		/// frames move the lyrics on in step with the screen (a timer of its own would make them judder).
+		/// </summary>
+		private void ScrollStepUnlessFrames()
+		{
+			if (System.Diagnostics.Stopwatch.GetElapsedTime(lastScrollFrame) > TimeSpan.FromMilliseconds(100))
+			{
+				ScrollStep();
+				RequestScrollFrame();
+			}
+		}
+
+		/// <summary>
+		/// <paramref name="y"/> (in the scroll view's units) on a whole pixel of the screen: so each step
+		/// moves the lyrics as many pixels, not 1 then 2. A unit of the scroll view is more than a pixel:
+		/// the display's scaling (1.25, 1.5) times the app's own zoom (its size, dynamic zoom).
+		/// </summary>
+		private double OnScreenPixel(double y)
+		{
+			var top = TopLevel.GetTopLevel(this);
+			var scaling = top?.RenderScaling ?? 1;
+			if (top != null && scroller?.TransformToVisual(top) is { } toWindow && toWindow.M22 > 0)
+			{
+				scaling *= toWindow.M22;
+			}
+
+			return Math.Round(y * scaling) / scaling;
 		}
 
 		/// <summary>Moves the lyrics on by the time since the last step, so the speed doesn't depend on the frame rate.</summary>
@@ -680,40 +1011,47 @@ namespace Lyrious.UILib.Setlists
 			if (IsTimed && Timeline() is { } points)
 			{
 				// Where the song's timeline says the lyrics should be now (not a step from where they are).
-				var now = playbackStart + scrollClock.Elapsed.TotalSeconds;
+				var now = playbackStart + ScrollSeconds;
 				// Scrolled by hand since the last step (wheel, drag, scroll bar): the song's clock goes
 				// along, so playing carries on from there instead of pulling the lyrics back. Not when the
 				// layout changed (zoom, resize): then the same time is simply somewhere else.
 				if (ReferenceEquals(points, timedPoints) && Math.Abs(scroller.Offset.Y - timedOffset) >= 1)
 				{
 					now = TimeAt(points, scroller.Offset.Y + scroller.Viewport.Height / 2);
-					playbackStart = now - scrollClock.Elapsed.TotalSeconds;
+					playbackStart = now - ScrollSeconds;
 					StopNudge(); // A gliding nudge was measured from where the lyrics were.
 				}
 
 				ShowCurrentPart(now);
-				var target = Math.Round(Math.Clamp(CenterAt(points, now) - scroller.Viewport.Height / 2, 0, MaxOffset(scroller)));
+				var target = OnScreenPixel(Math.Clamp(CenterAt(points, now) - scroller.Viewport.Height / 2, 0, MaxOffset(scroller)));
 				scroller.Offset = new Vector(scroller.Offset.X, target);
 				timedPoints = points;
 				timedOffset = target;
 				return;
 			}
 
-			var seconds = scrollClock.Elapsed.TotalSeconds;
-			scrollClock.Restart();
+			// The time since the last step (the clock runs on; it isn't started again at each step).
+			var stepNow = ScrollSeconds;
+			var seconds = Math.Max(0, stepNow - lastStepSeconds);
+			lastStepSeconds = stepNow;
 
-			// Offsets snap to whole pixels on some platforms, so the fractions are carried over.
-			scrollRemainder += ScrollSpeed * seconds;
-			var step = Math.Floor(scrollRemainder);
-			if (step < 1)
+			// The exact position goes on smoothly; what's shown is it on a whole pixel of the screen. Picked
+			// up from where the lyrics are when it starts, or when they were scrolled by hand meanwhile.
+			if (scrollPosition is not { } position || Math.Abs(scroller.Offset.Y - shownScrollOffset) >= 1)
 			{
-				return;
+				position = scroller.Offset.Y;
 			}
 
-			scrollRemainder -= step;
 			// At the end it simply stays there, still playing, until the user stops it.
-			var y = Math.Min(scroller.Offset.Y + step, MaxOffset(scroller));
-			scroller.Offset = new Vector(scroller.Offset.X, y);
+			position = Math.Min(position + ScrollSpeed * seconds, MaxOffset(scroller));
+			scrollPosition = position;
+			var y = OnScreenPixel(position);
+			if (y != scroller.Offset.Y)
+			{
+				scroller.Offset = new Vector(scroller.Offset.X, y);
+			}
+
+			shownScrollOffset = y;
 		}
 
 		/// <summary>
@@ -937,7 +1275,7 @@ namespace Lyrious.UILib.Setlists
 				if (scrollTimer.IsEnabled)
 				{
 					// Playing: the song's clock moves on or back, and the lyrics with it (not before 0:00).
-					var now = playbackStart + scrollClock.Elapsed.TotalSeconds + NudgeRemaining(time: true);
+					var now = playbackStart + ScrollSeconds + NudgeRemaining(time: true);
 					StartNudge(Math.Max(step, -now), time: true);
 				}
 				else
@@ -1005,7 +1343,7 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			target = Math.Round(Math.Clamp(target, 0, MaxOffset(scroller)));
+			target = OnScreenPixel(Math.Clamp(target, 0, MaxOffset(scroller)));
 			if (IsTimed && scrollTimer.IsEnabled)
 			{
 				StopNudge();
@@ -1286,6 +1624,10 @@ namespace Lyrious.UILib.Setlists
 			base.OnDetachedFromVisualTree(e);
 			DisplaySettings.ShowSongHeaderChanged -= ShowTitle;
 			LyricsHeader.Changed -= OnLyricsHeaderChanged;
+			DisplaySettings.CapoModeChanged -= OnCapoModeChanged;
+			UserSettings.Changed -= OnCapoModeChanged;
+			DisplaySettings.ChordGridButtonChanged -= OnChordGridButtonChanged;
+			UserSettings.Changed -= OnChordGridButtonChanged;
 			clockTimer.Stop();
 			if (App.SoundStore is { } sounds)
 			{
@@ -1323,8 +1665,11 @@ namespace Lyrious.UILib.Setlists
 			// The chord grid button only for lyrics with chords; highlighted while the grid is on.
 			// Lyrics with chords, or bar lines ("|"), can be shown as a chord grid.
 			var hasChords = hasLyrics && (ChordPro.IsChordPro(lyrics) || ChordPro.HasBarLines(lyrics));
-			var grid = hasChords && ChordGrid;
-			chordGridButton.IsVisible = hasChords;
+			// The button only when the member wants it (Settings); without it, no grid (it couldn't be left).
+			var gridButton = DisplaySettings.ChordGridButton;
+			var grid = hasChords && ChordGrid && gridButton;
+			chordGridButton.IsVisible = hasChords && gridButton;
+			shownGridButton = gridButton;
 			ShowMySettingButtons(hasChords);
 			if (grid)
 			{
@@ -1425,7 +1770,15 @@ namespace Lyrious.UILib.Setlists
 			};
 			body.Content = scroller;
 			this.scroller = scroller;
+			// The capo's button back in its place among the lyrics' tools (the editor had it).
+			if (!lyricsActions.Children.Contains(transposeButton))
+			{
+				(transposeButton.Parent as Panel)?.Children.Remove(transposeButton);
+				lyricsActions.Children.Insert(Math.Max(0, lyricsActions.Children.IndexOf(chordGridButton)), transposeButton);
+			}
+
 			titleActions.Content = lyricsActions;
+			ShowMySettingButtons(hasChords);
 			// The link may have been changed in the editor.
 			showMediaLink();
 			addDroppedSound = addSoundBesidePencil;
@@ -1559,6 +1912,14 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		/// <summary>A media icon (see <see cref="MediaLinks.Icon"/>) at the size of the toolbar's media buttons: 0.7 of its own.</summary>
+		private static Control ToolbarMediaIcon(Control icon)
+		{
+			icon.Width = Math.Round(icon.Width * 0.7);
+			icon.Height = Math.Round(icon.Height * 0.7);
+			return icon;
+		}
+
 		/// <summary>
 		/// A song's media buttons (beside the pencil, and in the editor beside Save): one for each of its
 		/// media links (see <see cref="MediaLinks.Split"/>): a recording to listen to or watch, or a sound
@@ -1622,7 +1983,7 @@ namespace Lyrious.UILib.Setlists
 			LongClickButton EmptyButton()
 			{
 				var button = NewButton();
-				button.Content = MediaLinks.Icon(MediaSite.Other);
+				button.Content = ToolbarMediaIcon(MediaLinks.Icon(MediaSite.Other));
 				var tip = L.T("Media: search Spotify or YouTube, paste a link or pick a sound file (or drop one here, or paste a link with Ctrl/⌘+V)");
 				ToolTip.SetTip(button, tip);
 				Avalonia.Automation.AutomationProperties.SetName(button, tip);
@@ -1640,7 +2001,7 @@ namespace Lyrious.UILib.Setlists
 				var site = sound != null ? MediaSite.Sound : MediaLinks.SiteOf(uri);
 				var playing = sound != null && sounds?.Playing == sound.Id;
 				var active = sound != null && ActiveSound?.Id == sound.Id;
-				button.Content = MediaLinks.Icon(site, playing);
+				button.Content = ToolbarMediaIcon(MediaLinks.Icon(site, playing));
 				// The sound the media player is on for: filled with the highlight colour.
 				if (active)
 				{
@@ -2077,7 +2438,7 @@ namespace Lyrious.UILib.Setlists
 				return false;
 			}
 
-			target = Math.Round(Math.Clamp(target, 0, MaxOffset(viewer)));
+			target = OnScreenPixel(Math.Clamp(target, 0, MaxOffset(viewer)));
 			viewer.Offset = new Vector(viewer.Offset.X, target);
 			timedOffset = target;
 			return true;
@@ -2731,8 +3092,11 @@ namespace Lyrious.UILib.Setlists
 			// whole width, under the tools too.
 			editHeader = new CornerWrapPanel { VerticalAlignment = VerticalAlignment.Top, Children = { nameSlot, artistSlot, detailsSlot, tagsSlot } };
 
-			// The media button, Save and Cancel take the pencil's place at the right of the title.
-			titleActions.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { media, save, cancel } };
+			// The media button, the capo, Save and Cancel take the pencil's place at the right of the title.
+			// (The capo's button moves here from the lyrics' tools, and back when the lyrics show again.)
+			(transposeButton.Parent as Panel)?.Children.Remove(transposeButton);
+			titleActions.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { media, transposeButton, save, cancel } };
+			ShowMySettingButtons(shownWithChords);
 			ShowTitle();
 
 			// A song needs a name.

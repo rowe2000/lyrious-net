@@ -74,12 +74,18 @@ internal sealed class DesktopMidiOutput : IMidiOutput
         }
     }
 
-    /// <summary>A program change or control change message as an event; null for anything else.</summary>
+    /// <summary>A program change, control change or System Exclusive message as an event; null for anything else.</summary>
     private static MidiEvent? ToEvent(byte[] message)
     {
         if (message.Length < 2)
         {
             return null;
+        }
+
+        // System Exclusive (e.g. a Yamaha parameter change): its bytes after F0, up to and with the F7.
+        if (message[0] == 0xF0)
+        {
+            return message[^1] == 0xF7 ? new NormalSysExEvent(message[1..]) : null;
         }
 
         var channel = (FourBitNumber)(message[0] & 0x0F);

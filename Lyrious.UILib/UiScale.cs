@@ -27,12 +27,12 @@ namespace Lyrious.UILib
 		public static double Value
 		{
 			get => double.TryParse(App.Settings.Get(SettingKeys.UiScale), NumberStyles.Float, CultureInfo.InvariantCulture, out var scale)
-			       && scale is >= 0.5 and <= 3
+			       && scale is >= 0.3 and <= 3
 				? scale
 				: 1.0;
 			set
 			{
-				var scale = Math.Clamp(value, 0.5, 3);
+				var scale = Math.Clamp(value, 0.3, 3);
 				App.Settings.Set(SettingKeys.UiScale, Math.Abs(scale - 1) < 0.001 ? null : scale.ToString(CultureInfo.InvariantCulture));
 				Apply();
 			}

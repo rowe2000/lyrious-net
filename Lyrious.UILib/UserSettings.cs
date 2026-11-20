@@ -30,6 +30,9 @@ namespace Lyrious.UILib
 			SettingKeys.Heading2Color,
 			SettingKeys.HeadingColor,
 			SettingKeys.Language,
+			SettingKeys.CapoMode,
+			SettingKeys.ChordGridButton,
+			SettingKeys.FullScreen,
 		];
 
 		/// <summary>How long after the last change it's sent.</summary>

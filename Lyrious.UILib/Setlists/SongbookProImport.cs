@@ -251,20 +251,13 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>
 		/// The song's lyrics: its ChordPro content, after a {capo: n} line when it has a capo (its
 		/// author is the song's artist, see <see cref="Artist"/>).
-		/// Converted to Lyrious' format, the first line is a heading with the key and the name
-		/// ("# [D]Amazing Grace"), each comment line "{c: Verse 1}" is a heading "## Verse 1", and a
+		/// Converted to Lyrious' format, each comment line "{c: Verse 1}" is a heading "## Verse 1", and a
 		/// heading that starts with a chord has it capitalised and right on its text ("# [d] Intro" is "# [D]Intro").
+		/// The song's name and key aren't put in the lyrics: the band's lyrics header shows them (see <see cref="LyricsHeader"/>).
 		/// </summary>
 		private static string Lyrics(JsonObject song, bool convert)
 		{
 			var lines = new List<string>();
-			if (convert)
-			{
-				var key = KeyName(Int(song, "key"));
-				var name = Text(song, "name").Trim();
-				lines.Add(key.Length > 0 ? $"# [{key}] {name}" : $"# {name}");
-			}
-
 			if (Int(song, "Capo") is > 0 and var capo)
 			{
 				lines.Add($"{{capo: {capo}}}");
