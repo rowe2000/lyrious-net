@@ -2,5 +2,68 @@
     <PropertyGroup>
         <Nullable>enable</Nullable>
         <AvaloniaVersion>12.1.6</AvaloniaVersion>
+        <!-- The commit is added by LyriousGitVersion below, not by the SDK as well. -->
+        <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     </PropertyGroup>
+
+    <!--
+      The version from git: the last tag (e.g. 0.1.0, or v0.1.0; padded to three parts) and, as its
+      least significant part, the number of commits since that tag. E.g. 7 commits after the tag
+      0.1.0: 0.1.0.7. The informational version adds the branch and the commit
+      (0.1.0.7+main.d75f24d), and the branch is also in AssemblyMetadata("Branch", "main"); a
+      build of a detached commit says "detached". Without git or a tag (e.g. a copy of the source
+      without its history), the default version stays.
+    -->
+    <Target Name="LyriousGitVersion" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo">
+        <Exec Command="git describe --tags --long --match &quot;*[0-9]*&quot;"
+              WorkingDirectory="$(MSBuildThisFileDirectory)"
+              ConsoleToMSBuild="true"
+              IgnoreExitCode="true"
+              EchoOff="true"
+              StandardOutputImportance="low"
+              StandardErrorImportance="low">
+            <Output TaskParameter="ConsoleOutput" PropertyName="_LyriousDescribe" />
+            <Output TaskParameter="ExitCode" PropertyName="_LyriousDescribeExit" />
+        </Exec>
+        <Exec Command="git rev-parse --abbrev-ref HEAD"
+              WorkingDirectory="$(MSBuildThisFileDirectory)"
+              ConsoleToMSBuild="true"
+              IgnoreExitCode="true"
+              EchoOff="true"
+              StandardOutputImportance="low"
+              StandardErrorImportance="low">
+            <Output TaskParameter="ConsoleOutput" PropertyName="_LyriousBranch" />
+            <Output TaskParameter="ExitCode" PropertyName="_LyriousBranchExit" />
+        </Exec>
+
+        <!-- "0.1.0-7-gd75f24d": the tag, the commits since it, and the commit. -->
+        <PropertyGroup Condition="'$(_LyriousDescribeExit)' == '0'">
+            <_LyriousMatch>$([System.Text.RegularExpressions.Regex]::Match($(_LyriousDescribe), '^v?(\d+(?:\.\d+){0,2})(?:[^-]*)-(\d+)-g([0-9a-f]+)$'))</_LyriousMatch>
+            <_LyriousTag>$([System.Text.RegularExpressions.Regex]::Replace($(_LyriousDescribe), '^v?(\d+(?:\.\d+){0,2}).*$', '$1'))</_LyriousTag>
+            <_LyriousCount>$([System.Text.RegularExpressions.Regex]::Replace($(_LyriousDescribe), '^.*-(\d+)-g[0-9a-f]+$', '$1'))</_LyriousCount>
+            <_LyriousCommit>$([System.Text.RegularExpressions.Regex]::Replace($(_LyriousDescribe), '^.*-g([0-9a-f]+)$', '$1'))</_LyriousCommit>
+        </PropertyGroup>
+
+        <!-- The tag to three parts: 1 becomes 1.0.0, 1.2 becomes 1.2.0. -->
+        <PropertyGroup Condition="'$(_LyriousMatch)' != ''">
+            <_LyriousDots>$([System.Text.RegularExpressions.Regex]::Matches($(_LyriousTag), '\.').Count)</_LyriousDots>
+            <_LyriousTag Condition="'$(_LyriousDots)' == '0'">$(_LyriousTag).0.0</_LyriousTag>
+            <_LyriousTag Condition="'$(_LyriousDots)' == '1'">$(_LyriousTag).0</_LyriousTag>
+            <Version>$(_LyriousTag).$(_LyriousCount)</Version>
+            <AssemblyVersion>$(Version)</AssemblyVersion>
+            <FileVersion>$(Version)</FileVersion>
+        </PropertyGroup>
+
+        <!-- The branch that was built ("detached" for a commit checked out by itself, e.g. in CI). -->
+        <PropertyGroup Condition="'$(_LyriousMatch)' != ''">
+            <_LyriousBranch Condition="'$(_LyriousBranchExit)' != '0' Or '$(_LyriousBranch)' == ''">unknown</_LyriousBranch>
+            <_LyriousBranch Condition="'$(_LyriousBranch)' == 'HEAD'">detached</_LyriousBranch>
+            <!-- In the version only letters, digits, '-' and '.' may go after the '+'. -->
+            <_LyriousBranchInVersion>$([System.Text.RegularExpressions.Regex]::Replace($(_LyriousBranch), '[^0-9A-Za-z-]', '-'))</_LyriousBranchInVersion>
+            <InformationalVersion>$(Version)+$(_LyriousBranchInVersion).$(_LyriousCommit)</InformationalVersion>
+        </PropertyGroup>
+        <ItemGroup Condition="'$(_LyriousMatch)' != ''">
+            <AssemblyMetadata Include="Branch" Value="$(_LyriousBranch)" />
+        </ItemGroup>
+    </Target>
 </Project>
