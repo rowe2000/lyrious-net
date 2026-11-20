@@ -1622,17 +1622,10 @@ namespace Lyrious.UILib.Setlists
 			searchButton.Click += (_, _) => ShowSearch(true);
 			endSearchButton.Click += (_, _) => ShowSearch(false);
 			setlistSearchBox.TextChanged += (_, _) => FilterDrawerSongs();
-			// Enter opens the first song found. Escape ends the search, here already: on its way up it
-			// would close a drawer that slides over the page (the drawer's own Escape).
+			// Enter opens the first song found. Escape leaves the box as in every text box (see
+			// TextBoxFocus), its search undone; the next Escape ends the search (its ✕ goes before all).
 			setlistSearchBox.KeyDown += (_, e) =>
 			{
-				if (e.Key == Avalonia.Input.Key.Escape && e.KeyModifiers == Avalonia.Input.KeyModifiers.None)
-				{
-					e.Handled = true;
-					ShowSearch(false);
-					return;
-				}
-
 				if (e.Key == Avalonia.Input.Key.Enter && FirstDrawerSongShown() is { } row)
 				{
 					e.Handled = true;

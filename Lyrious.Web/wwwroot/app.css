@@ -1,9 +1,34 @@
 ﻿/* HTML styles for the splash screen */
+
+/*
+ * The splash's colour: the singer's grey (icons/singer.svg), with the singer and the name in white
+ * on it. When the app is ready (Avalonia adds .splash-close), the splash's background turns into the
+ * app's own background in about a second while the singer and the name fade, and then it's gone,
+ * so the app shows on the same background without a jump. The splash stays over the app meanwhile,
+ * and lets clicks through to it.
+ */
+:root {
+    --splash-color: #7f7f7f;
+    /* The app's background (the Fluent theme's): white in light mode, black in dark mode. */
+    --app-background: white;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --app-background: black;
+    }
+}
+
+html, body {
+    background: var(--app-background);
+}
+
 .avalonia-splash {
     position: absolute;
+    z-index: 1000;
     height: 100%;
     width: 100%;
-    background: white;
+    background-color: var(--splash-color);
     font-family: 'Outfit', sans-serif;
     justify-content: center;
     align-items: center;
@@ -11,41 +36,14 @@
     pointer-events: none;
 }
 
-/* Light theme styles */
-@media (prefers-color-scheme: light) {
-    .avalonia-splash {
-        background: white;
-    }
-
-    .avalonia-splash h2 {
-        color: #1b2a4e;
-    }
-
-    .avalonia-splash a {
-        color: #0D6EFD;
-    }
-}
-
-@media (prefers-color-scheme: dark) {
-    .avalonia-splash {
-        background: #1b2a4e;
-    }
-
-    .avalonia-splash h2 {
-        color: white;
-    }
-
-    .avalonia-splash a {
-        color: white;
-    }
-}
-
 .avalonia-splash h2 {
+    color: white;
     font-weight: 400;
     font-size: 1.5rem;
 }
 
 .avalonia-splash a {
+    color: white;
     text-decoration: none;
     font-size: 2.5rem;
     display: block;
@@ -57,11 +55,14 @@
     flex-direction: column;
     align-items: center;
     gap: 0.5rem;
+    transition: opacity 1s ease;
 }
 
+/* The singer in white (the image is grey, the splash's colour). */
 .avalonia-splash .splash-logo {
     width: min(220px, 45vw);
     height: auto;
+    filter: brightness(0) invert(1);
 }
 
 .avalonia-splash .splash-content h2 {
@@ -71,9 +72,15 @@
     letter-spacing: 0.02em;
 }
 
+/* The app is ready: into the app's background in a second, then gone (hidden after the fade). */
 .avalonia-splash.splash-close {
-    transition: opacity 200ms, display 200ms;
-    display: none;
+    background-color: var(--app-background);
+    opacity: 0;
+    visibility: hidden;
+    transition: background-color 1s ease, opacity 200ms ease 1s, visibility 0s linear 1.2s;
+}
+
+.avalonia-splash.splash-close .splash-content {
     opacity: 0;
 }
 

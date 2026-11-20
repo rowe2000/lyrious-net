@@ -244,15 +244,11 @@ namespace Lyrious.UILib.Setlists
 				name.TextChanged += (_, _) => ok.IsEnabled = !string.IsNullOrWhiteSpace(name.Text);
 				name.KeyDown += (_, e) =>
 				{
+					// Escape leaves the box as in every text box (see TextBoxFocus); the next one closes the popup.
 					if (e.Key == Avalonia.Input.Key.Enter)
 					{
 						e.Handled = true;
 						Create();
-					}
-					else if (e.Key == Avalonia.Input.Key.Escape)
-					{
-						e.Handled = true;
-						popup.Hide();
 					}
 				};
 				ok.Click += (_, _) => Create();

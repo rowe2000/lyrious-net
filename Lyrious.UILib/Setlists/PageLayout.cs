@@ -279,7 +279,8 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// A hidden row with a name box, Add and Cancel; <c>Show</c> reveals it and focuses the box.
-		/// Add (or Enter) passes the trimmed name to <paramref name="add"/>; Cancel (or Escape) hides it.
+		/// Add (or Enter) passes the trimmed name to <paramref name="add"/>; Cancel hides it. Escape in the
+		/// box leaves it (as in every text box, see <see cref="TextBoxFocus"/>); the next Escape is Cancel.
 		/// Dock the row at the top of the page content.
 		/// </summary>
 		/// <param name="closeOnAdd">Hides the row (and empties the box) after Add, for a page that stays.</param>
@@ -288,7 +289,8 @@ namespace Lyrious.UILib.Setlists
 			var nameBox = new TextBox { PlaceholderText = placeholder, VerticalContentAlignment = VerticalAlignment.Center };
 			var confirm = OkButton(L.T("Add"));
 			confirm.IsEnabled = false;
-			var cancel = CancelButton(L.T("Cancel"));
+			// Escape (once the box is left) is Cancel, before the page's ✕.
+			var cancel = EscapeKey.MarkAsClose(CancelButton(L.T("Cancel")), first: true);
 
 			var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(8, 0, 0, 0), Children = { confirm, cancel } };
 			DockPanel.SetDock(buttons, Dock.Right);
@@ -326,11 +328,6 @@ namespace Lyrious.UILib.Setlists
 				if (e.Key == Key.Enter)
 				{
 					Submit();
-					e.Handled = true;
-				}
-				else if (e.Key == Key.Escape)
-				{
-					Close();
 					e.Handled = true;
 				}
 			};
@@ -536,17 +533,14 @@ namespace Lyrious.UILib.Setlists
 					}
 				}
 
+				// Escape leaves the box as in every text box (see TextBoxFocus): the name goes back to what it
+				// was, so leaving it (LostFocus) renames nothing.
 				box.KeyDown += (_, e) =>
 				{
 					if (e.Key == Key.Enter)
 					{
 						e.Handled = true;
 						Finish(save: true);
-					}
-					else if (e.Key == Key.Escape)
-					{
-						e.Handled = true;
-						Finish(save: false);
 					}
 				};
 				box.LostFocus += (_, _) => Finish(save: true);
