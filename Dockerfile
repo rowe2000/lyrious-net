@@ -11,6 +11,14 @@ RUN apt-get update \
     && dotnet workload install wasm-tools
 
 COPY . .
+# The version, branch and commit for the About page (see Directory.Build.props): from git when the
+# build has the .git folder, else from these. Railway sets the RAILWAY_GIT_* ones; set
+# LYRIOUS_VERSION (e.g. 0.1.0.7) as a variable on the service for the version number.
+ARG LYRIOUS_VERSION
+ARG LYRIOUS_BRANCH
+ARG LYRIOUS_COMMIT
+ARG RAILWAY_GIT_BRANCH
+ARG RAILWAY_GIT_COMMIT_SHA
 RUN dotnet publish Lyrious.Api/Lyrious.Api.csproj -c Release -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0

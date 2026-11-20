@@ -65,5 +65,29 @@
         <ItemGroup Condition="'$(_LyriousMatch)' != ''">
             <AssemblyMetadata Include="Branch" Value="$(_LyriousBranch)" />
         </ItemGroup>
+
+        <!--
+          Without git (e.g. Railway, whose build has no .git folder): from the environment instead.
+          LYRIOUS_VERSION (e.g. 0.1.0.7), LYRIOUS_BRANCH and LYRIOUS_COMMIT; the branch and the
+          commit otherwise from Railway's RAILWAY_GIT_BRANCH and RAILWAY_GIT_COMMIT_SHA.
+        -->
+        <PropertyGroup Condition="'$(_LyriousMatch)' == ''">
+            <_LyriousEnvVersion>$([System.Text.RegularExpressions.Regex]::Match('$(LYRIOUS_VERSION)', '^\d+(\.\d+){0,3}$'))</_LyriousEnvVersion>
+            <Version Condition="'$(_LyriousEnvVersion)' != ''">$(_LyriousEnvVersion)</Version>
+            <AssemblyVersion Condition="'$(_LyriousEnvVersion)' != ''">$(_LyriousEnvVersion)</AssemblyVersion>
+            <FileVersion Condition="'$(_LyriousEnvVersion)' != ''">$(_LyriousEnvVersion)</FileVersion>
+            <_LyriousEnvBranch>$(LYRIOUS_BRANCH)</_LyriousEnvBranch>
+            <_LyriousEnvBranch Condition="'$(_LyriousEnvBranch)' == ''">$(RAILWAY_GIT_BRANCH)</_LyriousEnvBranch>
+            <_LyriousEnvCommit>$(LYRIOUS_COMMIT)</_LyriousEnvCommit>
+            <_LyriousEnvCommit Condition="'$(_LyriousEnvCommit)' == ''">$(RAILWAY_GIT_COMMIT_SHA)</_LyriousEnvCommit>
+            <!-- Short, as git describe gives it. -->
+            <_LyriousEnvCommit Condition="$(_LyriousEnvCommit.Length) &gt; 7">$(_LyriousEnvCommit.Substring(0, 7))</_LyriousEnvCommit>
+            <_LyriousBranchInVersion>$([System.Text.RegularExpressions.Regex]::Replace('$(_LyriousEnvBranch)', '[^0-9A-Za-z-]', '-'))</_LyriousBranchInVersion>
+            <_LyriousBranchInVersion Condition="'$(_LyriousBranchInVersion)' == ''">unknown</_LyriousBranchInVersion>
+            <InformationalVersion Condition="'$(_LyriousEnvCommit)' != ''">$(Version)+$(_LyriousBranchInVersion).$(_LyriousEnvCommit)</InformationalVersion>
+        </PropertyGroup>
+        <ItemGroup Condition="'$(_LyriousMatch)' == '' And '$(_LyriousEnvBranch)' != ''">
+            <AssemblyMetadata Include="Branch" Value="$(_LyriousEnvBranch)" />
+        </ItemGroup>
     </Target>
 </Project>
