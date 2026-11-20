@@ -16,7 +16,7 @@ namespace Lyrious.Web;
 internal sealed partial class Program
 {
     // Only when the page has no web address of its own to take the API's from.
-    private const string DefaultApiBaseUrl = "http://localhost:5180/";
+    private const string DefaultApiBaseUrl = SettingKeys.DefaultServer + "/";
 
     /// <param name="args">
     /// [0] is the page URL (see wwwroot/main.js); <c>?api=...</c> sets the API address. [1] is

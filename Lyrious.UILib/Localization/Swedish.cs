@@ -11,7 +11,7 @@ namespace Lyrious.UILib.Localization
 		public static readonly IReadOnlyDictionary<string, string> Texts = new Dictionary<string, string>
 		{
 			// Server and login
-			["That isn't a web address. Use for example http://localhost:5180."] = "Det är ingen webbadress. Använd till exempel http://localhost:5180.",
+			["That isn't a web address. Use for example https://lyrious.se."] = "Det är ingen webbadress. Använd till exempel https://lyrious.se.",
 			["{0} answered {1} {2}; it doesn't look like a Lyrious server."] = "{0} svarade {1} {2}; det verkar inte vara en Lyrious-server.",
 			["{0} doesn't answer right now."] = "{0} svarar inte just nu.",
 			["Wrong username or password."] = "Fel användarnamn eller lösenord.",
@@ -83,7 +83,7 @@ namespace Lyrious.UILib.Localization
 			["Save the password for {0} on this device? Next time you log in, it's filled in for you."] = "Spara lösenordet för {0} på den här enheten? Nästa gång du loggar in fylls det i åt dig.",
 
 			// Sync
-			["e.g. http://localhost:5180"] = "t.ex. http://localhost:5180",
+			["e.g. https://lyrious.se"] = "t.ex. https://lyrious.se",
 			["Save host"] = "Spara server",
 			["Cancel"] = "Avbryt",
 			["Warning: {0} You can use it anyway: press ✓ again. Until it answers you'll work offline, and you can only log in if you've logged in to it on this device before."] = "Varning: {0} Du kan använda den ändå: tryck på ✓ igen. Tills den svarar arbetar du offline, och du kan bara logga in om du har loggat in mot den på den här enheten tidigare.",
@@ -101,7 +101,7 @@ namespace Lyrious.UILib.Localization
 			["Share on the local network"] = "Dela på det lokala nätverket",
 			["Lets phones and other devices on the same network open Lyrious in a browser, through this computer. They use the host above ({0}), even one only this computer can reach."] = "Låter telefoner och andra enheter på samma nätverk öppna Lyrious i en webbläsare, via den här datorn. De använder servern ovan ({0}), även om bara den här datorn kan nå den.",
 			["Port"] = "Port",
-			["Type the server's address, e.g. http://localhost:5180."] = "Skriv serverns adress, t.ex. http://localhost:5180.",
+			["Type the server's address, e.g. https://lyrious.se."] = "Skriv serverns adress, t.ex. https://lyrious.se.",
 			["Logging in…"] = "Loggar in…",
 			["Couldn't log in with the saved password. {0}"] = "Det gick inte att logga in med det sparade lösenordet. {0}",
 			["Your password has been reset. Log in with your new password."] = "Ditt lösenord har återställts. Logga in med ditt nya lösenord.",

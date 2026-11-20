@@ -20,7 +20,10 @@ namespace Lyrious.UILib
 		/// <summary>When the member last saw the screen after login (see <see cref="Setlists.OnboardingView"/>), round-trip format; none before the first time.</summary>
 		public static string LastVisit(string userName) => $"last-visit:{userName.ToLowerInvariant()}";
 
-		/// <summary>The address of the Lyrious API to sync with, e.g. http://localhost:5180.</summary>
+		/// <summary>The address of the Lyrious API to sync with, e.g. https://lyrious.se; none for <see cref="DefaultServer"/>.</summary>
+		/// <summary>The Lyrious server the apps use until another is chosen on the Sync page.</summary>
+		public const string DefaultServer = "https://lyrious.se";
+
 		public const string Host = "host";
 
 		/// <summary>"false" turns off going on to the next song when stopping at the end of the lyrics (on by default).</summary>

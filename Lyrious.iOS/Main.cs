@@ -10,11 +10,11 @@ public class Application
     static void Main(string[] args)
     {
         // Connects the app to the Lyrious API: the host chosen on the Sync page last time, else
-        // http://localhost:5180 (the simulator's own computer; plain http is only allowed to local
-        // addresses, see Info.plist). Settings and the offline cache are kept in the app's folder.
+        // https://lyrious.se (plain http is only allowed to local addresses, see Info.plist).
+        // Settings and the offline cache are kept in the app's folder.
         var settings = new FileSettingsStore();
         App.Settings = settings;
-        var host = settings.Get(SettingKeys.Host) ?? "http://localhost:5180";
+        var host = settings.Get(SettingKeys.Host) ?? SettingKeys.DefaultServer;
         var offline = new FileSettingsStore("offline.json");
         var auth = new HttpAuthService(host, offline);
         App.AuthService = auth;

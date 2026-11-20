@@ -38,7 +38,7 @@ namespace Lyrious.UILib.Login
 		public SyncView(string currentHost, Func<string, Task<ServerCheck>> check, ISetlistService? sync = null)
 		{
 			this.sync = sync;
-			host = new TextBox { Text = currentHost, PlaceholderText = L.T("e.g. http://localhost:5180"), VerticalContentAlignment = VerticalAlignment.Center };
+			host = new TextBox { Text = currentHost, PlaceholderText = L.T("e.g. https://lyrious.se"), VerticalContentAlignment = VerticalAlignment.Center };
 
 			var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
 			error.Bind(TextBlock.ForegroundProperty, error.GetResourceObservable(LyriousTheme.ErrorBrush));
@@ -329,7 +329,7 @@ namespace Lyrious.UILib.Login
 			var address = text?.Trim() ?? "";
 			if (address.Length == 0)
 			{
-				return L.T("Type the server's address, e.g. http://localhost:5180.");
+				return L.T("Type the server's address, e.g. https://lyrious.se.");
 			}
 
 			if (!address.Contains("://"))
@@ -342,7 +342,7 @@ namespace Lyrious.UILib.Login
 			       && uri.Host.Length > 0
 			       && !address.Contains(' ')
 				? null
-				: L.T("That isn't a web address. Use for example http://localhost:5180.");
+				: L.T("That isn't a web address. Use for example https://lyrious.se.");
 		}
 
 		protected override void OnLoaded(Avalonia.Interactivity.RoutedEventArgs e)

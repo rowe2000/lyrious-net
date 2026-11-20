@@ -7,11 +7,15 @@ internal sealed record LoginRequest(string Username, string Password);
 
 internal sealed record LoginResponse(string? Token, MemberProfile? Member);
 
-internal sealed record MemberProfile(System.Guid Id, string? UserName, string? Name, System.Guid? JoinedGroupId);
+internal sealed record MemberProfile(System.Guid Id, string? UserName, string? Name, System.Guid? JoinedGroupId, string? Email = null);
 
-internal sealed record RegisterRequest(string UserName, string Password, string Name, string? Email, string? PhoneNumber);
+internal sealed record RegisterRequest(string UserName, string Password, string Name, string? Email, string? PhoneNumber, string? Code);
 
-internal sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+internal sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword, string? Code);
+
+internal sealed record EmailCodeRequest(string Email);
+
+internal sealed record ChangeEmailRequest(string NewEmail, string Code);
 
 internal sealed record ForgotPasswordRequest(string UserNameOrEmail);
 
@@ -85,6 +89,8 @@ internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int Membershi
 [JsonSerializable(typeof(LoginResponse))]
 [JsonSerializable(typeof(RegisterRequest))]
 [JsonSerializable(typeof(ChangePasswordRequest))]
+[JsonSerializable(typeof(EmailCodeRequest))]
+[JsonSerializable(typeof(ChangeEmailRequest))]
 [JsonSerializable(typeof(ForgotPasswordRequest))]
 [JsonSerializable(typeof(ResetPasswordRequest))]
 [JsonSerializable(typeof(EmailInvitationRequest))]

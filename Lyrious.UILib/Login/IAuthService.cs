@@ -13,11 +13,26 @@ namespace Lyrious.UILib.Login
 	{
 		Task<LoginResult> LoginAsync(string userName, string password, CancellationToken cancellationToken = default);
 
-		/// <summary>Creates a member. Doesn't log in; call <see cref="LoginAsync"/> afterwards.</summary>
+		/// <summary>Emails a code to the address someone wants to register with (see <see cref="Registration.Code"/>).</summary>
+		Task<AuthResult> SendRegistrationCodeAsync(string email, CancellationToken cancellationToken = default);
+
+		/// <summary>Creates a member, with the code emailed to their address. Doesn't log in; call <see cref="LoginAsync"/> afterwards.</summary>
 		Task<AuthResult> RegisterAsync(Registration registration, CancellationToken cancellationToken = default);
 
-		/// <summary>Changes the logged-in member's password.</summary>
-		Task<AuthResult> ChangePasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default);
+		/// <summary>Emails a code to the logged-in member's address, needed to change the password.</summary>
+		Task<AuthResult> SendPasswordChangeCodeAsync(CancellationToken cancellationToken = default);
+
+		/// <summary>Changes the logged-in member's password, with the code emailed to them.</summary>
+		Task<AuthResult> ChangePasswordAsync(string currentPassword, string newPassword, string code, CancellationToken cancellationToken = default);
+
+		/// <summary>Emails a code to the address the logged-in member wants instead of theirs.</summary>
+		Task<AuthResult> SendEmailChangeCodeAsync(string newEmail, CancellationToken cancellationToken = default);
+
+		/// <summary>Changes the logged-in member's email address, with the code emailed to the new one.</summary>
+		Task<AuthResult> ChangeEmailAsync(string newEmail, string code, CancellationToken cancellationToken = default);
+
+		/// <summary>The logged-in member's email address; null if they have none (or it isn't known, e.g. offline).</summary>
+		string? Email { get; }
 
 		/// <summary>
 		/// Asks the server to email a password reset code. Succeeds whether or not the account exists
@@ -34,7 +49,7 @@ namespace Lyrious.UILib.Login
 		/// </summary>
 		void LogOut();
 
-		/// <summary>The address of the server (host) the app talks to, e.g. http://localhost:5180.</summary>
+		/// <summary>The address of the server (host) the app talks to, e.g. https://lyrious.se.</summary>
 		string ServerAddress { get; }
 
 		/// <summary>Checks an address for a server: whether it's an address at all, and whether a Lyrious server answers there.</summary>
@@ -56,7 +71,8 @@ namespace Lyrious.UILib.Login
 	/// <summary>The signed-in member, as far as the UI needs to know.</summary>
 	public sealed record AuthenticatedUser(string UserName, string DisplayName);
 
-	public sealed record Registration(string UserName, string Password, string DisplayName, string? Email);
+	/// <param name="Code">The code emailed to <paramref name="Email"/> (see <see cref="IAuthService.SendRegistrationCodeAsync"/>).</param>
+	public sealed record Registration(string UserName, string Password, string DisplayName, string? Email, string? Code = null);
 
 	public sealed record LoginResult(AuthenticatedUser? User, string? Error)
 	{
@@ -91,11 +107,25 @@ namespace Lyrious.UILib.Login
 		public Task<LoginResult> LoginAsync(string userName, string password, CancellationToken cancellationToken = default)
 			=> Task.FromResult(LoginResult.Failure(NotConnected));
 
+		public Task<AuthResult> SendRegistrationCodeAsync(string email, CancellationToken cancellationToken = default)
+			=> Task.FromResult(AuthResult.Failure(NotConnected));
+
 		public Task<AuthResult> RegisterAsync(Registration registration, CancellationToken cancellationToken = default)
 			=> Task.FromResult(AuthResult.Failure(NotConnected));
 
-		public Task<AuthResult> ChangePasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default)
+		public Task<AuthResult> SendPasswordChangeCodeAsync(CancellationToken cancellationToken = default)
 			=> Task.FromResult(AuthResult.Failure(NotConnected));
+
+		public Task<AuthResult> ChangePasswordAsync(string currentPassword, string newPassword, string code, CancellationToken cancellationToken = default)
+			=> Task.FromResult(AuthResult.Failure(NotConnected));
+
+		public Task<AuthResult> SendEmailChangeCodeAsync(string newEmail, CancellationToken cancellationToken = default)
+			=> Task.FromResult(AuthResult.Failure(NotConnected));
+
+		public Task<AuthResult> ChangeEmailAsync(string newEmail, string code, CancellationToken cancellationToken = default)
+			=> Task.FromResult(AuthResult.Failure(NotConnected));
+
+		public string? Email => null;
 
 		public Task<AuthResult> RequestPasswordResetAsync(string userNameOrEmail, CancellationToken cancellationToken = default)
 			=> Task.FromResult(AuthResult.Failure(NotConnected));

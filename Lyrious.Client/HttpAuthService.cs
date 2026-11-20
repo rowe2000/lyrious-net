@@ -56,7 +56,7 @@ public sealed class HttpAuthService : IAuthService
         }
     }
 
-    /// <summary>Creates a service for the API at <paramref name="apiBaseUrl"/>, e.g. http://localhost:5180.</summary>
+    /// <summary>Creates a service for the API at <paramref name="apiBaseUrl"/>, e.g. https://lyrious.se.</summary>
     public HttpAuthService(string apiBaseUrl, ISettingsStore? store = null)
         : this(CreateClient(new System.Uri(apiBaseUrl.TrimEnd('/') + "/")), store)
     {
@@ -130,7 +130,7 @@ public sealed class HttpAuthService : IAuthService
         if (!System.Uri.TryCreate(text.TrimEnd('/') + "/", System.UriKind.Absolute, out var uri)
             || (uri.Scheme != System.Uri.UriSchemeHttp && uri.Scheme != System.Uri.UriSchemeHttps))
         {
-            return new ServerCheck(null, false, L.T("That isn't a web address. Use for example http://localhost:5180."));
+            return new ServerCheck(null, false, L.T("That isn't a web address. Use for example https://lyrious.se."));
         }
 
         var normalized = uri.ToString().TrimEnd('/');
@@ -290,6 +290,7 @@ public sealed class HttpAuthService : IAuthService
         AccessToken = body.Token;
         offlineServer = null;
         MemberId = member.Id;
+        Email = string.IsNullOrWhiteSpace(member.Email) ? null : member.Email;
         JoinedGroupId = member.JoinedGroupId;
         IsOfflineSession = false;
         sessionUserName = userName;
@@ -325,7 +326,7 @@ public sealed class HttpAuthService : IAuthService
     public async Task<AuthResult> RegisterAsync(Registration registration, CancellationToken cancellationToken = default)
     {
         // The API's model requires every property, so Email and PhoneNumber are sent even when null.
-        var request = new RegisterRequest(registration.UserName, registration.Password, registration.DisplayName, registration.Email, PhoneNumber: null);
+        var request = new RegisterRequest(registration.UserName, registration.Password, registration.DisplayName, registration.Email, PhoneNumber: null, registration.Code);
         using var response = await http.PostAsJsonAsync("api/auth/register", request, ClientJsonContext.Default.RegisterRequest, cancellationToken);
 
         return response.IsSuccessStatusCode
@@ -333,28 +334,75 @@ public sealed class HttpAuthService : IAuthService
             : AuthResult.Failure(await ReadErrorAsync(response, cancellationToken));
     }
 
-    public async Task<AuthResult> ChangePasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default)
+    public async Task<AuthResult> SendRegistrationCodeAsync(string email, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync(
+            "api/auth/register/send-code", new EmailCodeRequest(email), ClientJsonContext.Default.EmailCodeRequest, cancellationToken);
+
+        return response.IsSuccessStatusCode
+            ? AuthResult.Success()
+            : AuthResult.Failure(await ReadErrorAsync(response, cancellationToken));
+    }
+
+    /// <summary>The logged-in member's email address, from the last online login (or changed since).</summary>
+    public string? Email { get; private set; }
+
+    public Task<AuthResult> SendPasswordChangeCodeAsync(CancellationToken cancellationToken = default)
+        => PostAsMemberAsync("api/auth/change-password/send-code", null, L.T("Changing your password needs a connection to the server."), cancellationToken);
+
+    public async Task<AuthResult> SendEmailChangeCodeAsync(string newEmail, CancellationToken cancellationToken = default)
+        => await PostAsMemberAsync(
+            "api/auth/change-email/send-code",
+            JsonContent.Create(new EmailCodeRequest(newEmail), ClientJsonContext.Default.EmailCodeRequest),
+            L.T("Changing your email address needs a connection to the server."),
+            cancellationToken);
+
+    public async Task<AuthResult> ChangeEmailAsync(string newEmail, string code, CancellationToken cancellationToken = default)
+    {
+        var result = await PostAsMemberAsync(
+            "api/auth/change-email",
+            JsonContent.Create(new ChangeEmailRequest(newEmail, code), ClientJsonContext.Default.ChangeEmailRequest),
+            L.T("Changing your email address needs a connection to the server."),
+            cancellationToken);
+        if (result.Succeeded)
+        {
+            Email = newEmail.Trim();
+        }
+
+        return result;
+    }
+
+    /// <summary>Posts as the logged-in member (with the token); a failure says why, e.g. offline or the session expired.</summary>
+    private async Task<AuthResult> PostAsMemberAsync(string path, HttpContent? content, string offlineMessage, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(AccessToken))
         {
-            return AuthResult.Failure(IsOfflineSession ? L.T("Changing your password needs a connection to the server.") : L.T("Log in first."));
+            return AuthResult.Failure(IsOfflineSession ? offlineMessage : L.T("Log in first."));
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "api/auth/change-password")
-        {
-            Content = JsonContent.Create(new ChangePasswordRequest(currentPassword, newPassword), ClientJsonContext.Default.ChangePasswordRequest),
-        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = content };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", AccessToken);
-
         using var response = await http.SendAsync(request, cancellationToken);
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
             return AuthResult.Failure(L.T("Your session has expired. Log in again."));
         }
 
-        if (!response.IsSuccessStatusCode)
+        return response.IsSuccessStatusCode
+            ? AuthResult.Success()
+            : AuthResult.Failure(await ReadErrorAsync(response, cancellationToken));
+    }
+
+    public async Task<AuthResult> ChangePasswordAsync(string currentPassword, string newPassword, string code, CancellationToken cancellationToken = default)
+    {
+        var result = await PostAsMemberAsync(
+            "api/auth/change-password",
+            JsonContent.Create(new ChangePasswordRequest(currentPassword, newPassword, code), ClientJsonContext.Default.ChangePasswordRequest),
+            L.T("Changing your password needs a connection to the server."),
+            cancellationToken);
+        if (!result.Succeeded)
         {
-            return AuthResult.Failure(await ReadErrorAsync(response, cancellationToken));
+            return result;
         }
 
         // The offline login follows the new password.
@@ -376,6 +424,7 @@ public sealed class HttpAuthService : IAuthService
     {
         AccessToken = null;
         MemberId = null;
+        Email = null;
         JoinedGroupId = null;
         IsOfflineSession = false;
         offlineServer = null;

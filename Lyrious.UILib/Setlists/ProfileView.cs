@@ -11,8 +11,9 @@ using Lyrious.UILib.Localization;
 namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
-	/// The logged-in member's own page: their name (shown to the band, changed here), their password,
-	/// forgetting the password saved on this device (when one is), and logging out.
+	/// The logged-in member's own page: their name (shown to the band, changed here), their email
+	/// address and their password (each changed with a code emailed to them), forgetting the password
+	/// saved on this device (when one is), and logging out.
 	/// </summary>
 	public sealed class ProfileView : UserControl
 	{
@@ -37,6 +38,7 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					NameSection(user, service),
+					EmailSection(auth),
 					PasswordSection(auth),
 				},
 			};
@@ -144,12 +146,19 @@ namespace Lyrious.UILib.Setlists
 			var current = PasswordBox(L.T("Current password"), value => model.CurrentPassword = value);
 			var next = PasswordBox(L.T("New password"), value => model.NewPassword = value);
 			var confirm = PasswordBox(L.T("Confirm new password"), value => model.ConfirmPassword = value);
+			// The code emailed to the member, beside the button that sends it.
+			var code = new TextBox { PlaceholderText = L.T("Code from the email"), MinWidth = 160, MaxWidth = 200 };
+			code.TextChanged += (_, _) => model.Code = code.Text ?? "";
+			var sendCode = new Button { Content = L.T("Send code"), VerticalAlignment = VerticalAlignment.Center };
+			sendCode.Click += (_, _) => _ = model.SendCodeAsync();
+			var codeRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { code, sendCode } };
 			var change = new Button { Content = L.T("Change password"), IsEnabled = false };
 			var message = Message();
 
 			void Update(object? sender, PropertyChangedEventArgs e)
 			{
 				change.IsEnabled = model.CanSubmit;
+				sendCode.IsEnabled = !model.IsBusy;
 				if (model.ErrorMessage is { } error)
 				{
 					Show(message, error, error: true);
@@ -166,7 +175,7 @@ namespace Lyrious.UILib.Setlists
 				// Changed: the boxes are emptied (as the model's own fields are).
 				if (e.PropertyName == nameof(FormViewModel.SuccessMessage) && model.SuccessMessage != null)
 				{
-					current.Text = next.Text = confirm.Text = "";
+					current.Text = next.Text = confirm.Text = code.Text = "";
 				}
 			}
 
@@ -187,10 +196,110 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					Section(L.T("Password")),
-					Explanation(L.T("Enter your current password and choose a new one. Changing it needs a connection to the server.")),
+					Explanation(L.T("Enter your current password, choose a new one, and enter the code that \"Send code\" emails to you. Changing it needs a connection to the server.")),
 					current,
 					next,
 					confirm,
+					codeRow,
+					change,
+					message,
+				},
+			};
+		}
+
+		/// <summary>
+		/// The member's email address, and changing it: a code is emailed to the new address, and the
+		/// change is made with it, so the address is known to be theirs.
+		/// </summary>
+		private Control EmailSection(IAuthService auth)
+		{
+			var shown = new TextBlock { TextWrapping = TextWrapping.Wrap };
+			void ShowAddress() => shown.Text = auth.Email is { } email
+				? L.T("Your email address is {0}.", email)
+				: L.T("Your account has no email address. Add one to reset a forgotten password and to change your password.");
+			ShowAddress();
+
+			var address = new TextBox { PlaceholderText = L.T("New email address"), MaxWidth = 360, MinWidth = 240, HorizontalAlignment = HorizontalAlignment.Left };
+			var sendCode = new Button { Content = L.T("Send code"), IsEnabled = false };
+			var code = new TextBox { PlaceholderText = L.T("Code from the email"), MaxWidth = 200, MinWidth = 160, HorizontalAlignment = HorizontalAlignment.Left, IsVisible = false };
+			var change = new Button { Content = L.T("Change email"), IsVisible = false, IsEnabled = false };
+			var message = Message();
+			string? sentTo = null;
+			var busy = false;
+
+			void Enable()
+			{
+				var typed = address.Text?.Trim() ?? "";
+				sendCode.IsEnabled = !busy && typed.Length > 0;
+				// The code is for the address it was sent to: another address needs a new one.
+				var codeStep = sentTo != null && typed == sentTo;
+				code.IsVisible = change.IsVisible = codeStep;
+				change.IsEnabled = !busy && codeStep && (code.Text?.Trim().Length ?? 0) > 0;
+			}
+
+			async Task RunAsync(Func<Task> action)
+			{
+				busy = true;
+				Enable();
+				try
+				{
+					await action();
+				}
+				catch (Exception ex)
+				{
+					Show(message, L.T("Couldn't reach the server. {0}", ex.Message), error: true);
+				}
+				finally
+				{
+					busy = false;
+					Enable();
+				}
+			}
+
+			sendCode.Click += (_, _) => _ = RunAsync(async () =>
+			{
+				var newAddress = address.Text?.Trim() ?? "";
+				var result = await auth.SendEmailChangeCodeAsync(newAddress);
+				if (result.Succeeded)
+				{
+					sentTo = newAddress;
+					Show(message, L.T("A code has been sent to {0}. Enter it to make it your email address.", newAddress), error: false);
+					code.Focus();
+				}
+				else
+				{
+					Show(message, result.Error ?? L.T("Couldn't send a code."), error: true);
+				}
+			});
+			change.Click += (_, _) => _ = RunAsync(async () =>
+			{
+				var result = await auth.ChangeEmailAsync(sentTo!, code.Text?.Trim() ?? "");
+				if (result.Succeeded)
+				{
+					sentTo = null;
+					address.Text = code.Text = "";
+					ShowAddress();
+					Show(message, L.T("Your email address has been changed."), error: false);
+				}
+				else
+				{
+					Show(message, result.Error ?? L.T("Changing the email address failed."), error: true);
+				}
+			});
+			address.TextChanged += (_, _) => Enable();
+			code.TextChanged += (_, _) => Enable();
+
+			return new StackPanel
+			{
+				Spacing = 8,
+				Children =
+				{
+					Section(L.T("Email")),
+					shown,
+					Explanation(L.T("To change it, enter the new address and press \"Send code\"; then enter the code from the email sent there.")),
+					address,
+					sendCode,
+					code,
 					change,
 					message,
 				},

@@ -42,13 +42,16 @@ namespace Lyrious.UILib.Login
 		protected abstract bool IsComplete { get; }
 
 		/// <summary>Runs a submit action with busy state and turns an unreachable server into a message.</summary>
-		protected async Task RunAsync(Func<Task> action)
-		{
-			if (!CanSubmit)
-			{
-				return;
-			}
+		protected Task RunAsync(Func<Task> action) => CanSubmit ? RunNowAsync(action) : Task.CompletedTask;
 
+		/// <summary>
+		/// Runs a step that doesn't need the whole form filled in (e.g. sending a code), as
+		/// <see cref="RunAsync"/> does; not while something else runs.
+		/// </summary>
+		protected Task RunStepAsync(Func<Task> action) => IsBusy ? Task.CompletedTask : RunNowAsync(action);
+
+		private async Task RunNowAsync(Func<Task> action)
+		{
 			IsBusy = true;
 			ErrorMessage = null;
 			SuccessMessage = null;

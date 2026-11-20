@@ -62,7 +62,14 @@ internal class Program
 		builder.Services.AddSingleton<IEmailSender, EmailSender>();
 		// Reset codes are the short 6-digit codes of the email token provider (valid for a few minutes),
 		// which people can type, rather than the default long token.
-		builder.Services.Configure<IdentityOptions>(options => options.Tokens.PasswordResetTokenProvider = TokenOptions.DefaultEmailProvider);
+		// So are the codes for changing the email address and the password (see AuthController).
+		builder.Services.Configure<IdentityOptions>(options =>
+		{
+			options.Tokens.PasswordResetTokenProvider = TokenOptions.DefaultEmailProvider;
+			options.Tokens.ChangeEmailTokenProvider = TokenOptions.DefaultEmailProvider;
+		});
+		// The codes verifying an address before an account is made with it.
+		builder.Services.AddSingleton<RegistrationCodes>();
 
 		// Songs' sound files (see SoundController): a folder per band, next to the project unless
 		// Media:Folder says where (e.g. a volume that outlives the container).

@@ -3,7 +3,10 @@ using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
-	/// <summary>Changing the logged-in member's password.</summary>
+	/// <summary>
+	/// Changing the logged-in member's password: the current one, the new one twice, and a code
+	/// emailed to the member's address (see <see cref="SendCodeAsync"/>), which proves it's them.
+	/// </summary>
 	public sealed class ChangePasswordViewModel(IAuthService authService) : FormViewModel
 	{
 		/// <summary>Raised after the password has been changed, with the new password (e.g. to update a saved one).</summary>
@@ -12,6 +15,7 @@ namespace Lyrious.UILib.Login
 		private string currentPassword = "";
 		private string newPassword = "";
 		private string confirmPassword = "";
+		private string code = "";
 
 		public string CurrentPassword
 		{
@@ -31,7 +35,30 @@ namespace Lyrious.UILib.Login
 			set => Set(ref confirmPassword, value);
 		}
 
-		protected override bool IsComplete => CurrentPassword.Length > 0 && NewPassword.Length > 0 && ConfirmPassword.Length > 0;
+		/// <summary>The code emailed to the member (see <see cref="SendCodeAsync"/>).</summary>
+		public string Code
+		{
+			get => code;
+			set => Set(ref code, value);
+		}
+
+		protected override bool IsComplete => CurrentPassword.Length > 0 && NewPassword.Length > 0 && ConfirmPassword.Length > 0 && Code.Trim().Length > 0;
+
+		/// <summary>Emails the code needed to change the password to the member's address.</summary>
+		public Task SendCodeAsync() => RunStepAsync(async () =>
+		{
+			var result = await authService.SendPasswordChangeCodeAsync();
+			if (result.Succeeded)
+			{
+				SuccessMessage = authService.Email is { } email
+					? L.T("A code has been sent to {0}. Enter it to change your password.", email)
+					: L.T("A code has been sent to your email address. Enter it to change your password.");
+			}
+			else
+			{
+				ErrorMessage = result.Error ?? L.T("Couldn't send a code.");
+			}
+		});
 
 		public Task ChangePasswordAsync() => RunAsync(async () =>
 		{
@@ -47,11 +74,11 @@ namespace Lyrious.UILib.Login
 				return;
 			}
 
-			var result = await authService.ChangePasswordAsync(CurrentPassword, NewPassword);
+			var result = await authService.ChangePasswordAsync(CurrentPassword, NewPassword, Code.Trim());
 			if (result.Succeeded)
 			{
 				var changedTo = NewPassword;
-				CurrentPassword = NewPassword = ConfirmPassword = "";
+				CurrentPassword = NewPassword = ConfirmPassword = Code = "";
 				SuccessMessage = L.T("Your password has been changed.");
 				PasswordChanged?.Invoke(changedTo);
 			}

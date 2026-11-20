@@ -8,6 +8,9 @@ public class RegisterModel
 	public required string? Email { get; set; }
 	public required string? PhoneNumber { get; set; }
 
+	/// <summary>The code emailed to <see cref="Email"/> (see api/auth/register/send-code), which proves it's the member's.</summary>
+	public string? Code { get; set; }
+
 	public static RegisterModel Create(string userName, string? password, string name, string? email, string? phoneNumber)
 	{
 		return new RegisterModel { UserName = userName, Password = password ?? "ASDqwe123_", Name = name, Email = email, PhoneNumber = phoneNumber };

@@ -12,14 +12,14 @@ internal class Program
     // yet and stuff might break.
     /// <param name="args">
     /// Optional: [0] Lyrious API base address. Else the host chosen on the Sync page last time, else
-    /// http://localhost:5180.
+    /// https://lyrious.se (<see cref="SettingKeys.DefaultServer"/>).
     /// </param>
     [STAThread]
     public static void Main(string[] args)
     {
         var settings = new FileSettingsStore();
         App.Settings = settings;
-        var host = args.Length > 0 ? args[0] : settings.Get(SettingKeys.Host) ?? "http://localhost:5180";
+        var host = args.Length > 0 ? args[0] : settings.Get(SettingKeys.Host) ?? SettingKeys.DefaultServer;
         // The offline cache and offline logins, in their own file (it's rewritten on every change).
         var offline = new FileSettingsStore("offline.json");
         var auth = new HttpAuthService(host, offline);

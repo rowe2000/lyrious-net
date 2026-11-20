@@ -111,12 +111,16 @@ namespace Lyrious.UILib.Login
 		}
 
 		/// <summary>Adds a link-style button below the submit button, e.g. to another page.</summary>
-		protected void AddLink(string text, Action onClick)
+		protected HyperlinkButton AddLink(string text, Action onClick)
 		{
 			var link = new HyperlinkButton { Content = text, HorizontalAlignment = HorizontalAlignment.Center };
 			link.Click += (_, _) => onClick();
 			links.Children.Add(link);
+			return link;
 		}
+
+		/// <summary>Changes what the submit button says (e.g. for the form's next step).</summary>
+		protected void SetSubmitText(string text) => submitButton.Content = text;
 
 		protected override void OnLoaded(RoutedEventArgs e)
 		{
