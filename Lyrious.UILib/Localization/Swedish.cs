@@ -130,6 +130,8 @@ namespace Lyrious.UILib.Localization
 
 			// About
 			["Version {0}"] = "Version {0}",
+			["Branch {0}"] = "Gren {0}",
+			["Commit {0}"] = "Commit {0}",
 			["Setlists, songbooks and lyrics for bands: lyrics and chords that scroll in time with the song, shared and followed live by the whole band."] = "Låtlistor, sångböcker och texter för band: texter och ackord som rullar i takt med låten, delade och följda live av hela bandet.",
 			["Release notes"] = "Versionsnyheter",
 			["About"] = "Om",

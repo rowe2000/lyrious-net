@@ -46,5 +46,34 @@ namespace Lyrious.UILib
 				return informational?.Split('+')[0] ?? assembly.GetName().Version?.ToString() ?? "";
 			}
 		}
+
+		/// <summary>The git branch the app was built from (e.g. "main"), or null when the build didn't record it.</summary>
+		public static string? AppBranch
+			=> (System.Reflection.Assembly.GetEntryAssembly() ?? typeof(ReleaseNotes).Assembly)
+				.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
+				.OfType<System.Reflection.AssemblyMetadataAttribute>()
+				.FirstOrDefault(attribute => attribute.Key == "Branch")?.Value;
+
+		/// <summary>
+		/// The git commit the app was built from (e.g. "d75f24d"), from the informational version
+		/// ("0.1.0.7+main.d75f24d"), or null when the build didn't record it.
+		/// </summary>
+		public static string? AppCommit
+		{
+			get
+			{
+				var assembly = System.Reflection.Assembly.GetEntryAssembly() ?? typeof(ReleaseNotes).Assembly;
+				var informational = assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+					.OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion;
+				var plus = informational?.IndexOf('+') ?? -1;
+				if (plus < 0)
+				{
+					return null;
+				}
+				var revision = informational![(plus + 1)..];
+				var commit = revision[(revision.LastIndexOf('.') + 1)..];
+				return commit.Length > 0 ? commit : null;
+			}
+		}
 	}
 }

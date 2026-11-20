@@ -19,6 +19,18 @@ namespace Lyrious.UILib.Setlists
 					new TextBlock { Text = L.T("Version {0}", ReleaseNotes.AppVersion), Opacity = 0.7 },
 					new TextBlock
 					{
+						Text = L.T("Branch {0}", ReleaseNotes.AppBranch ?? ""),
+						Opacity = 0.7,
+						IsVisible = ReleaseNotes.AppBranch is not null,
+					},
+					new TextBlock
+					{
+						Text = L.T("Commit {0}", ReleaseNotes.AppCommit ?? ""),
+						Opacity = 0.7,
+						IsVisible = ReleaseNotes.AppCommit is not null,
+					},
+					new TextBlock
+					{
 						Text = L.T("Setlists, songbooks and lyrics for bands: lyrics and chords that scroll in time with the song, shared and followed live by the whole band."),
 						TextWrapping = TextWrapping.Wrap,
 					},
