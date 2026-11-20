@@ -29,6 +29,9 @@ namespace Lyrious.UILib.Localization
 			set
 			{
 				App.Settings.Set(SettingKeys.Language, string.IsNullOrEmpty(value) ? null : value);
+				// Kept with the user: sent to the server, and marked as waiting first, so the sync when
+				// the screens are made anew (below) sends it instead of taking the server's older copy.
+				UserSettings.ChangedHere();
 				if (Apply())
 				{
 					Changed?.Invoke();

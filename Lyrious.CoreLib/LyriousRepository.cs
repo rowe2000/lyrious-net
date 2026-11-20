@@ -318,7 +318,8 @@ public class LyriousRepository(LyriousContext context)
 		if (entity is SongSetting songSetting && (songSetting.Transpose is < SongSetting.MinTranspose or > SongSetting.MaxTranspose || (songSetting.Lyrics?.Length ?? 0) > SongSetting.MaxLyricsLength))
 			return false;
 
-		if (entity is Group midiBand && (!Group.IsValidMidiExpressions(midiBand.MidiExpressions) || !Group.IsValidMidiCommands(midiBand.MidiCommands)))
+		if (entity is Group midiBand && (!Group.IsValidMidiExpressions(midiBand.MidiExpressions) || !Group.IsValidMidiCommands(midiBand.MidiCommands)
+		                                 || (midiBand.LyricsHeader?.Length ?? 0) > Group.MaxLyricsHeaderLength))
 			return false;
 
 		var existing = context.Find<TEntity>(entity.Id);
@@ -337,8 +338,9 @@ public class LyriousRepository(LyriousContext context)
 				|| stored.IsPrivate && (changed.Name != stored.Name || changed.Removed)) => false,
 			// Any member may change the band (its name, current setlist and song); only an admin may delete it.
 			Group stored when entity is Group changed && changed.Removed && !stored.Removed => IsAdminOf(stored.Id),
-			// Only an admin changes the band's MIDI expressions and commands (every member uses them).
-			Group stored when entity is Group changed && (changed.MidiExpressions != stored.MidiExpressions || changed.MidiCommands != stored.MidiCommands)
+			// Only an admin changes the band's MIDI expressions and commands, and its lyrics header (every member uses them).
+			Group stored when entity is Group changed && (changed.MidiExpressions != stored.MidiExpressions || changed.MidiCommands != stored.MidiCommands
+			                                              || changed.LyricsHeader != stored.LyricsHeader)
 				=> IsAdminOf(stored.Id) && CanModify(existing) && CanModify(entity),
 			_ => CanModify(existing) && CanModify(entity),
 		};

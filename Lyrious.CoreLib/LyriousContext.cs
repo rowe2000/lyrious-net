@@ -46,6 +46,7 @@ public class LyriousContext : LocalContext<Member, Role>
 			AddColumnIfMissing(nameof(Groups), nameof(Group.IsPrivate), sqlite ? "INTEGER NOT NULL DEFAULT 0" : "bit NOT NULL DEFAULT 0");
 			AddColumnIfMissing(nameof(Groups), nameof(Group.MidiCommands), sqlite ? "TEXT NULL" : $"{NVarChar(Group.MaxMidiCommandsLength)} NULL");
 			AddColumnIfMissing(nameof(Groups), nameof(Group.MidiExpressions), sqlite ? "TEXT NULL" : $"{NVarChar(Group.MaxMidiExpressionsLength)} NULL");
+			AddColumnIfMissing(nameof(Groups), nameof(Group.LyricsHeader), sqlite ? "TEXT NULL" : $"{NVarChar(Group.MaxLyricsHeaderLength)} NULL");
 			CreateSongSettingsIfMissing(sqlite);
 			AddColumnIfMissing(nameof(SongSettings), nameof(SongSetting.TransposeOff), sqlite ? "INTEGER NOT NULL DEFAULT 0" : "bit NOT NULL DEFAULT 0");
 			AddColumnIfMissing(nameof(Members), nameof(Member.Settings), sqlite ? "TEXT NULL" : $"{NVarChar(Member.MaxSettingsLength)} NULL");

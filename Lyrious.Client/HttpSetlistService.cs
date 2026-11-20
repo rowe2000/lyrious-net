@@ -1120,6 +1120,13 @@ public sealed class HttpSetlistService : ISetlistService
         Queued(current);
     }
 
+    public async Task SetLyricsHeaderAsync(Guid groupId, string? header, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        current.Update("group", groupId, new JsonObject { ["lyricsHeader"] = header });
+        Queued(current);
+    }
+
     public async Task SetMidiSongCommandsAsync(Guid groupId, MidiSongCommands commands, CancellationToken cancellationToken = default)
     {
         var current = await CacheAsync();
@@ -1363,7 +1370,7 @@ public sealed class HttpSetlistService : ISetlistService
 
     private static string Limit(string value, int max) => value.Length > max ? value[..max] : value;
 
-    private static GroupSummary ToSummary(GroupDto group) => new(group.Id, group.Name, group.CurrentSetlistId, group.CurrentSetlistItemId, group.IsPrivate, group.MidiExpressions, group.MidiCommands);
+    private static GroupSummary ToSummary(GroupDto group) => new(group.Id, group.Name, group.CurrentSetlistId, group.CurrentSetlistItemId, group.IsPrivate, group.MidiExpressions, group.MidiCommands, group.LyricsHeader);
 
     private static SetlistSummary ToSummary(SetlistDto setlist) => new(setlist.Id, setlist.Name, setlist.GroupId);
 

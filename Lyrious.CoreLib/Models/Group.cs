@@ -96,6 +96,18 @@ public sealed class Group : Entity, IName
 		}
 	}
 
+	/// <summary>
+	/// The header shown above every song's lyrics, in ChordPro, with the song's details for
+	/// placeholders: $songname, $artist, $key, $tempo, $beat and $tags (see Lyrious.UILib's LyricsHeader).
+	/// Null for the apps' default ("# [$key]$songname", then "#### $tags"); empty for no header. Every member gets it;
+	/// only admins change it.
+	/// </summary>
+	[MaxLength(MaxLyricsHeaderLength)]
+	[DataMember] public string? LyricsHeader { get; set; }
+
+	/// <summary>The longest <see cref="LyricsHeader"/> stored.</summary>
+	public const int MaxLyricsHeaderLength = 1000;
+
 	[DataMember] public Guid? CurrentSetlistId { get; set; }
 	[DataMember] public Guid? CurrentPlayId { get; set; }
 	[DataMember] public Guid? CurrentSetlistItemId { get; set; }

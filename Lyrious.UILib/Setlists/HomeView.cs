@@ -977,6 +977,13 @@ namespace Lyrious.UILib.Setlists
 
 		private void OnGroupChanged(GroupSummary group) => Dispatcher.UIThread.Post(() =>
 		{
+			// The band's lyrics header, as its admin designed it (also without band sync: it's how the band's lyrics look).
+			if (currentGroup?.Id == group.Id)
+			{
+				currentGroup = currentGroup with { LyricsHeader = group.LyricsHeader };
+				LyricsHeader.Current = group.LyricsHeader;
+			}
+
 			if (bandSync)
 			{
 				_ = FollowGroupAsync(group);
@@ -2333,6 +2340,7 @@ namespace Lyrious.UILib.Setlists
 			groupName.FontWeight = isPrivate ? FontWeight.Normal : FontWeight.SemiBold;
 			groupName.FontStyle = isPrivate ? FontStyle.Italic : FontStyle.Normal;
 			currentGroup = start.Group;
+			LyricsHeader.Current = start.Group?.LyricsHeader;
 			_ = ShowPresentMembersAsync();
 			currentSetlist = null;
 			SetCurrentSong(null, null);
@@ -3160,11 +3168,29 @@ namespace Lyrious.UILib.Setlists
 				var band = (await service.GetGroupsAsync()).FirstOrDefault(g => g.Id == groupId);
 				var members = await service.GetGroupMembersAsync();
 				var me = members.TryGetValue(groupId, out var list) ? list.FirstOrDefault(member => member.IsMe) : null;
-				place.Content = new MidiSongCommandsSection(
-					Midi.SongCommandsFromJson(band?.MidiCommands),
-					Midi.ExpressionsFromJson(band?.MidiExpressions),
-					canEdit: me?.Role == GroupRole.Admin,
-					commands => service.SetMidiSongCommandsAsync(groupId, commands));
+				var canEdit = me?.Role == GroupRole.Admin;
+				place.Content = new StackPanel
+				{
+					Spacing = 24,
+					Children =
+					{
+						new LyricsHeaderSection(band?.LyricsHeader, canEdit, async header =>
+						{
+							await service.SetLyricsHeaderAsync(groupId, header);
+							// Shown at once on this device (the other members get it with the band).
+							if (currentGroup?.Id == groupId)
+							{
+								currentGroup = currentGroup with { LyricsHeader = header };
+								LyricsHeader.Current = header;
+							}
+						}),
+						new MidiSongCommandsSection(
+							Midi.SongCommandsFromJson(band?.MidiCommands),
+							Midi.ExpressionsFromJson(band?.MidiExpressions),
+							canEdit,
+							commands => service.SetMidiSongCommandsAsync(groupId, commands)),
+					},
+				};
 			}
 			catch (Exception ex)
 			{

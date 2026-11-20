@@ -42,7 +42,9 @@ internal sealed record GroupDto(
     // The band's MIDI expressions, a JSON array (see Lyrious.UILib's Midi); null if none.
     string? MidiExpressions = null,
     // The band's MIDI commands for every song, a JSON object of select, start and stop; null if none.
-    string? MidiCommands = null);
+    string? MidiCommands = null,
+    // The header above every song's lyrics, in ChordPro with placeholders; null for the default, empty for none.
+    string? LyricsHeader = null);
 
 internal sealed record SetlistDto(System.Guid Id, string Name, System.Guid GroupId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum);
 

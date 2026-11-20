@@ -539,7 +539,30 @@ namespace Lyrious.UILib.Setlists
 			// The time at the right of the toolbar (also in focus mode, so it shows while playing).
 			var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { titleActions, clock } };
 			Content = PageLayout.SongPage(TitleOf(song), body, InfoText(), toolbar);
+			// While editing, a click outside the text boxes leaves the one being typed in (as a click
+			// elsewhere does in most apps), so its value is taken and the details' boxes close.
+			AddHandler(PointerPressedEvent, UnfocusTextBoxOnPressOutside, RoutingStrategies.Bubble, handledEventsToo: true);
+			// The focus goes to the view itself then (there's no "no focus"); Tab still skips it.
+			Focusable = true;
+			IsTabStop = false;
 			ShowTitle();
+		}
+
+		/// <summary>
+		/// A press while editing that isn't in a text box: the text box that has the focus loses it.
+		/// Buttons and drop-downs take the focus themselves, so only a text box's focus is cleared.
+		/// </summary>
+		private void UnfocusTextBoxOnPressOutside(object? sender, PointerPressedEventArgs e)
+		{
+			if (!IsEditing || (e.Source as Visual)?.FindAncestorOfType<TextBox>(includeSelf: true) != null)
+			{
+				return;
+			}
+
+			if (TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox)
+			{
+				Focus(NavigationMethod.Pointer);
+			}
 		}
 
 		private static string TitleOf(SongDetails song) => string.IsNullOrWhiteSpace(song.Name) ? NewSongTitle : song.Name;
@@ -570,6 +593,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			base.OnAttachedToVisualTree(e);
 			DisplaySettings.ShowSongHeaderChanged += ShowTitle;
+			LyricsHeader.Changed += OnLyricsHeaderChanged;
 			ShowTime();
 			clockTimer.Start();
 			ShowTitle();
@@ -1284,6 +1308,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			base.OnDetachedFromVisualTree(e);
 			DisplaySettings.ShowSongHeaderChanged -= ShowTitle;
+			LyricsHeader.Changed -= OnLyricsHeaderChanged;
 			clockTimer.Stop();
 			if (App.SoundStore is { } sounds)
 			{
@@ -1298,6 +1323,15 @@ namespace Lyrious.UILib.Setlists
 				startedSound = false;
 				RememberSoundPosition();
 				App.SoundStore?.Stop();
+			}
+		}
+
+		/// <summary>The band's lyrics header changed: the lyrics again with it (not while editing: the editor keeps what's typed).</summary>
+		private void OnLyricsHeaderChanged()
+		{
+			if (!IsEditing)
+			{
+				ShowLyrics();
 			}
 		}
 
@@ -1328,12 +1362,17 @@ namespace Lyrious.UILib.Setlists
 
 			ToolTip.SetTip(chordGridButton, grid ? L.T("Show chords over the words") : L.T("Show a chord grid (chords only, by bar)"));
 
-			if (hasLyrics && ChordPro.HasFormatting(lyrics))
+			// The band's header in front of the lyrics, so it scrolls, zooms and transposes with them.
+			// Its $key is the key the lyrics are written in: as a chord it's moved with theirs.
+			var shown = hasLyrics
+				? LyricsHeader.Prepend(LyricsHeader.Definition(LyricsHeader.Current), song, string.IsNullOrWhiteSpace(song.OriginalKey) ? song.PlayingKey : song.OriginalKey, lyrics)
+				: lyrics;
+			if (hasLyrics && ChordPro.HasFormatting(shown))
 			{
 				// Chords above the words they belong to (or the chord grid), headings, notes, and time tags for the scrolling.
 				// The lyrics are written in the original key; the chords are shown in the playing key, moved
 				// by the member's own transpose.
-				var transposed = Transpose.Chords(lyrics, Transpose.Semitones(song.OriginalKey, song.PlayingKey) + mySetting.ActiveTranspose, ShownKey);
+				var transposed = Transpose.Chords(shown, Transpose.Semitones(song.OriginalKey, song.PlayingKey) + mySetting.ActiveTranspose, ShownKey);
 				var rendered = ChordPro.Render(transposed, fontSize: 24, lineHeight: 36, song.Tempo, song.Beat, chordGrid: grid);
 				text = rendered.Content;
 				markers = rendered.Markers;
