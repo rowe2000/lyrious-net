@@ -57,9 +57,17 @@ internal class Program
 		builder.Services.AddSingleton<HubConnectionRegistry>();
 		builder.Services.AddScoped<ChangeNotifier>();
 
-		// Account emails (password reset codes); only logged until Smtp:Host is configured.
+		// Account emails (verification and reset codes, invitations); only logged until Gmail or Smtp:Host is configured.
+		// Through the Gmail API when its environment variables are set (see GmailEmailSender), else SMTP.
 		builder.Services.AddSingleton(builder.Configuration.GetSection("Smtp").Get<SmtpSettings>() ?? new SmtpSettings());
-		builder.Services.AddSingleton<IEmailSender, EmailSender>();
+		if (GmailEmailSender.IsConfigured)
+		{
+			builder.Services.AddSingleton<IEmailSender, GmailEmailSender>();
+		}
+		else
+		{
+			builder.Services.AddSingleton<IEmailSender, EmailSender>();
+		}
 		// Reset codes are the short 6-digit codes of the email token provider (valid for a few minutes),
 		// which people can type, rather than the default long token.
 		// So are the codes for changing the email address and the password (see AuthController).
