@@ -14,6 +14,14 @@ namespace Lyrious.UILib
 	/// <item>A click (or tap) outside the text box that's being typed in takes the focus from it, as in
 	/// most apps; a click in another text box goes to that one. Buttons, drop-downs and the like take
 	/// the focus themselves, as before.</item>
+	/// <item>Escape in the text box being typed in undoes what was typed there (its text goes back to
+	/// what it was when it got the focus) and leaves it; the next Escape does what Escape
+	/// does, e.g. cancels or closes the view (see <see cref="EscapeKey"/>). A text box's own use of
+	/// Escape (e.g. cancelling a rename) comes first.</item>
+	/// <item>A drop-down likewise: Escape while the focus is in it (its text, for one that can be typed
+	/// in, or the drop-down itself) and its list is closed puts back the value it had when the focus
+	/// came to it, also undoing items picked since, and leaves it. With the list open, Escape closes
+	/// the list, as before.</item>
 	/// <item>When the view with the text box closes while it's being typed in, the text box loses the
 	/// focus first (its LostFocus is raised), so what was typed is handled as when leaving it by hand,
 	/// e.g. taken or saved.</item>
@@ -22,16 +30,54 @@ namespace Lyrious.UILib
 	/// </summary>
 	public static class TextBoxFocus
 	{
-		// The text box being typed in, until it loses the focus.
+		// The text box being typed in, until it loses the focus, and its text when it got it.
 		private static TextBox? focused;
+		private static string? textWhenFocused;
+
+		// The drop-down the focus is in (its list may be open), until the focus leaves it, and its value
+		// when the focus came: its text for one that can be typed in, else its selected item.
+		private static ComboBox? combo;
+		private static object? comboValue;
 
 		/// <summary>Called once at startup: on every window (and the browser's root), for every text box.</summary>
 		public static void Register()
 		{
 			InputElement.PointerPressedEvent.AddClassHandler<TopLevel>(OnPressed, RoutingStrategies.Bubble, handledEventsToo: true);
+			InputElement.KeyDownEvent.AddClassHandler<Control>(OnKeyDown);
 			InputElement.GotFocusEvent.AddClassHandler<TextBox>(OnGotFocus);
 			InputElement.LostFocusEvent.AddClassHandler<TextBox>(OnLostFocus);
+			InputElement.IsKeyboardFocusWithinProperty.Changed.AddClassHandler<ComboBox>((box, _) => OnComboFocusChanged(box));
+			ComboBox.IsDropDownOpenProperty.Changed.AddClassHandler<ComboBox>((box, _) => OnComboFocusChanged(box));
 		}
+
+		/// <summary>The focus came to a drop-down (its value is kept, for Escape), or left it (its list closed too).</summary>
+		private static void OnComboFocusChanged(ComboBox box)
+		{
+			if (box.IsKeyboardFocusWithin || box.IsDropDownOpen)
+			{
+				if (!ReferenceEquals(combo, box))
+				{
+					combo = box;
+					comboValue = box.IsEditable ? box.Text : box.SelectedItem;
+				}
+
+				return;
+			}
+
+			// Checked a moment later: the focus passes between the drop-down, its text and its list.
+			Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+			{
+				if (ReferenceEquals(combo, box) && !box.IsKeyboardFocusWithin && !box.IsDropDownOpen)
+				{
+					combo = null;
+					comboValue = null;
+				}
+			});
+		}
+
+		/// <summary>Whether the focus is in the drop-down <see cref="combo"/> (in it or its text), with its list closed.</summary>
+		private static bool InClosedCombo(Visual? visual)
+			=> combo is { IsDropDownOpen: false } box && visual != null && (ReferenceEquals(visual, box) || box.IsVisualAncestorOf(visual));
 
 		/// <summary>A press outside the text box being typed in: the focus leaves it.</summary>
 		private static void OnPressed(TopLevel top, PointerPressedEventArgs e)
@@ -49,16 +95,87 @@ namespace Lyrious.UILib
 			}
 
 			// There's no "no focus": it goes to what was pressed, if that takes the focus, else to the
-			// page's root, which takes it without being a Tab stop.
+			// page's root.
 			if (FocusableAncestor(e.Source as Visual) is { } target)
 			{
 				target.Focus(NavigationMethod.Pointer);
 			}
-			else if (top.Content is InputElement root)
+			else
 			{
-				root.Focusable = true;
-				root.IsTabStop = false;
-				root.Focus(NavigationMethod.Pointer);
+				FocusRoot(top, NavigationMethod.Pointer);
+			}
+		}
+
+		/// <summary>
+		/// Escape in the text box being typed in, or a drop-down with the focus (see <see cref="EscapeKey"/>):
+		/// its text (or selected item) goes back to what it was when the focus came to it, and the focus
+		/// goes to the page's root. True if it did, so the key does nothing more this time.
+		/// </summary>
+		public static bool Leave(TopLevel top)
+		{
+			var focusedElement = top.FocusManager?.GetFocusedElement() as Visual;
+			if (InClosedCombo(focusedElement) && combo is { } box1)
+			{
+				// Undone first, so whatever acts on leaving it sees the value as it was.
+				if (box1.IsEditable)
+				{
+					if (box1.Text != comboValue as string)
+					{
+						box1.Text = comboValue as string;
+					}
+				}
+				else if (!Equals(box1.SelectedItem, comboValue))
+				{
+					box1.SelectedItem = comboValue;
+				}
+
+				return FocusRoot(top, NavigationMethod.Unspecified);
+			}
+
+			if (focusedElement is not TextBox box)
+			{
+				return false;
+			}
+
+			// Undone first, so whatever acts on leaving it (LostFocus) sees the text as it was.
+			if (ReferenceEquals(box, focused) && box.Text != textWhenFocused)
+			{
+				box.Text = textWhenFocused;
+			}
+
+			return FocusRoot(top, NavigationMethod.Unspecified);
+		}
+
+		/// <summary>The focus to the page's root, which takes it without being a Tab stop.</summary>
+		private static bool FocusRoot(TopLevel top, NavigationMethod method)
+		{
+			if (top.Content is not InputElement root)
+			{
+				return false;
+			}
+
+			root.Focusable = true;
+			root.IsTabStop = false;
+			return root.Focus(method);
+		}
+
+		/// <summary>
+		/// Escape on its way up from the text box being typed in, at the first element above it: after
+		/// the text box's own handlers (e.g. cancelling a rename), before anything above that uses
+		/// Escape (a drawer closing, a close button, see <see cref="EscapeKey"/>). It only leaves the text box.
+		/// </summary>
+		private static void OnKeyDown(Control element, KeyEventArgs e)
+		{
+			if (e.Key != Key.Escape || e.KeyModifiers != KeyModifiers.None || e.Handled || element is TextBox
+			    || !(InClosedCombo(e.Source as Visual) || (e.Source as Visual)?.FindAncestorOfType<TextBox>(includeSelf: true) is { IsFocused: true })
+			    || TopLevel.GetTopLevel(element) is not { } top)
+			{
+				return;
+			}
+
+			if (Leave(top))
+			{
+				e.Handled = true;
 			}
 		}
 
@@ -85,6 +202,7 @@ namespace Lyrious.UILib
 
 			Forget();
 			focused = box;
+			textWhenFocused = box.Text;
 			box.DetachedFromVisualTree += OnDetached;
 		}
 
@@ -117,6 +235,7 @@ namespace Lyrious.UILib
 			{
 				focused.DetachedFromVisualTree -= OnDetached;
 				focused = null;
+				textWhenFocused = null;
 			}
 		}
 	}

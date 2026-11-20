@@ -10,7 +10,8 @@ namespace Lyrious.UILib
 	/// <summary>
 	/// Escape presses the close button (✕) on screen, if there is one. Mark a close button with
 	/// <see cref="MarkAsClose"/>. Escape that something else already handled (a text box's own use,
-	/// a flyout closing, ending focus mode) is left alone.
+	/// a flyout closing, ending focus mode) is left alone. While a text box is being typed in, Escape
+	/// first only leaves it (see <see cref="TextBoxFocus"/>); the next one closes.
 	///
 	/// With several on screen: an open drawer that slides over the page first, then the page's own ✕,
 	/// then a pinned drawer. Within each, one marked to go first (e.g. Cancel while editing, before
@@ -46,7 +47,19 @@ namespace Lyrious.UILib
 		{
 			InputElement.KeyDownEvent.AddClassHandler<TopLevel>((top, e) =>
 			{
-				if (e.Key == Key.Escape && e.KeyModifiers == KeyModifiers.None && !e.Handled && FindClose(top) is { } close)
+				if (e.Key != Key.Escape || e.KeyModifiers != KeyModifiers.None || e.Handled)
+				{
+					return;
+				}
+
+				// Typing in a text box: this Escape only leaves it; the next one closes.
+				if (TextBoxFocus.Leave(top))
+				{
+					e.Handled = true;
+					return;
+				}
+
+				if (FindClose(top) is { } close)
 				{
 					e.Handled = true;
 					close.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

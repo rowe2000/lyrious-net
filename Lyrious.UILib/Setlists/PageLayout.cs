@@ -201,6 +201,12 @@ namespace Lyrious.UILib.Setlists
 
 			if (replacement != null)
 			{
+				// Laid out around the action at the right (the first child): its lines below it take the whole width.
+				if (replacement is CornerWrapPanel around)
+				{
+					around.Corner = header.Children[0];
+				}
+
 				header.Children.Add(replacement);
 			}
 

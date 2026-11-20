@@ -300,6 +300,8 @@ namespace Lyrious.UILib.Localization
 			["Tempo (bpm)"] = "Tempo (bpm)",
 			["Beat"] = "Taktart",
 			["Set keys, tempo and beat"] = "Ange tonarter, tempo och taktart",
+			["(no key)"] = "(ingen tonart)",
+			["(not set)"] = "(inte angiven)",
 			["Click to change the playing key, original key, tempo and beat"] = "Klicka för att ändra spelad tonart, originaltonart, tempo och taktart",
 			["Tags, separated by spaces"] = "Taggar, åtskilda med mellanslag",
 			["Tags, separated by spaces (e.g. ballad christmas)"] = "Taggar, åtskilda med mellanslag (t.ex. ballad jul)",

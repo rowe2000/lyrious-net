@@ -76,6 +76,12 @@ namespace Lyrious.UILib
 
 		/// <summary>"true" shows the song's name and details above the lyrics in the scroll view; off unless set.</summary>
 		public const string ShowSongHeader = "show-song-header";
+
+		/// <summary>
+		/// Where the app's window was when it closed, to open there again (desktop): "x,y,width,height" and
+		/// ",max" if it was maximized; the position in screen pixels, the size in the app's units. This device only.
+		/// </summary>
+		public const string WindowPlacement = "window-placement";
 	}
 
 	/// <summary>Used until a host provides a store: settings last only while the app runs.</summary>

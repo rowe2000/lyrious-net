@@ -2165,9 +2165,9 @@ namespace Lyrious.UILib.Setlists
 			scroller = null;
 			var name = new TextBox { Text = song.Name, MaxLength = MaxNameLength, PlaceholderText = L.T("Song name") };
 			var artist = new TextBox { Text = song.Artist, MaxLength = 100, PlaceholderText = L.T("Artist"), MinWidth = 200 };
-			var key = Choice(Keys, song.PlayingKey, NoKey);
-			var originalKey = Choice(Keys, song.OriginalKey, NoOriginalKey);
-			var beat = Choice(Beats, song.Beat, null);
+			var key = KeyChoice(song.PlayingKey, NoKey);
+			var originalKey = KeyChoice(song.OriginalKey, NoOriginalKey);
+			var beat = BeatChoice(song.Beat);
 			var tempo = new NumericUpDown { Value = (decimal)Math.Clamp(song.Tempo, 20, 300), Minimum = 20, Maximum = 300, Increment = 1, FormatString = "0", MinWidth = 140 };
 			var editor = new TextBox
 			{
@@ -2447,9 +2447,6 @@ namespace Lyrious.UILib.Setlists
 
 			// Key, tempo and beat likewise: text until clicked, then their inputs, side by side on one
 			// line (so without labels and spin buttons), until none of them has the focus any more.
-			key.MinWidth = 0;
-			originalKey.MinWidth = 0;
-			beat.MinWidth = 0;
 			tempo.MinWidth = 0;
 			tempo.Width = 72;
 			tempo.ShowButtonSpinner = false;
@@ -2463,9 +2460,9 @@ namespace Lyrious.UILib.Setlists
 			// The song with the keys, tempo and beat as they are in the inputs.
 			SongDetails WithDetails() => song with
 			{
-				PlayingKey = key.SelectedItem as string is { } k && k != NoKey ? k : "",
-				OriginalKey = originalKey.SelectedItem as string is { } o && o != NoOriginalKey ? o : "",
-				Beat = beat.SelectedItem as string ?? song.Beat,
+				PlayingKey = KeyOf(key),
+				OriginalKey = KeyOf(originalKey),
+				Beat = BeatOf(beat, song.Beat),
 				Tempo = (float)(tempo.Value ?? (decimal)song.Tempo),
 			};
 
@@ -2730,7 +2727,9 @@ namespace Lyrious.UILib.Setlists
 			};
 			ShowTagsText();
 
-			editHeader = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { nameSlot, artistSlot, detailsSlot, tagsSlot } };
+			// Beside the tools as far as they fit; what doesn't goes on the next line, which takes the
+			// whole width, under the tools too.
+			editHeader = new CornerWrapPanel { VerticalAlignment = VerticalAlignment.Top, Children = { nameSlot, artistSlot, detailsSlot, tagsSlot } };
 
 			// The media button, Save and Cancel take the pencil's place at the right of the title.
 			titleActions.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { media, save, cancel } };
@@ -2845,28 +2844,285 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
-		/// <summary>A drop-down of <paramref name="options"/>, with the current value added if it isn't one of them.</summary>
-		private static ComboBox Choice(IEnumerable<string> options, string current, string? none)
+		// A key as typed: a note A to G, then # or b, then m (minor); e.g. "F#m", "Bb", "C".
+		private static readonly System.Text.RegularExpressions.Regex KeyPattern = new("^[A-G][#b]?m?$");
+
+		/// <summary>
+		/// A key as pasted or picked, written the way keys are: the note in capitals, minor as "m" (so
+		/// "f#M" is "F#m"). Not checked; see <see cref="KeyPattern"/>.
+		/// </summary>
+		private static string TidyKey(string? text)
 		{
-			var items = new List<string>();
-			if (none != null)
+			text = text?.Trim() ?? "";
+			return text.Length == 0 ? "" : char.ToUpperInvariant(text[0]) + text[1..].Replace('M', 'm');
+		}
+
+		/// <summary>
+		/// What typing <paramref name="typed"/> over the selection (or at the caret) of a key's text makes
+		/// of it, with the caret after it; null if that isn't a key, so it isn't typed. A note typed first
+		/// in lower case is minor, the caret before the "m" for a # or b ("f" is "F|m"); "M" is "m"; "#"
+		/// is sharp and "b" (after the note) flat.
+		/// </summary>
+		private static (string Text, int Caret)? TypeInKey(string text, int start, int end, string typed)
+		{
+			foreach (var c in typed)
 			{
-				items.Add(none);
+				var before = text[..start];
+				var after = text[end..];
+				string? result = null;
+				var caret = 0;
+				if (start == 0 && c is >= 'a' and <= 'g' or >= 'A' and <= 'G')
+				{
+					// The note. In lower case it's minor (unless the rest says so already): the caret before
+					// the "m", for a # or b to go in.
+					var note = char.ToUpperInvariant(c).ToString();
+					var minor = char.IsLower(c) && !after.Contains('m');
+					result = note + (minor ? "m" : "") + after;
+					caret = 1;
+				}
+				else if (start > 0)
+				{
+					var put = c == 'M' ? 'm' : c;
+					result = before + put + after;
+					caret = start + 1;
+				}
+
+				if (result == null || !KeyPattern.IsMatch(result))
+				{
+					return null;
+				}
+
+				text = result;
+				start = end = caret;
 			}
 
-			items.AddRange(options);
+			return (text, start);
+		}
+
+		/// <summary>
+		/// A key to type or pick: a drop-down of <see cref="Keys"/> whose text can be typed too, but only
+		/// as a key (a note A to G, then # or b, then m): what wouldn't make a key can't be typed (see
+		/// <see cref="TypeInKey"/>). Empty is no key (<paramref name="none"/> shows then). The key typed
+		/// or picked: <see cref="KeyOf"/>.
+		/// </summary>
+		private static ComboBox KeyChoice(string current, string none)
+			=> TypedChoice(Keys, current, L.T(none), TypeInKey, TidyKey, key => key.Length == 0 || KeyPattern.IsMatch(key));
+
+		/// <summary>The key in a <see cref="KeyChoice"/>: what's typed or picked, empty for none.</summary>
+		private static string KeyOf(ComboBox box) => TidyKey(box.Text) is var key && KeyPattern.IsMatch(key) ? key : "";
+
+		// A beat (time signature) as it's typed, part-way too: beats per bar, then "/" and the note value ("6", "6/", "6/8").
+		private static readonly System.Text.RegularExpressions.Regex BeatTyping = new(@"^[1-9][0-9]?(/([1-9][0-9]?)?)?$");
+
+		// A whole beat: beats per bar (1 to 99) over a note value of 2, 4, 8, 16 or 32 ("4/4", "6/8", "12/8").
+		private static readonly System.Text.RegularExpressions.Regex BeatPattern = new(@"^[1-9][0-9]?/(2|4|8|16|32)$");
+
+		/// <summary>What typing <paramref name="typed"/> over the selection of a beat's text makes of it, with the caret after it; null if that can't be a beat.</summary>
+		private static (string Text, int Caret)? TypeInBeat(string text, int start, int end, string typed)
+		{
+			var result = text[..start] + typed + text[end..];
+			return BeatTyping.IsMatch(result) ? (result, start + typed.Length) : null;
+		}
+
+		/// <summary>
+		/// A beat to type or pick, as a key is (see <see cref="KeyChoice"/>): a drop-down of <see cref="Beats"/>
+		/// whose text can be typed too, but only as a beat ("6/8"). The beat: <see cref="BeatOf"/>.
+		/// </summary>
+		private static ComboBox BeatChoice(string current)
+			=> TypedChoice(Beats, current, null, TypeInBeat, text => text?.Trim() ?? "", beat => beat.Length == 0 || BeatTyping.IsMatch(beat));
+
+		/// <summary>The beat in a <see cref="BeatChoice"/>; <paramref name="fallback"/> while it isn't a whole beat (e.g. "6/").</summary>
+		private static string BeatOf(ComboBox box, string fallback) => (box.Text?.Trim() ?? "") is var beat && BeatPattern.IsMatch(beat) ? beat : fallback;
+
+		/// <summary>
+		/// A drop-down of <paramref name="options"/> whose text can be typed too, but only as
+		/// <paramref name="typeIn"/> allows: what it refuses can't be typed (it's checked before it's in
+		/// the text). Pasted, deleted or picked text is tidied with <paramref name="tidy"/>, and if
+		/// <paramref name="allowed"/> refuses it, the text before stays. Narrow, highlighted while it has
+		/// the focus as a text box is.
+		/// </summary>
+		/// <param name="typeIn">What typing text over a selection (start, end) makes of the text, with the caret; null to refuse it.</param>
+		private static ComboBox TypedChoice(IEnumerable<string> options, string current, string? placeholder,
+			Func<string, int, int, string, (string Text, int Caret)?> typeIn, Func<string?, string> tidy, Func<string, bool> allowed)
+		{
+			var items = new List<string>(options);
 			if (!string.IsNullOrWhiteSpace(current) && !items.Contains(current))
 			{
 				items.Add(current);
 			}
 
-			return new ComboBox
+			var box = new ComboBox
 			{
 				ItemsSource = items,
-				SelectedItem = string.IsNullOrWhiteSpace(current) ? none ?? items.FirstOrDefault() : current,
-				MinWidth = 120,
+				IsEditable = true,
+				Text = current,
+				PlaceholderText = placeholder,
+			};
+			HighlightWhileFocused(box);
+
+			// Narrow (about 70% of a drop-down's usual width), room for "F#m": the text box inside may be
+			// narrower than a text box's usual least width (else its text scrolls out of sight to the
+			// left), with less room before the text; above and below it as in a text box, so the text
+			// sits at the same height.
+			box.Width = 76;
+			var textPadding = Application.Current?.TryFindResource("TextControlThemePadding", out var padding) == true && padding is Thickness p
+				? p
+				: new Thickness(10, 6, 6, 5);
+			box.Styles.Add(new Avalonia.Styling.Style(x => Avalonia.Styling.Selectors.OfType<TextBox>(x))
+			{
+				Setters =
+				{
+					new Avalonia.Styling.Setter(MinWidthProperty, 0.0),
+					new Avalonia.Styling.Setter(PaddingProperty, new Thickness(8, textPadding.Top, 0, textPadding.Bottom)),
+					// In the middle of the drop-down's height, as a text box's text (it'd sit higher otherwise).
+					new Avalonia.Styling.Setter(VerticalAlignmentProperty, VerticalAlignment.Stretch),
+					new Avalonia.Styling.Setter(VerticalContentAlignmentProperty, VerticalAlignment.Center),
+				},
+			});
+
+			// Typing: checked before it's in the text, so only what's allowed can be typed.
+			box.AddHandler(InputElement.TextInputEvent, (_, e) =>
+			{
+				if (e.Source is not TextBox input || string.IsNullOrEmpty(e.Text))
+				{
+					return;
+				}
+
+				e.Handled = true;
+				var text = input.Text ?? "";
+				var start = Math.Min(input.SelectionStart, input.SelectionEnd);
+				var end = Math.Max(input.SelectionStart, input.SelectionEnd);
+				if (typeIn(text, Math.Clamp(start, 0, text.Length), Math.Clamp(end, 0, text.Length), e.Text) is { } typed)
+				{
+					input.Text = typed.Text;
+					input.SelectionStart = input.SelectionEnd = input.CaretIndex = typed.Caret;
+				}
+			}, RoutingStrategies.Tunnel);
+
+			// Alt+Down and Alt+Up: the next or previous item, without the list (which they'd open otherwise);
+			// from text that isn't an item, the first or last.
+			box.AddHandler(InputElement.KeyDownEvent, (_, e) =>
+			{
+				if (e.KeyModifiers != KeyModifiers.Alt || e.Key is not (Key.Down or Key.Up) || box.IsDropDownOpen || items.Count == 0)
+				{
+					return;
+				}
+
+				e.Handled = true;
+				var index = items.IndexOf(box.Text ?? "");
+				var next = index < 0
+					? (e.Key == Key.Down ? 0 : items.Count - 1)
+					: Math.Clamp(index + (e.Key == Key.Down ? 1 : -1), 0, items.Count - 1);
+				box.SelectedIndex = next;
+				// The item's text in the box, whole (and selected, to type over).
+				box.Text = items[next];
+				if (e.Source is TextBox input)
+				{
+					input.SelectAll();
+				}
+			}, RoutingStrategies.Tunnel);
+
+			// Pasting, deleting or picking: tidied, and if that isn't allowed (e.g. the note deleted from
+			// the key "F#m"), the text before stays.
+			var accepted = current;
+			var tidying = false;
+			box.PropertyChanged += (_, e) =>
+			{
+				if (e.Property != ComboBox.TextProperty || tidying)
+				{
+					return;
+				}
+
+				var tidied = tidy(box.Text);
+				tidying = true;
+				try
+				{
+					if (allowed(tidied))
+					{
+						accepted = tidied;
+						if (box.Text != tidied)
+						{
+							box.Text = tidied;
+						}
+					}
+					else
+					{
+						// Not allowed: what was typed is left out, the text before stays.
+						box.Text = accepted;
+					}
+
+					SelectMatching();
+				}
+				finally
+				{
+					tidying = false;
+				}
+			};
+
+			// The list's selection follows the text (typed, pasted, or put back with Escape): the item it
+			// is, or none, so picking any item (the one selected before too) always puts it in the text.
+			void SelectMatching()
+			{
+				var match = items.FirstOrDefault(item => item == box.Text);
+				if (Equals(box.SelectedItem, match))
+				{
+					return;
+				}
+
+				// No item: none selected, without the drop-down emptying its text as it does for no selection.
+				var text = box.Text;
+				box.SelectedItem = match;
+				if (box.Text != text)
+				{
+					box.Text = text;
+				}
+			}
+
+			return box;
+		}
+
+		/// <summary>
+		/// The drop-down's border as a text box's while the focus is in it (in its text or its list): the
+		/// theme's focused text box brush and thickness; the theme's own border again when it leaves.
+		/// </summary>
+		private static void HighlightWhileFocused(ComboBox box)
+		{
+			void Show()
+			{
+				// The drop-down's own border: the first border its template made.
+				if (box.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.TemplatedParent == box) is not { } border)
+				{
+					return;
+				}
+
+				if (box.IsKeyboardFocusWithin || box.IsDropDownOpen)
+				{
+					if (box.TryFindResource("TextControlBorderBrushFocused", box.ActualThemeVariant, out var brush) && brush is IBrush b)
+					{
+						border.BorderBrush = b;
+					}
+
+					if (box.TryFindResource("TextControlBorderThemeThicknessFocused", box.ActualThemeVariant, out var thickness) && thickness is Thickness t)
+					{
+						border.BorderThickness = t;
+					}
+				}
+				else
+				{
+					border.ClearValue(Border.BorderBrushProperty);
+					border.ClearValue(Border.BorderThicknessProperty);
+				}
+			}
+
+			box.PropertyChanged += (_, e) =>
+			{
+				if (e.Property == IsKeyboardFocusWithinProperty || e.Property == ComboBox.IsDropDownOpenProperty)
+				{
+					Show();
+				}
 			};
 		}
+
 
 		private static Control Field(string label, Control input) => new StackPanel
 		{
