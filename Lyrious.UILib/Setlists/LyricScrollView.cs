@@ -539,30 +539,7 @@ namespace Lyrious.UILib.Setlists
 			// The time at the right of the toolbar (also in focus mode, so it shows while playing).
 			var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { titleActions, clock } };
 			Content = PageLayout.SongPage(TitleOf(song), body, InfoText(), toolbar);
-			// While editing, a click outside the text boxes leaves the one being typed in (as a click
-			// elsewhere does in most apps), so its value is taken and the details' boxes close.
-			AddHandler(PointerPressedEvent, UnfocusTextBoxOnPressOutside, RoutingStrategies.Bubble, handledEventsToo: true);
-			// The focus goes to the view itself then (there's no "no focus"); Tab still skips it.
-			Focusable = true;
-			IsTabStop = false;
 			ShowTitle();
-		}
-
-		/// <summary>
-		/// A press while editing that isn't in a text box: the text box that has the focus loses it.
-		/// Buttons and drop-downs take the focus themselves, so only a text box's focus is cleared.
-		/// </summary>
-		private void UnfocusTextBoxOnPressOutside(object? sender, PointerPressedEventArgs e)
-		{
-			if (!IsEditing || (e.Source as Visual)?.FindAncestorOfType<TextBox>(includeSelf: true) != null)
-			{
-				return;
-			}
-
-			if (TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox)
-			{
-				Focus(NavigationMethod.Pointer);
-			}
 		}
 
 		private static string TitleOf(SongDetails song) => string.IsNullOrWhiteSpace(song.Name) ? NewSongTitle : song.Name;
