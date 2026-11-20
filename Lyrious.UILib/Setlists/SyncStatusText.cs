@@ -26,7 +26,7 @@ namespace Lyrious.UILib.Setlists
 				return L.T("Syncing · {0}", waiting);
 			}
 
-			return status.LastSynced is { } synced ? $"Synced {When(synced)}" : L.T("Not synced yet");
+			return status.LastSynced is { } synced ? L.T("Synced {0}", When(synced)) : L.T("Not synced yet");
 		}
 
 		/// <summary>A fuller explanation for the Sync page.</summary>

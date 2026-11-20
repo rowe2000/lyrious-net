@@ -22,6 +22,7 @@ namespace Lyrious.UILib.Setlists
 
 		private readonly IReadOnlyList<SetlistSummary> setlists;
 		private readonly Func<SetlistSummary, Task<IReadOnlyList<SetlistEntry>>> loadEntries;
+		private readonly Guid? currentEntryId;
 		private readonly WrapPanel otherSetlists = new() { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
 		private readonly ContentControl details = new();
 		private SetlistSummary? shownSetlist;
@@ -56,15 +57,18 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="currentSetlistId">The band's current setlist, shown highlighted.</param>
 		/// <param name="loadEntries">Gets a setlist's songs, to show them.</param>
 		/// <param name="selectedSetlistId">The setlist to show (e.g. one just added); else the current one.</param>
+		/// <param name="currentEntryId">The band's current song in the current setlist (highlighted, with a check).</param>
 		public SetlistsView(
 			GroupSummary group,
 			IReadOnlyList<SetlistSummary> setlists,
 			Guid? currentSetlistId,
 			Func<SetlistSummary, Task<IReadOnlyList<SetlistEntry>>> loadEntries,
-			Guid? selectedSetlistId = null)
+			Guid? selectedSetlistId = null,
+			Guid? currentEntryId = null)
 		{
 			Group = group;
 			CurrentSetlistId = currentSetlistId;
+			this.currentEntryId = currentEntryId;
 			this.setlists = setlists;
 			this.loadEntries = loadEntries;
 
@@ -206,13 +210,17 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			var rows = new StackPanel { Spacing = 4 };
-			foreach (var entry in entries)
-			{
-				rows.Children.Add(PageLayout.ListRow(entry.Song.Name, PageLayout.SongInfo(entry.Song), () => SongSelected?.Invoke(setlist, entry)));
-			}
-
-			songs.Content = rows;
+			// The songs as in the songbook (without its check boxes); a click opens one. The band's current
+			// song is highlighted in the current setlist.
+			var current = isCurrent ? currentEntryId : null;
+			songs.Content = new SelectableList<SetlistEntry>(
+				entries,
+				entry => SongsView.SongRow(entry.Song, null, entry.Id == current),
+				entry => entry.Id == current,
+				_ => [],
+				entry => SongSelected?.Invoke(setlist, entry),
+				L.T("There are no songs in this setlist yet. Add some with +."),
+				activateOnClick: true);
 		}
 	}
 }

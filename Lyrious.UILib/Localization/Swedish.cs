@@ -575,6 +575,7 @@ namespace Lyrious.UILib.Localization
 			["Offline · {0}"] = "Offline · {0}",
 			["Syncing · {0}"] = "Synkar · {0}",
 			["Not synced yet"] = "Inte synkad än",
+			["Synced {0}"] = "Synkad {0}",
 			["Connected to the server. Changes are sent as you make them, and others' changes arrive as they happen."] = "Ansluten till servern. Ändringar skickas när du gör dem, och andras ändringar kommer när de sker.",
 			["The server can't be reached, so you're working offline from the copy on this device. Changes are kept and sent when the server is back (it's tried every few seconds)."] = "Servern går inte att nå, så du arbetar offline med kopian på den här enheten. Ändringar sparas och skickas när servern är tillbaka (det provas med några sekunders mellanrum).",
 			[" 1 change is waiting to be sent."] = " 1 ändring väntar på att skickas.",

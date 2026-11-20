@@ -18,6 +18,8 @@ namespace Lyrious.UILib.Setlists
 	{
 		private readonly List<(T Item, Border Outline, Control Tools)> rows = [];
 
+		private readonly bool activateOnClick;
+
 		private IDisposable? selectedOutline;
 
 		/// <summary>The selected item (outlined), if any.</summary>
@@ -30,14 +32,17 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="isCurrent">Whether the item is the current one (blue highlight).</param>
 		/// <param name="tools">The buttons of the toolbar shown beside the selected row.</param>
 		/// <param name="activate">Makes the item current (on a double click).</param>
+		/// <param name="activateOnClick">A click makes the item current at once (no selecting first), e.g. a setlist's songs.</param>
 		public SelectableList(
 			IReadOnlyList<T> items,
 			Func<T, Control> content,
 			Func<T, bool> isCurrent,
 			Func<T, IEnumerable<Control>> tools,
 			Action<T> activate,
-			string emptyText)
+			string emptyText,
+			bool activateOnClick = false)
 		{
+			this.activateOnClick = activateOnClick;
 			if (items.Count == 0)
 			{
 				Content = new TextBlock { Text = emptyText, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
@@ -101,13 +106,20 @@ namespace Lyrious.UILib.Setlists
 				button.Classes.Add("accent");
 			}
 
-			button.Click += (_, _) => Select(item);
-			// The button handles the pointer itself, so listen to handled double taps too.
-			button.AddHandler(DoubleTappedEvent, (_, e) =>
+			if (activateOnClick)
 			{
-				e.Handled = true;
-				activate(item);
-			}, RoutingStrategies.Bubble, handledEventsToo: true);
+				button.Click += (_, _) => activate(item);
+			}
+			else
+			{
+				button.Click += (_, _) => Select(item);
+				// The button handles the pointer itself, so listen to handled double taps too.
+				button.AddHandler(DoubleTappedEvent, (_, e) =>
+				{
+					e.Handled = true;
+					activate(item);
+				}, RoutingStrategies.Bubble, handledEventsToo: true);
+			}
 
 			var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
 			toolbar.Children.AddRange(tools);

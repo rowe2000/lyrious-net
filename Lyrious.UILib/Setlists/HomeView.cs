@@ -2485,7 +2485,7 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="selectedSetlistId">The setlist to show; else the current one.</param>
 		private void ShowSetlists(GroupSummary group, IReadOnlyList<SetlistSummary> setlists, bool replace = false, Guid? selectedSetlistId = null)
 		{
-			var view = new SetlistsView(group, setlists, currentSetlist?.Id, setlist => service.GetEntriesAsync(setlist.Id), selectedSetlistId);
+			var view = new SetlistsView(group, setlists, currentSetlist?.Id, setlist => service.GetEntriesAsync(setlist.Id), selectedSetlistId, currentEntryId);
 			// A song picked in a setlist opens it (and makes that setlist the current one).
 			view.SongSelected += (setlist, entry) => SelectSong(group, setlist, entry);
 			// "+" on the shown setlist: the same menu as the right drawer's, for that setlist.
@@ -2562,7 +2562,8 @@ namespace Lyrious.UILib.Setlists
 				playbackEntries = entries;
 			}
 
-			var view = new SetlistView(setlist, entries);
+			// The current song is highlighted in the current setlist only.
+			var view = new SetlistView(setlist, entries, isCurrent ? currentEntryId : null);
 			view.SongSelected += entry => SelectSong(group, setlist, entry);
 			view.AddSongsRequested += () => _ = RunAsync(async () =>
 				ShowAddSongs(group, setlist, await service.GetSongbookSongsAsync(group.Id), entries.Select(entry => entry.Song.Id).ToHashSet()));
