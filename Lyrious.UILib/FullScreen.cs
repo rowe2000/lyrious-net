@@ -56,7 +56,6 @@ namespace Lyrious.UILib
 		public static void Register()
 		{
 			DisplaySettings.FullScreenChanged += Apply;
-			UserSettings.Changed += () => Dispatcher.UIThread.Post(Apply);
 			InputElement.KeyDownEvent.AddClassHandler<TopLevel>((_, e) =>
 			{
 				if (e.Key == Key.F11 && e.KeyModifiers == KeyModifiers.None && !e.Handled && IsSupported)

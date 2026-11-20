@@ -11,9 +11,10 @@ using Lyrious.UILib.Localization;
 namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
-	/// The band's playlogs: at the top the latest one with the songs played in it (time, song, key,
-	/// tempo, length and conductor's initials); below, all playlogs, newest first. Tapping one there shows it at the
-	/// top instead; the one shown is highlighted.
+	/// The band's jam sessions (playlogs): at the top the latest one with the songs played in it (time,
+	/// song, key, tempo, length and conductor's initials); below, all jam sessions, newest first, each by
+	/// its date, its number of songs and the setlists used. Tapping one there shows it at the top instead;
+	/// the one shown is highlighted.
 	/// </summary>
 	public sealed class PlaylogView : UserControl
 	{
@@ -25,7 +26,8 @@ namespace Lyrious.UILib.Setlists
 		private readonly TextBlock shownDate = new() { Opacity = 0.7, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 2) };
 		private readonly List<(PlaylogSummary Playlog, Button Row)> rows = [];
 
-		public PlaylogView(GroupSummary group, IReadOnlyList<PlaylogSummary> playlogs)
+		/// <param name="setlistsUsed">The setlists used in each jam session (by its id), as far as is known.</param>
+		public PlaylogView(GroupSummary group, IReadOnlyList<PlaylogSummary> playlogs, IReadOnlyDictionary<Guid, IReadOnlyList<string>>? setlistsUsed = null)
 		{
 			this.playlogs = playlogs;
 
@@ -39,7 +41,14 @@ namespace Lyrious.UILib.Setlists
 				var list = new StackPanel { Spacing = 8 };
 				foreach (var playlog in playlogs)
 				{
-					var row = PageLayout.ListRow(Date(playlog.CreatedAt), Count(playlog), () => Show(playlog));
+					// The date (compact, no time), and the number of songs with the setlists used.
+					var detail = Count(playlog);
+					if (setlistsUsed?.GetValueOrDefault(playlog.Id) is { Count: > 0 } setlists)
+					{
+						detail += " · " + string.Join(", ", setlists);
+					}
+
+					var row = PageLayout.ListRow(CompactDate(playlog.CreatedAt), detail, () => Show(playlog));
 					rows.Add((playlog, row));
 					list.Children.Add(row);
 				}
@@ -53,7 +62,7 @@ namespace Lyrious.UILib.Setlists
 						{
 							new WrapPanel { Orientation = Orientation.Horizontal, Children = { shownTitle, shownDate } },
 							shown,
-							Section(L.T("All playlogs")),
+							Section(L.T("All jam sessions")),
 							list,
 						},
 					},
@@ -61,18 +70,18 @@ namespace Lyrious.UILib.Setlists
 				Show(playlogs[0]);
 			}
 
-			Content = PageLayout.Page(L.T("Playlog"), body, subtitle: L.T("{0} · songs played", group.Name), closable: true, icon: AppIcons.Playlog);
+			Content = PageLayout.Page(L.T("Jam sessions"), body, closable: true, icon: AppIcons.Playlog);
 		}
 
 		/// <summary>Shows the playlog's songs at the top, and highlights its row in the list.</summary>
 		private void Show(PlaylogSummary playlog)
 		{
-			shownTitle.Text = ReferenceEquals(playlog, playlogs[0]) ? L.T("Last playlog") : "Playlog";
+			shownTitle.Text = ReferenceEquals(playlog, playlogs[0]) ? L.T("Last jam session") : L.T("Jam session");
 			shownDate.Text = Date(playlog.CreatedAt);
 			shown.Children.Clear();
 			if (playlog.Plays.Count == 0)
 			{
-				shown.Children.Add(new TextBlock { Text = L.T("No songs in this playlog."), Opacity = 0.7 });
+				shown.Children.Add(new TextBlock { Text = L.T("No songs in this jam session."), Opacity = 0.7 });
 			}
 
 			foreach (var (play, number) in playlog.Plays.Select((play, index) => (play, index + 1)))
@@ -144,7 +153,11 @@ namespace Lyrious.UILib.Setlists
 
 		private static string Date(DateTime when) => $"{when:D} {when:t}";
 
-		private static string Count(PlaylogSummary playlog) => playlog.Plays.Count == 1 ? "1 song" : $"{playlog.Plays.Count} songs";
+		/// <summary>A date in short: "20 Nov" this year, else "20 Nov 2025" (no time).</summary>
+		private static string CompactDate(DateTime when)
+			=> when.ToString(when.Year == DateTime.Today.Year ? "d MMM" : "d MMM yyyy", CultureInfo.CurrentCulture);
+
+		private static string Count(PlaylogSummary playlog) => playlog.Plays.Count == 1 ? L.T("1 song") : L.T("{0} songs", playlog.Plays.Count);
 
 		private static TextBlock Section(string title) => new()
 		{

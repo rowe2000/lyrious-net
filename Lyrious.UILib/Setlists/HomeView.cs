@@ -183,14 +183,18 @@ namespace Lyrious.UILib.Setlists
 			findSongButton = DrawerItem(L.T("Find song online"));
 			findSongButton.IsEnabled = false;
 			findSongButton.Click += (_, _) => OpenInternetSearch();
-			playlogButton = DrawerItem(L.T("Playlog"));
+			playlogButton = DrawerItem(L.T("Jam sessions"));
 			playlogButton.IsEnabled = false;
 			playlogButton.Click += (_, _) =>
 			{
 				if (currentGroup is { } group)
 				{
 					OpenFromDrawer();
-					_ = RunAsync(async () => page.Content = new PlaylogView(group, await service.GetPlaylogsAsync(group.Id)));
+					_ = RunAsync(async () =>
+					{
+						var playlogs = await service.GetPlaylogsAsync(group.Id);
+						page.Content = new PlaylogView(group, playlogs, await SetlistsUsedAsync(group.Id, playlogs));
+					});
 				}
 			};
 			chooseGroupButton = DrawerPicker(L.T("Band"), groupName, L.T("Choose a band"), () => _ = RunAsync(ShowGroupsAsync));
@@ -842,8 +846,8 @@ namespace Lyrious.UILib.Setlists
 					StartPlay(lyrics);
 				}
 
-				// Stopping at the very end of the lyrics goes on to the next song (a setting, on by default).
-				if (goOnAtEnd && stopping && atEnd && PlaybackSettings.NextSongOnStopAtEnd)
+				// Stopping at the very end of the lyrics goes on to the next song (a band setting, on unless the band turned it off).
+				if (goOnAtEnd && stopping && atEnd && currentGroup?.NextSongOnStopAtEnd != false)
 				{
 					NextSong();
 				}
@@ -980,7 +984,7 @@ namespace Lyrious.UILib.Setlists
 			// The band's lyrics header, as its admin designed it (also without band sync: it's how the band's lyrics look).
 			if (currentGroup?.Id == group.Id)
 			{
-				currentGroup = currentGroup with { LyricsHeader = group.LyricsHeader };
+				currentGroup = currentGroup with { LyricsHeader = group.LyricsHeader, NextSongOnStopAtEnd = group.NextSongOnStopAtEnd };
 				LyricsHeader.Current = group.LyricsHeader;
 			}
 
@@ -1101,7 +1105,11 @@ namespace Lyrious.UILib.Setlists
 				OpenPaneLength = width,
 				IsPaneOpen = false,
 			};
-			drawer.Bind(SplitView.PaneBackgroundProperty, drawer.GetResourceObservable(LyriousTheme.CardBrush));
+			// The cards' colour half way to black (in the light theme and the dark one alike).
+			drawer.Bind(SplitView.PaneBackgroundProperty, drawer.GetResourceObservable(LyriousTheme.CardBrush, card =>
+				card is ISolidColorBrush brush
+					? new SolidColorBrush(Color.FromArgb(brush.Color.A, (byte)(brush.Color.R / 2), (byte)(brush.Color.G / 2), (byte)(brush.Color.B / 2)))
+					: card));
 			return drawer;
 		}
 
@@ -1405,7 +1413,7 @@ namespace Lyrious.UILib.Setlists
 				account.Children.Add(exit);
 			}
 
-			// The songs' sound files kept on this device, first of these (just above Settings).
+			// The songs' sound files kept on this device: last of the upper part (under Jam sessions).
 			if (App.SoundStore is { } sounds)
 			{
 				var soundFiles = DrawerItem(L.T("Sound files"));
@@ -1415,7 +1423,7 @@ namespace Lyrious.UILib.Setlists
 					page.Content = new SoundFilesView(sounds, service);
 				};
 				WithDrawerIcon(soundFiles, AppIcons.SoundFiles);
-				account.Children.Insert(0, soundFiles);
+				header.Children.Add(soundFiles);
 			}
 
 			// An icon before each item's text.
@@ -1964,7 +1972,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			var details = PageLayout.SongInfo(entry.Song);
 			var content = new StackPanel { Spacing = 2 };
-			content.Children.Add(new TextBlock { Text = entry.Song.Name, FontSize = 18, TextTrimming = TextTrimming.CharacterEllipsis });
+			content.Children.Add(new TextBlock { Text = entry.Song.Name, FontSize = 18, FontWeight = FontWeight.Bold, TextTrimming = TextTrimming.CharacterEllipsis });
 			var tags = SongTags.Sorted(entry.Song.Tags);
 			if (details.Length > 0 || tags.Count > 0)
 			{
@@ -2435,11 +2443,6 @@ namespace Lyrious.UILib.Setlists
 				_ = ShowPresentMembersAsync();
 			});
 			// Renamed: the page (and, for the joined band, the menu) show the new name.
-			view.MidiExpressionsChangeRequested += (group, expressions) => _ = RunAsync(async () =>
-			{
-				await service.SetMidiExpressionsAsync(group.Id, expressions);
-				await ShowGroupsAsync(group.Id, replace: true);
-			});
 			view.GroupRenameRequested += (group, name) => _ = RunAsync(async () =>
 			{
 				await service.RenameGroupAsync(group.Id, name);
@@ -2648,6 +2651,65 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
+		/// The setlists used in each jam session, worked out from its songs (a play doesn't keep which
+		/// setlist it was played from): the band's setlists (not its songbook) that cover most of the songs
+		/// played, best first, each covering at least two songs not yet covered (or the jam session's only
+		/// song). None if it can't be read.
+		/// </summary>
+		private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<string>>?> SetlistsUsedAsync(Guid groupId, IReadOnlyList<PlaylogSummary> playlogs)
+		{
+			try
+			{
+				var setlists = new List<(string Name, HashSet<Guid> Songs)>();
+				foreach (var setlist in await service.GetSetlistsAsync(groupId))
+				{
+					if (setlist.Id == groupId)
+					{
+						continue; // The songbook: every song's in it.
+					}
+
+					var entries = await service.GetEntriesAsync(setlist.Id);
+					setlists.Add((setlist.Name, entries.Select(entry => entry.Song.Id).ToHashSet()));
+				}
+
+				var used = new Dictionary<Guid, IReadOnlyList<string>>();
+				foreach (var playlog in playlogs)
+				{
+					var left = playlog.Plays.Select(play => play.SongId).ToHashSet();
+					var least = left.Count == 1 ? 1 : 2;
+					var names = new List<string>();
+					var candidates = setlists.ToList();
+					while (left.Count > 0 && candidates.Count > 0)
+					{
+						// The setlist with the most of the songs not yet covered (the smaller one if tied: closer to what was played).
+						var best = candidates
+							.Select(setlist => (Setlist: setlist, Covered: setlist.Songs.Count(left.Contains)))
+							.OrderByDescending(c => c.Covered)
+							.ThenBy(c => c.Setlist.Songs.Count)
+							.First();
+						if (best.Covered < least)
+						{
+							break;
+						}
+
+						names.Add(best.Setlist.Name);
+						left.ExceptWith(best.Setlist.Songs);
+						candidates.Remove(best.Setlist);
+					}
+
+					used[playlog.Id] = names;
+				}
+
+				return used;
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't work out the setlists used: {ex.Message}");
+				return null;
+			}
+		}
+
+		/// <summary>
 		/// A band's songbook (the joined band's, or the private one), to choose a song. A song that is
 		/// in the current setlist opens from there (and becomes the group's current song); any other
 		/// song just shows its lyrics.
@@ -2659,6 +2721,26 @@ namespace Lyrious.UILib.Setlists
 			// The songbook played as the setlist (its id is its band's), for the note on its button.
 			var playing = currentSetlist is { } shownSetlist && IsSongbookSetlist(shownSetlist) ? shownSetlist.GroupId : (Guid?)null;
 			var view = new SongsView(group, songs, currentSongId, await SongbookChoicesAsync(), playing);
+			// Importing a SongbookPro backup into it, and clearing it: then the songbook again, updated,
+			// with what happened as a notice (the popup closes with the old page).
+			view.ImportSongbookPro = async (anchor, convert) =>
+			{
+				var done = await ImportSongbookProAsync(anchor, group, convert);
+				if (done != null)
+				{
+					ShowNotice(done);
+					await ShowSongsAsync(group, replace: true);
+				}
+
+				return done;
+			};
+			view.ClearSongbook = async () =>
+			{
+				var done = await ClearSongbookAsync(group);
+				ShowNotice(done);
+				await ShowSongsAsync(group, replace: true);
+				return done;
+			};
 			// Another songbook chosen: shown in this page's place.
 			view.SongbookChosen += chosen => _ = RunAsync(() => ShowSongsAsync(chosen, replace: true));
 			// A new setlist of the band's with the songs, in order; the songbook stays on the page.
@@ -2860,7 +2942,7 @@ namespace Lyrious.UILib.Setlists
 			try
 			{
 				var band = (await service.GetGroupsAsync()).FirstOrDefault(g => g.Id == groupId);
-				view.MidiExpressions = Midi.ExpressionsFromJson(band?.MidiExpressions);
+				view.MidiExpressions = MidiSettings.Expressions(band?.MidiExpressions);
 			}
 			catch (Exception ex)
 			{
@@ -2899,8 +2981,8 @@ namespace Lyrious.UILib.Setlists
 			try
 			{
 				var band = (await service.GetGroupsAsync()).FirstOrDefault(g => g.Id == groupId);
-				expressions = Midi.ExpressionsFromJson(band?.MidiExpressions);
-				commands = Midi.SongCommandsFromJson(band?.MidiCommands);
+				expressions = MidiSettings.Expressions(band?.MidiExpressions);
+				commands = MidiSettings.Commands(band?.MidiCommands);
 			}
 			catch (Exception ex)
 			{
@@ -3177,7 +3259,7 @@ namespace Lyrious.UILib.Setlists
 				// The band settings are made once the band (and the member's role in it) is read: an empty
 				// place for them until then.
 				var bandSettings = new ContentControl();
-				view = new SettingsView((anchor, convert) => ImportSongbookProAsync(anchor, group, convert), () => ClearSongbookAsync(group), group.Name, bandSettings);
+				view = new SettingsView(group.Name, bandSettings, group.MidiExpressions, group.MidiCommands);
 				_ = ShowBandSettingsAsync(group.Id, bandSettings);
 			}
 
@@ -3207,11 +3289,43 @@ namespace Lyrious.UILib.Setlists
 				var members = await service.GetGroupMembersAsync();
 				var me = members.TryGetValue(groupId, out var list) ? list.FirstOrDefault(member => member.IsMe) : null;
 				var canEdit = me?.Role == GroupRole.Admin;
+
+				// Stopping at the end of the lyrics goes on to the next song: on unless the band turned it off.
+				var nextOnStop = new ToggleSwitch
+				{
+					IsChecked = band?.NextSongOnStopAtEnd != false,
+					OnContent = L.T("On"),
+					OffContent = L.T("Off"),
+					IsEnabled = canEdit,
+				};
+				nextOnStop.IsCheckedChanged += async (_, _) =>
+				{
+					// On is kept as unset (the default).
+					bool? goOn = nextOnStop.IsChecked == true ? null : false;
+					try
+					{
+						await service.SetNextSongOnStopAtEndAsync(groupId, goOn);
+						if (currentGroup?.Id == groupId)
+						{
+							currentGroup = currentGroup with { NextSongOnStopAtEnd = goOn };
+						}
+					}
+					catch (Exception ex)
+					{
+						ShowNotice(L.T("Couldn't save the band settings. {0}", ex.Message));
+					}
+				};
+
 				place.Content = new StackPanel
 				{
 					Spacing = 24,
 					Children =
 					{
+						SettingsView.Setting(
+							L.T("Next song when stopping at the end"),
+							L.T("When the lyrics have scrolled all the way to the bottom, pressing stop also goes on to the next song in the setlist.")
+							+ (canEdit ? "" : L.T(" Only the band's admins change it.")),
+							nextOnStop),
 						new LyricsHeaderSection(band?.LyricsHeader, canEdit, async header =>
 						{
 							await service.SetLyricsHeaderAsync(groupId, header);
@@ -3222,11 +3336,6 @@ namespace Lyrious.UILib.Setlists
 								LyricsHeader.Current = header;
 							}
 						}),
-						new MidiSongCommandsSection(
-							Midi.SongCommandsFromJson(band?.MidiCommands),
-							Midi.ExpressionsFromJson(band?.MidiExpressions),
-							canEdit,
-							commands => service.SetMidiSongCommandsAsync(groupId, commands)),
 					},
 				};
 			}

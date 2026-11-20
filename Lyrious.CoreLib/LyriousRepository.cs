@@ -340,7 +340,7 @@ public class LyriousRepository(LyriousContext context)
 			Group stored when entity is Group changed && changed.Removed && !stored.Removed => IsAdminOf(stored.Id),
 			// Only an admin changes the band's MIDI expressions and commands, and its lyrics header (every member uses them).
 			Group stored when entity is Group changed && (changed.MidiExpressions != stored.MidiExpressions || changed.MidiCommands != stored.MidiCommands
-			                                              || changed.LyricsHeader != stored.LyricsHeader)
+			                                              || changed.LyricsHeader != stored.LyricsHeader || changed.NextSongOnStopAtEnd != stored.NextSongOnStopAtEnd)
 				=> IsAdminOf(stored.Id) && CanModify(existing) && CanModify(entity),
 			_ => CanModify(existing) && CanModify(entity),
 		};

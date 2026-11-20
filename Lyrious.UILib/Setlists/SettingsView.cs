@@ -14,31 +14,12 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>The app's settings, kept on this device (<see cref="App.Settings"/>). Changes apply at once.</summary>
 	public sealed class SettingsView : UserControl
 	{
-		/// <param name="importSongbookPro">
-		/// Picks a SongbookPro backup and imports it into the joined band (converted to Lyrious' format
-		/// or not), returning what happened (null: nothing picked); throws
-		/// <see cref="InvalidOperationException"/> with the reason when it can't.
-		/// </param>
-		/// <param name="clearSongbook">Deletes every song in the joined band's songbook, returning what happened.</param>
-		/// <param name="bandName">The joined band's name, for the Songbook section. None (no band joined): no Songbook section.</param>
+		/// <param name="bandName">The current band's name, for its settings' heading. None (no band): no band settings.</param>
 		/// <param name="bandSettings">The current band's settings (saved with the band, the same for all its members), shown under "Band settings".</param>
-		public SettingsView(Func<Control, bool, Task<string?>>? importSongbookPro = null, Func<Task<string>>? clearSongbook = null, string? bandName = null, Control? bandSettings = null)
+		/// <param name="bandMidiExpressions">The band's MIDI expressions as bands kept them, which count until the member saves their own.</param>
+		/// <param name="bandMidiCommands">The band's MIDI commands as bands kept them, which count until the member saves their own.</param>
+		public SettingsView(string? bandName = null, Control? bandSettings = null, string? bandMidiExpressions = null, string? bandMidiCommands = null)
 		{
-			var nextOnStop = new ToggleSwitch
-			{
-				IsChecked = PlaybackSettings.NextSongOnStopAtEnd,
-				OnContent = L.T("On"),
-				OffContent = L.T("Off"),
-			};
-			nextOnStop.IsCheckedChanged += (_, _) => PlaybackSettings.NextSongOnStopAtEnd = nextOnStop.IsChecked == true;
-
-			var songHeader = new ToggleSwitch
-			{
-				IsChecked = DisplaySettings.ShowSongHeader,
-				OnContent = L.T("On"),
-				OffContent = L.T("Off"),
-			};
-			songHeader.IsCheckedChanged += (_, _) => DisplaySettings.ShowSongHeader = songHeader.IsChecked == true;
 			var capoMode = new ToggleSwitch
 			{
 				IsChecked = DisplaySettings.CapoMode,
@@ -89,37 +70,29 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					Section(L.T("Display")),
-					Setting(
+					Scoped(SettingScope.User, Setting(
 						L.T("Language"),
 						L.T("The language of the app. Yours on all your devices."),
-						language),
-					Setting(
+						language)),
+					Scoped(SettingScope.Device, Setting(
 						L.T("Interface size"),
 						L.T("Makes the whole app larger or smaller: text, buttons, icons and spacing."),
-						scale),
-					Setting(
-						L.T("Song title above the lyrics"),
-						L.T("Shows the song's name, key, tempo and beat above the lyrics. The song's name is in the drawer either way."),
-						songHeader),
-					(chordGridRow = Setting(
+						scale)),
+					Scoped(SettingScope.User, chordGridRow = Setting(
 						L.T("Chord grid button"),
 						L.T("Shows the button on the lyrics page that shows a song's chords as a grid, by bar. Off, the chords show over the words. Yours on all your devices."),
 						chordGridButton)),
-					Setting(
+					Scoped(SettingScope.Device, Setting(
 						L.T("Dynamic zoom"),
 						L.T("Sizes the whole app, lyrics included, to the window: the smaller of its width and height sets the zoom, where 500 px is 100 %. The interface size above and the lyrics' own zoom apply on top."),
-						dynamicZoom),
+						dynamicZoom)),
 					Section(L.T("Playback")),
-					Setting(
-						L.T("Next song when stopping at the end"),
-						L.T("When the lyrics have scrolled all the way to the bottom, pressing stop also goes on to the next song in the setlist."),
-						nextOnStop),
-					(capoRow = Setting(
+					Scoped(SettingScope.User, capoRow = Setting(
 						L.T("Count my transpose as a capo"),
 						L.T("On: + in the transpose dialog puts the capo a fret higher, which moves the chords down (capo +1 makes G F#). Off: a transpose in semitones, which moves them up. Yours on all your devices."),
 						capoMode)),
 					colorsSection,
-					new TextBlock { Text = L.T("Yours on all your devices."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
+					Scoped(SettingScope.User, new TextBlock { Text = L.T("Yours on all your devices."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap }),
 					ColorSetting(
 						L.T("Highlight"),
 						L.T("The current song, setlist and band, the selected row's outline, and the main buttons."),
@@ -158,27 +131,13 @@ namespace Lyrious.UILib.Setlists
 				},
 			};
 
-			// The joined band's songbook: importing into it, and clearing it.
-			// The current band's settings: saved with the band, not on this device.
+			// The current band's settings: saved with the band, not on this device. (Importing into its
+			// songbook and clearing it are on the songbook page.)
 			if (bandName != null && bandSettings != null)
 			{
 				form.Children.Add(Section(L.T("Band settings · {0}", bandName)));
-				form.Children.Add(new TextBlock { Text = L.T("Saved with the band: the same for all its members."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
-				form.Children.Add(bandSettings);
-			}
-
-			if (bandName != null && (importSongbookPro != null || clearSongbook != null))
-			{
-				form.Children.Add(Section(L.T("Songbook · {0}", bandName)));
-				if (importSongbookPro != null)
-				{
-					form.Children.Add(ImportSetting(importSongbookPro));
-				}
-
-				if (clearSongbook != null)
-				{
-					form.Children.Add(ClearSetting(clearSongbook, bandName));
-				}
+				form.Children.Add(Scoped(SettingScope.Band, new TextBlock { Text = L.T("Saved with the band: the same for all its members."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap }));
+				form.Children.Add(Scoped(SettingScope.Band, bandSettings));
 			}
 
 			// Where the app can be full screen (desktop, most browsers): after the chord grid button.
@@ -186,25 +145,45 @@ namespace Lyrious.UILib.Setlists
 			{
 				var fullScreen = new ToggleSwitch { IsChecked = DisplaySettings.FullScreen, OnContent = L.T("On"), OffContent = L.T("Off") };
 				fullScreen.IsCheckedChanged += (_, _) => DisplaySettings.FullScreen = fullScreen.IsChecked == true;
-				form.Children.Insert(form.Children.IndexOf(chordGridRow!) + 1, Setting(
+				form.Children.Insert(form.Children.IndexOf(chordGridRow!) + 1, Scoped(SettingScope.Device, Setting(
 					L.T("Full screen"),
-					L.T("Shows the app on the whole screen, without the window's frame or the browser's bars. In a browser it starts at your first tap or key. F11 turns it on and off too. Yours on all your devices."),
-					fullScreen));
+					L.T("Shows the app on the whole screen, without the window's frame or the browser's bars. In a browser it starts at your first tap or key. F11 turns it on and off too. On this device."),
+					fullScreen)));
 			}
+
+			// The member's MIDI settings (kept with the user; the band's until they save their own), before
+			// the colours: the expressions used in songs' MIDI tags, and the MIDI sent for every song.
+			var expressions = MidiSettings.Expressions(bandMidiExpressions);
+			var midiAt = form.Children.IndexOf(colorsSection);
+			form.Children.Insert(midiAt, Section("MIDI"));
+			form.Children.Insert(midiAt + 1, Scoped(SettingScope.User, new MidiExpressionsSection(expressions, canEdit: true, MidiSettings.SaveExpressions)));
+			form.Children.Insert(midiAt + 2, Scoped(SettingScope.User, new MidiSongCommandsSection(
+				MidiSettings.Commands(bandMidiCommands),
+				expressions,
+				canEdit: true,
+				commands =>
+				{
+					MidiSettings.SaveCommands(commands);
+					return Task.CompletedTask;
+				})));
 
 			// Where MIDI can be sent: which Yamaha keyboards get the member's transpose (at the end of Playback).
 			if (App.Midi != null)
 			{
-				form.Children.Insert(form.Children.IndexOf(colorsSection), Setting(
+				form.Children.Insert(form.Children.IndexOf(colorsSection), Scoped(SettingScope.User, Setting(
 					L.T("Transpose to Yamaha keyboards"),
-					L.T("Sets the keyboard transpose of the chosen keyboards on the MIDI outputs to your transpose or capo for each song (by MIDI System Exclusive). On this device."),
-					YamahaTransposeChoice()));
+					L.T("Sets the keyboard transpose of the chosen keyboards on the MIDI outputs to your transpose or capo for each song (by MIDI System Exclusive). Yours on all your devices."),
+					YamahaTransposeChoice())));
 			}
 
 			// Scrolls when the settings don't fit (a short window or a large interface size).
 			form.Margin = new Thickness(0, 0, 0, 16);
 			scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-			Content = PageLayout.Page(L.T("Settings"), scroller, subtitle: L.T("Kept on this device"), closable: true, icon: AppIcons.Settings);
+
+			// At the top (not scrolling): which settings show, by where they're kept.
+			var filter = ScopeFilter(form);
+			DockPanel.SetDock(filter, Dock.Top);
+			Content = PageLayout.Page(L.T("Settings"), new DockPanel { Children = { filter, scroller } }, closable: true, icon: AppIcons.Settings);
 		}
 
 		private readonly ScrollViewer scroller;
@@ -220,6 +199,13 @@ namespace Lyrious.UILib.Setlists
 		{
 			void OnLayout(object? sender, EventArgs e)
 			{
+				// Hidden (the user's settings aren't shown, see ScopeFilter): nothing to scroll to.
+				if (!capoRow.IsVisible)
+				{
+					scroller.LayoutUpdated -= OnLayout;
+					return;
+				}
+
 				if (scroller.Viewport.Height <= 0 || capoRow.Bounds.Height <= 0 || scroller.Content is not Control form)
 				{
 					return; // Not laid out yet.
@@ -241,7 +227,7 @@ namespace Lyrious.UILib.Setlists
 		/// Lyrious' format (Convert, Keep as is, or Cancel), then picks the backup and imports it; what
 		/// happened (or why it couldn't) shows below it.
 		/// </summary>
-		private static Control ImportSetting(Func<Control, bool, Task<string?>> import)
+		internal static Control ImportSetting(Func<Control, bool, Task<string?>> import)
 		{
 			var button = new Button { Content = L.T("Import SongbookPro backup…") };
 			var status = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Opacity = 0.85 };
@@ -323,9 +309,10 @@ namespace Lyrious.UILib.Setlists
 		/// "Clear songbook…": a button that asks first (in a popup, with a red Delete), then deletes every
 		/// song in the band's songbook; what happened shows below it.
 		/// </summary>
-		private static Control ClearSetting(Func<Task<string>> clear, string bandName)
+		internal static Control ClearSetting(Func<Task<string>> clear, string bandName)
 		{
-			var button = new Button { Content = L.T("Clear songbook…") };
+			// Red: it deletes every song.
+			var button = PageLayout.DangerButton(L.T("Clear songbook…"));
 			var status = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Opacity = 0.85 };
 			var confirm = PageLayout.DangerButton(L.T("Delete all songs"));
 			var cancel = new Button { Content = L.T("Cancel") };
@@ -395,7 +382,101 @@ namespace Lyrious.UILib.Setlists
 			FontSize = 20,
 			FontWeight = FontWeight.SemiBold,
 			Margin = new Thickness(0, 12, 0, 0),
+			// Shown while any of its settings is (see ScopeFilter).
+			Tag = SectionMark,
 		};
+
+		/// <summary>Where a setting is kept: on this device, with the user (on all their devices), or with the band.</summary>
+		private enum SettingScope
+		{
+			Device,
+			User,
+			Band,
+		}
+
+		// Marks a section's heading (see Section).
+		private static readonly object SectionMark = new();
+
+		/// <summary>Marks a setting (its row) with where it's kept, for <see cref="ScopeFilter"/>.</summary>
+		private static Control Scoped(SettingScope scope, Control row)
+		{
+			row.Tag = scope;
+			return row;
+		}
+
+		/// <summary>
+		/// Check boxes for where settings are kept (this device, the user, the band): only the settings of
+		/// the checked ones show in <paramref name="form"/>, and a section's heading while any of its do. The
+		/// choice is remembered on this device.
+		/// </summary>
+		private static Control ScopeFilter(Panel form)
+		{
+			var hidden = (App.Settings.Get(SettingKeys.SettingsFilter) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
+			var boxes = new (SettingScope Scope, CheckBox Box)[]
+			{
+				(SettingScope.Device, new CheckBox { Content = L.T("Device") }),
+				(SettingScope.User, new CheckBox { Content = L.T("User") }),
+				(SettingScope.Band, new CheckBox { Content = L.T("Band") }),
+			};
+			ToolTip.SetTip(boxes[0].Box, L.T("Settings kept on this device"));
+			ToolTip.SetTip(boxes[1].Box, L.T("Your settings, the same on all your devices"));
+			ToolTip.SetTip(boxes[2].Box, L.T("The band's settings, the same for all its members"));
+
+			void Show()
+			{
+				var shown = boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Scope).ToHashSet();
+				TextBlock? section = null;
+				var anyInSection = false;
+				foreach (var child in form.Children)
+				{
+					if (ReferenceEquals(child.Tag, SectionMark))
+					{
+						if (section != null)
+						{
+							section.IsVisible = anyInSection;
+						}
+
+						section = child as TextBlock;
+						anyInSection = false;
+					}
+					else if (child.Tag is SettingScope scope)
+					{
+						child.IsVisible = shown.Contains(scope);
+						anyInSection |= child.IsVisible;
+					}
+					else
+					{
+						anyInSection |= child.IsVisible;
+					}
+				}
+
+				if (section != null)
+				{
+					section.IsVisible = anyInSection;
+				}
+			}
+
+			foreach (var (scope, box) in boxes)
+			{
+				box.IsChecked = !hidden.Contains(scope.ToString());
+				box.IsCheckedChanged += (_, _) =>
+				{
+					var off = boxes.Where(b => b.Box.IsChecked != true).Select(b => b.Scope.ToString()).ToArray();
+					App.Settings.Set(SettingKeys.SettingsFilter, off.Length == 0 ? null : string.Join(",", off));
+					Show();
+				};
+			}
+
+			Show();
+			var row = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 16, Margin = new Thickness(0, 0, 0, 12) };
+			row.Children.Add(new TextBlock { Text = L.T("Show:"), Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center });
+			foreach (var (_, box) in boxes)
+			{
+				row.Children.Add(box);
+			}
+
+			return row;
+		}
 
 		/// <summary>
 		/// A colour setting: a button showing the colour and its code (for the theme's own, the colour
@@ -545,8 +626,10 @@ namespace Lyrious.UILib.Setlists
 			void OnChangedElsewhere() => Show();
 			button.AttachedToVisualTree += (_, _) => UserSettings.Changed += OnChangedElsewhere;
 			button.DetachedFromVisualTree += (_, _) => UserSettings.Changed -= OnChangedElsewhere;
+			// The colours are kept with the user.
 			return new DockPanel
 			{
+				Tag = SettingScope.User,
 				Children =
 				{
 					// The colour's button at the right, as the other settings have their control.
@@ -587,6 +670,8 @@ namespace Lyrious.UILib.Setlists
 				ItemsSource = UiScale.Choices.Select(UiScale.Describe).ToList(),
 				Text = UiScale.Describe(UiScale.Value),
 			};
+			// Its text in the middle of its height, as a text box's.
+			PageLayout.CenterTypedText(scale, leftPadding: 10);
 
 			// The percentage in the box ("125", "125%", "125 %"), if it's a whole number.
 			static int? Percent(string? text)
@@ -618,7 +703,8 @@ namespace Lyrious.UILib.Setlists
 			};
 			scale.DropDownClosed += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(Apply);
 
-			// Typed: only digits, without a 0 first, never more than 300 (checked before it's in the text).
+			// Typed: digits, without a 0 first, never more than 300, and a % after them (a space before it
+			// too, "125 %"); checked before it's in the text, so only that can be typed.
 			scale.AddHandler(InputElement.TextInputEvent, (_, e) =>
 			{
 				if (e.Source is not TextBox input || string.IsNullOrEmpty(e.Text))
@@ -627,12 +713,14 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				e.Handled = true;
-				var text = (input.Text ?? "").Replace("%", "").Trim();
+				var text = input.Text ?? "";
 				var start = Math.Clamp(Math.Min(input.SelectionStart, input.SelectionEnd), 0, text.Length);
 				var end = Math.Clamp(Math.Max(input.SelectionStart, input.SelectionEnd), 0, text.Length);
-				var typed = new string(e.Text.Where(char.IsAsciiDigit).ToArray());
+				var typed = new string(e.Text.Where(c => char.IsAsciiDigit(c) || c is '%' or ' ').ToArray());
 				var result = text[..start] + typed + text[end..];
-				if (typed.Length == 0 || result.StartsWith('0') || result.Length > 3 || Percent(result) > most)
+				if (typed.Length == 0
+				    || !System.Text.RegularExpressions.Regex.IsMatch(result, @"^[1-9][0-9]{0,2}( ?%| )?$")
+				    || Percent(result) > most)
 				{
 					return;
 				}
@@ -705,7 +793,7 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>One setting: its name and an explanation, with its control at the right.</summary>
-		private static Control Setting(string name, string explanation, Control control)
+		internal static Control Setting(string name, string explanation, Control control)
 		{
 			control.VerticalAlignment = VerticalAlignment.Center;
 			control.Margin = new Thickness(16, 0, 0, 0);
@@ -732,19 +820,6 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>Display settings, read from and saved to <see cref="App.Settings"/>.</summary>
 	public static class DisplaySettings
 	{
-		/// <summary>Whether the scroll view shows the song's name and details above the lyrics. Off unless turned on.</summary>
-		public static bool ShowSongHeader
-		{
-			get => App.Settings.Get(SettingKeys.ShowSongHeader) == "true";
-			set
-			{
-				App.Settings.Set(SettingKeys.ShowSongHeader, value ? "true" : null);
-				ShowSongHeaderChanged?.Invoke();
-			}
-		}
-
-		/// <summary>Raised when <see cref="ShowSongHeader"/> changes.</summary>
-		public static event Action? ShowSongHeaderChanged;
 
 		/// <summary>
 		/// Whether the member counts their own transpose as a capo (see <see cref="SettingKeys.CapoMode"/>):
@@ -785,8 +860,8 @@ namespace Lyrious.UILib.Setlists
 		public static event Action? ChordGridButtonChanged;
 
 		/// <summary>
-		/// Whether the app is shown full screen (the desktop's window; see <see cref="MainWindow"/>; F11
-		/// turns it on and off too). Kept with the user; off unless turned on.
+		/// Whether the app is shown full screen (the desktop's window or the browser's page; see
+		/// <see cref="Lyrious.UILib.FullScreen"/>; F11 turns it on and off too). This device only; off unless turned on.
 		/// </summary>
 		public static bool FullScreen
 		{
@@ -794,12 +869,11 @@ namespace Lyrious.UILib.Setlists
 			set
 			{
 				App.Settings.Set(SettingKeys.FullScreen, value ? "true" : null);
-				UserSettings.ChangedHere();
 				FullScreenChanged?.Invoke();
 			}
 		}
 
-		/// <summary>Raised when <see cref="FullScreen"/> is changed here (a change from another device raises <see cref="UserSettings.Changed"/>).</summary>
+		/// <summary>Raised when <see cref="FullScreen"/> changes.</summary>
 		public static event Action? FullScreenChanged;
 
 		/// <summary>The smaller of the window's width and height at which <see cref="DynamicZoom"/> is 100 %.</summary>
@@ -826,13 +900,6 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>Playback settings, read from and saved to <see cref="App.Settings"/>.</summary>
 	public static class PlaybackSettings
 	{
-		/// <summary>Stopping with the lyrics scrolled to the bottom goes on to the next song. On unless turned off.</summary>
-		public static bool NextSongOnStopAtEnd
-		{
-			get => App.Settings.Get(SettingKeys.NextSongOnStopAtEnd) != "false";
-			set => App.Settings.Set(SettingKeys.NextSongOnStopAtEnd, value ? "true" : "false");
-		}
-
 		/// <summary>
 		/// Band sync (the globe in the play toolbar): follow the joined band's current song, setlist
 		/// and play/stop, and send this member's. On unless turned off.

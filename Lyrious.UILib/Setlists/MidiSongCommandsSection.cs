@@ -31,7 +31,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					new TextBlock
 					{
-						Text = L.T("MIDI sent for every song of the band to every MIDI output: when it's selected (before the song's own MIDI tags), when it starts playing and when it stops. ")
+						Text = L.T("MIDI sent for every song to every MIDI output: when it's selected (before the song's own MIDI tags), when it starts playing and when it stops. ")
 						       + L.T("Written as in a MIDI tag, e.g. $LIGHT.1, PC0@10.")
 						       + (canEdit ? "" : L.T(" Only the band's admins change them.")),
 						TextWrapping = TextWrapping.Wrap,
@@ -53,7 +53,7 @@ namespace Lyrious.UILib.Setlists
 			var start = Box(commands.Start);
 			var stop = Box(commands.Stop);
 			var notes = new[] { Note(), Note(), Note() };
-			var saveButton = new Button { Content = L.T("Save band settings"), HorizontalAlignment = HorizontalAlignment.Left, IsEnabled = false };
+			var saveButton = new Button { Content = L.T("Save MIDI settings"), HorizontalAlignment = HorizontalAlignment.Left, IsEnabled = false };
 			var saved = commands;
 			var saving = false;
 			var saveProblem = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
@@ -110,7 +110,7 @@ namespace Lyrious.UILib.Setlists
 				}
 				catch (Exception ex)
 				{
-					saveProblem.Text = L.T("Couldn't save the band settings. {0}", ex.Message);
+					saveProblem.Text = L.T("Couldn't save the MIDI settings. {0}", ex.Message);
 					saveProblem.IsVisible = true;
 				}
 				finally

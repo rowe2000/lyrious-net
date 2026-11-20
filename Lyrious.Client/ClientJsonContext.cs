@@ -44,7 +44,9 @@ internal sealed record GroupDto(
     // The band's MIDI commands for every song, a JSON object of select, start and stop; null if none.
     string? MidiCommands = null,
     // The header above every song's lyrics, in ChordPro with placeholders; null for the default, empty for none.
-    string? LyricsHeader = null);
+    string? LyricsHeader = null,
+    // Whether stopping a song at the end of its lyrics goes on to the next song; null (unset) is yes.
+    bool? NextSongOnStopAtEnd = null);
 
 internal sealed record SetlistDto(System.Guid Id, string Name, System.Guid GroupId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum);
 

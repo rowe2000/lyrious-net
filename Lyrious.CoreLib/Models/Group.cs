@@ -108,6 +108,12 @@ public sealed class Group : Entity, IName
 	/// <summary>The longest <see cref="LyricsHeader"/> stored.</summary>
 	public const int MaxLyricsHeaderLength = 1000;
 
+	/// <summary>
+	/// Whether stopping a song with its lyrics scrolled to the end goes on to the next song in the
+	/// setlist: null (unset) or true for yes, false for no. Every member gets it; only admins change it.
+	/// </summary>
+	[DataMember] public bool? NextSongOnStopAtEnd { get; set; }
+
 	[DataMember] public Guid? CurrentSetlistId { get; set; }
 	[DataMember] public Guid? CurrentPlayId { get; set; }
 	[DataMember] public Guid? CurrentSetlistItemId { get; set; }

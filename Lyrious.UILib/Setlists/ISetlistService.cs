@@ -178,6 +178,9 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		Task SetLyricsHeaderAsync(Guid groupId, string? header, CancellationToken cancellationToken = default);
 
+		/// <summary>Sets whether stopping a song at the end of its lyrics goes on to the next song, for the band: null (unset) is yes. Admins only; the server refuses others.</summary>
+		Task SetNextSongOnStopAtEndAsync(Guid groupId, bool? goOn, CancellationToken cancellationToken = default);
+
 		/// <summary>Gives the setlist a new name.</summary>
 		Task RenameSetlistAsync(Guid setlistId, string name, CancellationToken cancellationToken = default);
 
@@ -264,8 +267,9 @@ namespace Lyrious.UILib.Setlists
 
 	/// <param name="MidiExpressions">The band's MIDI expressions as stored (a JSON array, see <see cref="Midi.ExpressionsFromJson"/>); null if none.</param>
 	/// <param name="MidiCommands">The band's MIDI commands for every song as stored (see <see cref="Midi.SongCommandsFromJson"/>); null if none.</param>
+	/// <param name="NextSongOnStopAtEnd">Whether stopping a song at the end of its lyrics goes on to the next song; null (unset) is yes.</param>
 	/// <param name="LyricsHeader">The header above every song's lyrics as stored (see <see cref="Setlists.LyricsHeader"/>): null for the default, empty for none.</param>
-	public sealed record GroupSummary(Guid Id, string Name, Guid? CurrentSetlistId, Guid? CurrentSetlistItemId, bool IsPrivate = false, string? MidiExpressions = null, string? MidiCommands = null, string? LyricsHeader = null);
+	public sealed record GroupSummary(Guid Id, string Name, Guid? CurrentSetlistId, Guid? CurrentSetlistItemId, bool IsPrivate = false, string? MidiExpressions = null, string? MidiCommands = null, string? LyricsHeader = null, bool? NextSongOnStopAtEnd = null);
 
 	public enum GroupRole { Member, Conductor, Admin }
 
@@ -361,6 +365,7 @@ namespace Lyrious.UILib.Setlists
 		public Task SetMidiExpressionsAsync(Guid groupId, IReadOnlyList<MidiExpression> expressions, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SetMidiSongCommandsAsync(Guid groupId, MidiSongCommands commands, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SetLyricsHeaderAsync(Guid groupId, string? header, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task SetNextSongOnStopAtEndAsync(Guid groupId, bool? goOn, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RenameSetlistAsync(Guid setlistId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistEntry>> GetEntriesAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();

@@ -32,7 +32,9 @@ namespace Lyrious.UILib
 			SettingKeys.Language,
 			SettingKeys.CapoMode,
 			SettingKeys.ChordGridButton,
-			SettingKeys.FullScreen,
+			SettingKeys.SendYamahaTranspose,
+			SettingKeys.MidiExpressions,
+			SettingKeys.MidiCommands,
 		];
 
 		/// <summary>How long after the last change it's sent.</summary>

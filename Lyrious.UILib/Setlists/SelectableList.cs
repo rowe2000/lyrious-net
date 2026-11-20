@@ -20,6 +20,7 @@ namespace Lyrious.UILib.Setlists
 
 		private readonly bool activateOnClick;
 		private readonly Thickness rowPadding;
+		private readonly bool toolsBelow;
 
 		/// <summary>The room around a row's content, unless the list is given another.</summary>
 		public static readonly Thickness RowPadding = new(16, 12);
@@ -38,6 +39,7 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="activate">Makes the item current (on a double click).</param>
 		/// <param name="activateOnClick">A click makes the item current at once (no selecting first), e.g. a setlist's songs.</param>
 		/// <param name="rowPadding">The room around a row's content; else <see cref="RowPadding"/>.</param>
+		/// <param name="toolsBelow">The selected row's toolbar under it (the row keeps the whole width), not beside it.</param>
 		public SelectableList(
 			IReadOnlyList<T> items,
 			Func<T, Control> content,
@@ -46,10 +48,12 @@ namespace Lyrious.UILib.Setlists
 			Action<T> activate,
 			string emptyText,
 			bool activateOnClick = false,
-			Thickness? rowPadding = null)
+			Thickness? rowPadding = null,
+			bool toolsBelow = false)
 		{
 			this.activateOnClick = activateOnClick;
 			this.rowPadding = rowPadding ?? RowPadding;
+			this.toolsBelow = toolsBelow;
 			if (items.Count == 0)
 			{
 				Content = new TextBlock { Text = emptyText, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
@@ -143,6 +147,14 @@ namespace Lyrious.UILib.Setlists
 			};
 
 			rows.Add((item, outline, toolbar));
+			if (toolsBelow)
+			{
+				// Under the row, at its right, a little apart.
+				toolbar.Margin = new Thickness(0, 4, 0, 2);
+				toolbar.HorizontalAlignment = HorizontalAlignment.Right;
+				return new StackPanel { Children = { outline, toolbar } };
+			}
+
 			return new DockPanel { Children = { toolbar, outline } };
 		}
 

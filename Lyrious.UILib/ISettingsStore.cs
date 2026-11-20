@@ -26,9 +26,6 @@ namespace Lyrious.UILib
 
 		public const string Host = "host";
 
-		/// <summary>"false" turns off going on to the next song when stopping at the end of the lyrics (on by default).</summary>
-		public const string NextSongOnStopAtEnd = "next-song-on-stop-at-end";
-
 		/// <summary>"false" stops following and sending the band's song, setlist and play/stop (on by default).</summary>
 		public const string BandSync = "band-sync";
 
@@ -65,7 +62,13 @@ namespace Lyrious.UILib
 		/// </summary>
 		public const string ChordGridButton = "chord-grid-button";
 
-		/// <summary>"true" shows the app full screen (desktop; F11 too); off unless set. Kept with the user.</summary>
+		/// <summary>
+		/// The kinds of settings the Settings page hides: some of "Device", "User" and "Band", separated by
+		/// commas; none (all shown) unless set. This device only.
+		/// </summary>
+		public const string SettingsFilter = "settings-filter";
+
+		/// <summary>"true" shows the app full screen (desktop and browser; F11 too); off unless set. This device only.</summary>
 		public const string FullScreen = "full-screen";
 
 		/// <summary>The language chosen: "sv" or "en"; none for the device's (see <see cref="Localization.Language"/>). Kept with the user.</summary>
@@ -80,10 +83,22 @@ namespace Lyrious.UILib
 		/// <summary>
 		/// The Yamaha keyboards that get the member's transpose of the song shown, on the MIDI outputs, as
 		/// their keyboard transpose (see <see cref="Midi.YamahaTranspose"/>): some of "MODX", "YC" and "CK",
-		/// separated by commas ("true" from before is all of them); none unless set. This device only
-		/// (it's about the keyboards connected to it).
+		/// separated by commas ("true" from before is all of them); none unless set. Kept with the user
+		/// (the same keyboards on all their devices).
 		/// </summary>
 		public const string SendYamahaTranspose = "send-yamaha-transpose";
+
+		/// <summary>
+		/// The member's MIDI expressions (shortcuts in songs' MIDI tags), a JSON array (see <see cref="Midi"/>);
+		/// none for the band's (see <see cref="MidiSettings"/>). Kept with the user.
+		/// </summary>
+		public const string MidiExpressions = "midi-expressions";
+
+		/// <summary>
+		/// The member's MIDI commands for every song (select, start, stop), a JSON object (see <see cref="Midi"/>);
+		/// none for the band's (see <see cref="MidiSettings"/>). Kept with the user.
+		/// </summary>
+		public const string MidiCommands = "midi-commands";
 
 		/// <summary>The lyrics' zoom in the scroll view (pinch), e.g. "1.4"; none for normal size.</summary>
 		public const string LyricsZoom = "lyrics-zoom";
@@ -96,9 +111,6 @@ namespace Lyrious.UILib
 
 		/// <summary>The port the app is shared on, e.g. "8080"; none for <see cref="LanSharingSettings.DefaultPort"/>.</summary>
 		public const string LanSharingPort = "lan-sharing-port";
-
-		/// <summary>"true" shows the song's name and details above the lyrics in the scroll view; off unless set.</summary>
-		public const string ShowSongHeader = "show-song-header";
 
 		/// <summary>
 		/// Where the app's window was when it closed, to open there again (desktop): "x,y,width,height" and

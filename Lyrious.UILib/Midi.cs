@@ -91,7 +91,12 @@ namespace Lyrious.UILib
 				"true" => YamahaModels,
 				var models => YamahaModels.Where(model => models.Split(',').Contains(model, StringComparer.OrdinalIgnoreCase)).ToList(),
 			};
-			set => App.Settings.Set(SettingKeys.SendYamahaTranspose, value.Count == 0 ? null : string.Join(",", YamahaModels.Where(value.Contains)));
+			set
+			{
+				App.Settings.Set(SettingKeys.SendYamahaTranspose, value.Count == 0 ? null : string.Join(",", YamahaModels.Where(value.Contains)));
+				// Kept with the user: sent to the server too.
+				UserSettings.ChangedHere();
+			}
 		}
 
 		/// <summary>Sends <see cref="YamahaTranspose"/> to the chosen keyboards (or <paramref name="models"/>), if MIDI can be sent here.</summary>

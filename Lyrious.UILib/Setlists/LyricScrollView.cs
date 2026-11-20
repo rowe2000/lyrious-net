@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Input.GestureRecognizers;
 using Avalonia.Interactivity;
@@ -359,8 +360,13 @@ namespace Lyrious.UILib.Setlists
 		// Whether the song's lyrics have chords, as the toolbar was last shown (for showing it again).
 		private bool shownWithChords;
 
-		// The transpose button's text ("♯♭", or the value), centred by its letters.
-		private readonly InkCenteredText transposeText = new();
+		// The transpose button's value ("+2"), centred by its letters; bold, the toolbar's text size.
+		private readonly InkCenteredText transposeText = new() { [TextElement.FontSizeProperty] = 15.0, [TextElement.FontWeightProperty] = FontWeight.Bold };
+
+		// The transpose button's icon when there's no transpose: "♯♭", 1.65 times the toolbar's text, not
+		// bold. A control of its own, sized and weighted once, so it's drawn the same every time (sharing
+		// the value's, it came back as other letters after a transpose was reset).
+		private readonly InkCenteredText transposeIcon = new() { Text = "♯♭", [TextElement.FontSizeProperty] = 15 * 1.65, [TextElement.FontWeightProperty] = FontWeight.Normal };
 
 		/// <summary>
 		/// The member's transpose: − and + by a semitone (−11 to +11), and back to none; saved at once.
@@ -521,12 +527,16 @@ namespace Lyrious.UILib.Setlists
 			// In the editor always (the chords may be being added); else for lyrics with chords, or a transpose set.
 			transposeButton.IsVisible = SaveMySetting != null && (IsEditing || hasChords || t != 0);
 			// Its letters right in the middle, both ways (a plain text sits higher or lower, by its letters).
-			transposeText.Text = t == 0 ? "♯♭" : TransposeText(t);
-			transposeButton.Content = transposeText;
-			// The ♯♭ 1.65 times the toolbar's text (it stands for the icon); the number as the text.
-			transposeButton.FontSize = t == 0 ? 15 * 1.65 : 15;
-			// The value ("+2") in bold; the ♯♭ as it is.
-			transposeButton.FontWeight = t == 0 ? FontWeight.Normal : FontWeight.Bold;
+			// The ♯♭ icon, or the value ("+2", bold); each with its own size and weight.
+			if (t == 0)
+			{
+				transposeButton.Content = transposeIcon;
+			}
+			else
+			{
+				transposeText.Text = TransposeText(t);
+				transposeButton.Content = transposeText;
+			}
 			// Turned off, the value still shows, dimmed.
 			transposeButton.Opacity = t != 0 && mySetting.TransposeOff ? 0.5 : 1;
 			// On: in the chord colour (the colour of the chords it moves), its text black or white, whichever
@@ -794,14 +804,13 @@ namespace Lyrious.UILib.Setlists
 			if (Content is Control page)
 			{
 				PageLayout.SetSongTitleContent(page, editHeader);
-				PageLayout.SetSongTitleShown(page, DisplaySettings.ShowSongHeader || IsEditing || string.IsNullOrWhiteSpace(song.Lyrics));
+				PageLayout.SetSongTitleShown(page, IsEditing || string.IsNullOrWhiteSpace(song.Lyrics));
 			}
 		}
 
 		protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
 		{
 			base.OnAttachedToVisualTree(e);
-			DisplaySettings.ShowSongHeaderChanged += ShowTitle;
 			LyricsHeader.Changed += OnLyricsHeaderChanged;
 			DisplaySettings.CapoModeChanged += OnCapoModeChanged;
 			UserSettings.Changed += OnCapoModeChanged;
@@ -1622,7 +1631,6 @@ namespace Lyrious.UILib.Setlists
 		protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
 		{
 			base.OnDetachedFromVisualTree(e);
-			DisplaySettings.ShowSongHeaderChanged -= ShowTitle;
 			LyricsHeader.Changed -= OnLyricsHeaderChanged;
 			DisplaySettings.CapoModeChanged -= OnCapoModeChanged;
 			UserSettings.Changed -= OnCapoModeChanged;
@@ -3329,20 +3337,7 @@ namespace Lyrious.UILib.Setlists
 			// left), with less room before the text; above and below it as in a text box, so the text
 			// sits at the same height.
 			box.Width = 76;
-			var textPadding = Application.Current?.TryFindResource("TextControlThemePadding", out var padding) == true && padding is Thickness p
-				? p
-				: new Thickness(10, 6, 6, 5);
-			box.Styles.Add(new Avalonia.Styling.Style(x => Avalonia.Styling.Selectors.OfType<TextBox>(x))
-			{
-				Setters =
-				{
-					new Avalonia.Styling.Setter(MinWidthProperty, 0.0),
-					new Avalonia.Styling.Setter(PaddingProperty, new Thickness(8, textPadding.Top, 0, textPadding.Bottom)),
-					// In the middle of the drop-down's height, as a text box's text (it'd sit higher otherwise).
-					new Avalonia.Styling.Setter(VerticalAlignmentProperty, VerticalAlignment.Stretch),
-					new Avalonia.Styling.Setter(VerticalContentAlignmentProperty, VerticalAlignment.Center),
-				},
-			});
+			PageLayout.CenterTypedText(box, leftPadding: 8);
 
 			// Typing: checked before it's in the text, so only what's allowed can be typed.
 			box.AddHandler(InputElement.TextInputEvent, (_, e) =>

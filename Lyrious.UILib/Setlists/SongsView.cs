@@ -92,6 +92,15 @@ namespace Lyrious.UILib.Setlists
 
 		/// <param name="songbooks">The songbooks to choose between (e.g. the private one and the joined band's), shown as buttons above the list; none hides them.</param>
 		/// <param name="playingSongbookId">The songbook (its band's id) whose songs are played as the setlist now; null if none.</param>
+		/// <summary>
+		/// Picks a SongbookPro backup and imports it into the band (converted to Lyrious' format or not),
+		/// returning what happened (null: nothing picked); offered under the page's "more" button. None: not offered.
+		/// </summary>
+		public Func<Control, bool, Task<string?>>? ImportSongbookPro { get; set; }
+
+		/// <summary>Deletes every song in the songbook, returning what happened; offered under the "more" button. None: not offered.</summary>
+		public Func<Task<string>>? ClearSongbook { get; set; }
+
 		public SongsView(GroupSummary group, IReadOnlyList<SongDetails> songs, Guid? currentSongId, IReadOnlyList<GroupSummary>? songbooks = null, Guid? playingSongbookId = null)
 		{
 			Group = group;
@@ -358,10 +367,31 @@ namespace Lyrious.UILib.Setlists
 			internet.Click += (_, _) => InternetSearchRequested?.Invoke();
 			addButton.Flyout = new MenuFlyout { Items = { empty, import, internet } };
 
+			// More: importing a SongbookPro backup into the songbook, and clearing it (when whoever shows the page offers them).
+			var moreButton = HomeView.IconButton("M4,12 H6 M11,12 H13 M18,12 H20", L.T("More: import a SongbookPro backup, clear the songbook"));
+			moreButton.Click += (_, _) =>
+			{
+				var panel = new StackPanel { Spacing = 16, Width = 360 };
+				if (ImportSongbookPro is { } importBackup)
+				{
+					panel.Children.Add(SettingsView.ImportSetting(importBackup));
+				}
+
+				if (ClearSongbook is { } clear)
+				{
+					panel.Children.Add(SettingsView.ClearSetting(clear, group.Name));
+				}
+
+				if (panel.Children.Count > 0)
+				{
+					new Flyout { Content = panel, Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedRight }.ShowAt(moreButton);
+				}
+			};
+
 			Content = PageLayout.Page(
 				L.T("Songbook"),
 				new DockPanel { Children = { SongbookChooser(group, songbooks ?? [], playingSongbookId), nameRow, status, search, tagFilter, list } },
-				titleAction: new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Children = { asSetlistButton, addButton } },
+				titleAction: new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Children = { asSetlistButton, addButton, moreButton } },
 				closable: true,
 				icon: AppIcons.Songbook);
 		}
@@ -554,7 +584,9 @@ namespace Lyrious.UILib.Setlists
 				song => SongTools(song, song.Id == currentSongId),
 				song => SongSelected?.Invoke(song),
 				emptyText,
-				rowPadding: SongListRowPadding);
+				rowPadding: SongListRowPadding,
+				// The selected song's tools under it, so the songs keep the whole width.
+				toolsBelow: true);
 			DimCheckBoxes();
 			return list;
 		}

@@ -358,6 +358,29 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>A cancel button: a cross, beside an <see cref="OkButton"/>.</summary>
 		public static Button CancelButton(string description) => HomeView.IconButton(CancelIcon, description);
 
+		/// <summary>
+		/// The text of a drop-down that can be typed in (an editable <see cref="ComboBox"/>) in the middle of
+		/// its height, as a text box's text (it sits higher otherwise), with a text box's room above and below
+		/// it and <paramref name="leftPadding"/> before it. The text box inside may be narrower than a text
+		/// box's usual least width, so in a narrow drop-down its text doesn't scroll out of sight to the left.
+		/// </summary>
+		public static void CenterTypedText(ComboBox box, double leftPadding)
+		{
+			var textPadding = Application.Current?.TryFindResource("TextControlThemePadding", out var padding) == true && padding is Thickness p
+				? p
+				: new Thickness(10, 6, 6, 5);
+			box.Styles.Add(new Avalonia.Styling.Style(x => Avalonia.Styling.Selectors.OfType<TextBox>(x))
+			{
+				Setters =
+				{
+					new Avalonia.Styling.Setter(Layoutable.MinWidthProperty, 0.0),
+					new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(leftPadding, textPadding.Top, 0, textPadding.Bottom)),
+					new Avalonia.Styling.Setter(Layoutable.VerticalAlignmentProperty, VerticalAlignment.Stretch),
+					new Avalonia.Styling.Setter(ContentControl.VerticalContentAlignmentProperty, VerticalAlignment.Center),
+				},
+			});
+		}
+
 		/// <summary>A back link for a page header, e.g. "‹ Setlist 1".</summary>
 		private static HyperlinkButton BackLink(string text, Action back)
 		{
@@ -615,10 +638,11 @@ namespace Lyrious.UILib.Setlists
 				Foreground = Brushes.White,
 				Background = new SolidColorBrush(Color.Parse("#E81123")),
 			};
-			button.Resources["ButtonBackgroundPointerOver"] = new SolidColorBrush(Color.Parse("#FF2A2A"));
-			button.Resources["ButtonBackgroundPressed"] = new SolidColorBrush(Color.Parse("#B0000D"));
-			button.Resources["ButtonForegroundPointerOver"] = Brushes.White;
-			button.Resources["ButtonForegroundPressed"] = Brushes.White;
+			// Hovered and pressed: a lighter and a deeper red. Styles for this button only (not resources,
+			// which the buttons in a popup it opens, e.g. Cancel, would take too).
+			button.Classes.Add(RedHoverClass);
+			button.Styles.Add(RedHoverStyle(":pointerover", "#FF2A2A"));
+			button.Styles.Add(RedHoverStyle(":pressed", "#B0000D"));
 			return button;
 		}
 
@@ -674,15 +698,34 @@ namespace Lyrious.UILib.Setlists
 			return chips;
 		}
 
-		/// <summary>One tag as a small rounded label.</summary>
-		public static Border TagChip(string tag, double fontSize = 12) => new()
+		/// <summary>
+		/// One tag as a small rounded label. Its background is a tint of the text colour around it, so it
+		/// stands out either way: lighter on a dark background (or a highlighted row with white text),
+		/// darker on a light one.
+		/// </summary>
+		public static Border TagChip(string tag, double fontSize = 12)
 		{
-			CornerRadius = new CornerRadius(10),
-			Padding = new Thickness(8, 1),
-			Background = new SolidColorBrush(Color.FromArgb(0x38, 0x80, 0x80, 0x80)),
-			VerticalAlignment = VerticalAlignment.Center,
-			Child = new TextBlock { Text = tag, FontSize = fontSize, VerticalAlignment = VerticalAlignment.Center },
-		};
+			var chip = new Border
+			{
+				CornerRadius = new CornerRadius(10),
+				Padding = new Thickness(8, 1),
+				VerticalAlignment = VerticalAlignment.Center,
+				Child = new TextBlock { Text = tag, FontSize = fontSize, VerticalAlignment = VerticalAlignment.Center },
+			};
+			void Tint() => chip.Background = new SolidColorBrush(Avalonia.Controls.Documents.TextElement.GetForeground(chip) is ISolidColorBrush brush
+				? Color.FromArgb(0x40, brush.Color.R, brush.Color.G, brush.Color.B)
+				: Color.FromArgb(0x38, 0x80, 0x80, 0x80));
+			Tint();
+			// Again whenever the text colour around it changes (the theme, a row highlighted or hovered).
+			chip.PropertyChanged += (_, e) =>
+			{
+				if (e.Property == Avalonia.Controls.Documents.TextElement.ForegroundProperty)
+				{
+					Tint();
+				}
+			};
+			return chip;
+		}
 
 		/// <summary>
 		/// A song's keys, tempo and beat for a list row, after <paramref name="note"/> (e.g. "in setlist")
