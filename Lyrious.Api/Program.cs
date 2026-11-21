@@ -177,6 +177,8 @@ internal class Program
 			Console.WriteLine(context.EnsureCreatedAndUpToDate()
 				? "Database has been created."
 				: "Database already exists.");
+			// The release note that came with this server (see deploy/railway.sh), unpublished.
+			ReleaseNoteImport.Run(context, scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("ReleaseNoteImport"));
 		}
 
 		app.UseHttpsRedirection();

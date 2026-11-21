@@ -34,8 +34,20 @@ namespace Lyrious.UILib.Login
 		/// <summary>The logged-in member's email address; null if they have none (or it isn't known, e.g. offline).</summary>
 		string? Email { get; }
 
-		/// <summary>Whether the logged-in member is a site manager: an admin of every band (but others' private ones), named on the server.</summary>
+		/// <summary>
+		/// Whether the logged-in member is logged in elevated, as a site manager: an admin of every band
+		/// (but others' private ones). Only after <see cref="ElevateAsync"/>; a normal login is a member's.
+		/// </summary>
 		bool IsSiteManager { get; }
+
+		/// <summary>Whether the logged-in member is listed as a site manager on the server, so may log in elevated.</summary>
+		bool CanElevate { get; }
+
+		/// <summary>Logs in elevated, as a site manager, with the member's password again (only for those listed). Needs the server.</summary>
+		Task<AuthResult> ElevateAsync(string password, CancellationToken cancellationToken = default);
+
+		/// <summary>Raised when <see cref="IsSiteManager"/> changes, on any thread.</summary>
+		event System.Action? SiteManagerChanged;
 
 		/// <summary>
 		/// Asks the server to email a password reset code. Succeeds whether or not the account exists
@@ -52,7 +64,7 @@ namespace Lyrious.UILib.Login
 		/// </summary>
 		void LogOut();
 
-		/// <summary>The address of the server (host) the app talks to, e.g. https://lyrious.se.</summary>
+		/// <summary>The address of the server (host) the app talks to, e.g. https://www.lyrious.se.</summary>
 		string ServerAddress { get; }
 
 		/// <summary>Checks an address for a server: whether it's an address at all, and whether a Lyrious server answers there.</summary>
@@ -131,6 +143,13 @@ namespace Lyrious.UILib.Login
 		public string? Email => null;
 
 		public bool IsSiteManager => false;
+
+		public bool CanElevate => false;
+
+		public Task<AuthResult> ElevateAsync(string password, CancellationToken cancellationToken = default)
+			=> Task.FromResult(AuthResult.Failure(NotConnected));
+
+		public event System.Action? SiteManagerChanged { add { } remove { } }
 
 		public Task<AuthResult> RequestPasswordResetAsync(string userNameOrEmail, CancellationToken cancellationToken = default)
 			=> Task.FromResult(AuthResult.Failure(NotConnected));

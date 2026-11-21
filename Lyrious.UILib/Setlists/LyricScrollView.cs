@@ -36,6 +36,8 @@ namespace Lyrious.UILib.Setlists
 		private const string CancelIcon = "M6,6 L18,18 M18,6 L6,18";
 		// A grid of three columns: the chord grid.
 		private const string ChordGridIcon = "M4,5 H20 V19 H4 Z M9.3,5 V19 M14.7,5 V19";
+		// The transpose button's icon: a sharp and a flat side by side, close together, as tall as the grid icon.
+		private const string TransposeIcon = "M6.6,5 V19 M10.2,5 V19 M4,10.6 L12.8,9 M4,15 L12.8,13.4 M15.2,5 V19 C17.8,18.2 19.8,16.6 19.8,14.6 C19.8,12.6 17.2,12 15.2,13.8";
 
 		/// <summary>The most the server stores for a song's name and lyrics.</summary>
 		private const int MaxNameLength = 100;
@@ -363,10 +365,24 @@ namespace Lyrious.UILib.Setlists
 		// The transpose button's value ("+2"), centred by its letters; bold, the toolbar's text size.
 		private readonly InkCenteredText transposeText = new() { [TextElement.FontSizeProperty] = 15.0, [TextElement.FontWeightProperty] = FontWeight.Bold };
 
-		// The transpose button's icon when there's no transpose: "♯♭", 1.65 times the toolbar's text, not
-		// bold. A control of its own, sized and weighted once, so it's drawn the same every time (sharing
-		// the value's, it came back as other letters after a transpose was reset).
-		private readonly InkCenteredText transposeIcon = new() { Text = "♯♭", [TextElement.FontSizeProperty] = 15 * 1.65, [TextElement.FontWeightProperty] = FontWeight.Normal };
+		// The transpose button's icon when there's no transpose: ♯♭ drawn (see TransposeIcon), 24 pixels as the
+		// other icons, in the button's text colour (so it follows hovering, as the value's text does).
+		private readonly Avalonia.Controls.Shapes.Path transposeIcon = TransposeIconShape();
+
+		private static Avalonia.Controls.Shapes.Path TransposeIconShape()
+		{
+			var icon = new Avalonia.Controls.Shapes.Path
+			{
+				Data = Geometry.Parse(TransposeIcon),
+				StrokeThickness = 2,
+				StrokeLineCap = PenLineCap.Round,
+				StrokeJoin = PenLineJoin.Round,
+				Width = 24,
+				Height = 24,
+			};
+			icon[!Avalonia.Controls.Shapes.Shape.StrokeProperty] = icon[!TextElement.ForegroundProperty];
+			return icon;
+		}
 
 		/// <summary>
 		/// The member's transpose: − and + by a semitone (−11 to +11), and back to none; saved at once.
@@ -729,7 +745,7 @@ namespace Lyrious.UILib.Setlists
 				ShowProblemAt);
 			// The member's own transpose and lyrics (only they see them).
 			transposeButton = TextButton<LongClickButton>(L.T("Capo: move the chords for me only"));
-			// Square whatever it shows ("♯♭", "+2", "−11"), as tall as the toolbar's buttons, its text in the middle.
+			// Square whatever it shows (the ♯♭ icon, "+2", "−11"), as tall as the toolbar's buttons, its content in the middle.
 			transposeButton.Width = 40;
 			transposeButton.Height = 40;
 			transposeButton.MinWidth = 0;

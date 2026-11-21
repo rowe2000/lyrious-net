@@ -12,7 +12,7 @@ internal class Program
     // yet and stuff might break.
     /// <param name="args">
     /// Optional: [0] Lyrious API base address. Else the host chosen on the Sync page last time, else
-    /// https://lyrious.se (<see cref="SettingKeys.DefaultServer"/>).
+    /// https://www.lyrious.se (<see cref="SettingKeys.DefaultServer"/>).
     /// </param>
     [STAThread]
     public static void Main(string[] args)

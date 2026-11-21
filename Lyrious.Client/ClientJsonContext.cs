@@ -5,7 +5,9 @@ namespace Lyrious.Client;
 
 internal sealed record LoginRequest(string Username, string Password);
 
-internal sealed record LoginResponse(string? Token, MemberProfile? Member, bool IsSiteManager = false);
+internal sealed record LoginResponse(string? Token, MemberProfile? Member, bool IsSiteManager = false, bool CanElevate = false);
+
+internal sealed record ElevateRequest(string Password);
 
 internal sealed record MemberProfile(System.Guid Id, string? UserName, string? Name, System.Guid? JoinedGroupId, string? Email = null);
 
@@ -14,6 +16,12 @@ internal sealed record RegisterRequest(string UserName, string Password, string 
 internal sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword, string? Code);
 
 internal sealed record EmailCodeRequest(string Email);
+
+/// <summary>A release note as the API sends it (see Lyrious.CoreLib's ReleaseNote).</summary>
+internal sealed record ReleaseNoteDto(System.Guid Id, string? Text, string? Branch, string? Version, bool Published, System.DateTime Created, bool Removed = false);
+
+/// <summary>A release note as it's posted (all the fields the API stores, since a post replaces the whole record).</summary>
+internal sealed record ReleaseNoteSaveDto(System.Guid Id, string Text, string Branch, string Version, bool Published, System.DateTime Created, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed);
 
 internal sealed record ChangeEmailRequest(string NewEmail, string Code);
 
@@ -94,6 +102,9 @@ internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int Membershi
 [JsonSerializable(typeof(RegisterRequest))]
 [JsonSerializable(typeof(ChangePasswordRequest))]
 [JsonSerializable(typeof(EmailCodeRequest))]
+[JsonSerializable(typeof(ElevateRequest))]
+[JsonSerializable(typeof(ReleaseNoteDto[]))]
+[JsonSerializable(typeof(ReleaseNoteSaveDto[]))]
 [JsonSerializable(typeof(ChangeEmailRequest))]
 [JsonSerializable(typeof(ForgotPasswordRequest))]
 [JsonSerializable(typeof(ResetPasswordRequest))]

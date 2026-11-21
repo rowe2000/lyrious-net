@@ -110,6 +110,15 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		Task<string?> GetMySettingsAsync(CancellationToken cancellationToken = default);
 
+		/// <summary>
+		/// The release notes on the server, newest first: the published ones (a site manager also gets the
+		/// unpublished ones). Needs the server: throws if it can't be reached.
+		/// </summary>
+		Task<IReadOnlyList<ReleaseNoteEntry>> GetReleaseNotesAsync(CancellationToken cancellationToken = default);
+
+		/// <summary>Adds the release note, or replaces the stored one with the same id. Site managers only; throws otherwise or offline.</summary>
+		Task SaveReleaseNoteAsync(ReleaseNoteEntry note, CancellationToken cancellationToken = default);
+
 		/// <summary>Every member the logged-in member can see (a site manager: all of them), by name.</summary>
 		Task<IReadOnlyList<SiteMember>> GetAllMembersAsync(CancellationToken cancellationToken = default);
 
@@ -289,6 +298,9 @@ namespace Lyrious.UILib.Setlists
 	/// </summary>
 	public sealed record GroupMember(Guid MemberId, string Name, GroupRole Role, bool Approved, DateTime? LastLogin = null, bool IsMe = false, bool Joined = false, bool Connected = false);
 
+	/// <summary>A release note kept on the server: what a release brought, its version and branch, whether it's published, and when it was made.</summary>
+	public sealed record ReleaseNoteEntry(Guid Id, string Text, string Branch, string Version, bool Published, DateTime Created);
+
 	/// <summary>A member as the site manager's page lists them.</summary>
 	public sealed record SiteMember(Guid Id, string Name, string UserName, DateTime? LastLogin);
 
@@ -361,6 +373,8 @@ namespace Lyrious.UILib.Setlists
 		public Task<string?> GetMySettingsAsync(CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SaveMySettingsAsync(string settings, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SiteMember>> GetAllMembersAsync(CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<IReadOnlyList<ReleaseNoteEntry>> GetReleaseNotesAsync(CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task SaveReleaseNoteAsync(ReleaseNoteEntry note, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<string?> GetMemberSettingsAsync(Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SaveMemberSettingsAsync(Guid memberId, string settings, CancellationToken cancellationToken = default) => throw NotConnected();
 		public event Action<string>? MySettingsChanged { add { } remove { } }

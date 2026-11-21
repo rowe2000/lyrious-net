@@ -111,7 +111,36 @@ public class AuthController(
 
 		member.LastLoginAt = DateTime.Now;
 		await userManager.UpdateAsync(member);
-		return Ok(new TokenModel { Token = jwtSettings.CreateToken(member), Member = PublicProfile(member), IsSiteManager = LyriousRepository.IsSiteManagerAccount(member) });
+		// A normal login: a member's rights, also for a listed site manager (who elevates with api/auth/elevate).
+		return Ok(new TokenModel { Token = jwtSettings.CreateToken(member), Member = PublicProfile(member), CanElevate = LyriousRepository.IsSiteManagerAccount(member) });
+	}
+
+	/// <summary>
+	/// The elevated login of a member listed as a site manager (SITE_MANAGERS): with their password
+	/// again, a token with site-manager rights (admin of every band). Refused for anyone not listed.
+	/// </summary>
+	[Authorize]
+	[HttpPost("elevate")]
+	public async Task<IActionResult> Elevate([FromBody] ElevateModel model)
+	{
+		var member = await userManager.FindByNameAsync(User.Identity?.Name ?? string.Empty);
+		if (member == null)
+		{
+			return Unauthorized();
+		}
+
+		if (!LyriousRepository.IsSiteManagerAccount(member))
+		{
+			return StatusCode(StatusCodes.Status403Forbidden, "You aren't a site manager.");
+		}
+
+		var result = await signInManager.CheckPasswordSignInAsync(member, model.Password, lockoutOnFailure: false);
+		if (!result.Succeeded)
+		{
+			return Problem("Wrong password.");
+		}
+
+		return Ok(new TokenModel { Token = jwtSettings.CreateToken(member, siteManager: true), Member = PublicProfile(member), IsSiteManager = true, CanElevate = true });
 	}
 
 	[Authorize]

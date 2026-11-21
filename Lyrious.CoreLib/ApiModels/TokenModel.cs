@@ -8,6 +8,9 @@ public class TokenModel
 	public string Timeout { get; set; }
 	public Member Member { get; set; }
 
-	/// <summary>Whether the member is a site manager (see LyriousRepository.SiteManagers): admin of every band.</summary>
+	/// <summary>Whether the token is an elevated login: site-manager rights (admin of every band).</summary>
 	public bool IsSiteManager { get; set; }
+
+	/// <summary>Whether the member is listed as a site manager, so may log in elevated (api/auth/elevate).</summary>
+	public bool CanElevate { get; set; }
 }

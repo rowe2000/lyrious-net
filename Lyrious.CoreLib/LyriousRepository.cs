@@ -292,10 +292,20 @@ public class LyriousRepository(LyriousContext context)
 	public static IReadOnlySet<string> ParseSiteManagers(string? value)
 		=> new HashSet<string>((value ?? "").Split([',', ';', ' ', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase);
 
-	/// <summary>Whether the current member is a site manager (see <see cref="SiteManagers"/>).</summary>
-	public bool IsSiteManager => Me is { } me && IsSiteManagerAccount(me);
+	/// <summary>The claim an elevated login's token carries (see api/auth/elevate): site-manager rights.</summary>
+	public const string SiteManagerClaim = "lyrious:site-manager";
 
-	/// <summary>Whether the member is a site manager: their username or email address is listed.</summary>
+	// Whether the current identity is an elevated login (its token carries SiteManagerClaim).
+	private bool elevated;
+
+	/// <summary>
+	/// Whether the current member acts as a site manager: listed (see <see cref="SiteManagers"/>) and
+	/// logged in elevated (their token carries <see cref="SiteManagerClaim"/>); a listed member's normal
+	/// login has a member's rights.
+	/// </summary>
+	public bool IsSiteManager => elevated && Me is { } me && IsSiteManagerAccount(me);
+
+	/// <summary>Whether the member is listed as a site manager (may log in elevated): their username or email address is listed.</summary>
 	public static bool IsSiteManagerAccount(Member member)
 		=> SiteManagers.Count > 0
 		   && ((member.UserName is { } name && SiteManagers.Contains(name)) || (member.Email is { Length: > 0 } email && SiteManagers.Contains(email)));
@@ -306,6 +316,7 @@ public class LyriousRepository(LyriousContext context)
 
 	public void SetIdentity(IIdentity? identity)
 	{
+		elevated = identity is System.Security.Claims.ClaimsIdentity claims && claims.HasClaim(SiteManagerClaim, "true");
 		Me = identity != null ? context.Members.FirstOrDefault(o => o.UserName == identity.Name) : null;
 	}
 
@@ -318,6 +329,8 @@ public class LyriousRepository(LyriousContext context)
 		{
 			Member member => member.Id == Me.Id || SharesGroupWith(member.Id),
 			Role => true,
+			// Not part of a band: every member reads the published ones, site managers all of them.
+			ReleaseNote note => note.Published || IsSiteManager,
 			// Only bands they're in (a member removed from their joined band no longer sees it).
 			Group group => IsMemberOf(group.Id),
 			// A member's own song settings: theirs, and seen by the admins of the song's band too.
@@ -525,6 +538,8 @@ public class LyriousRepository(LyriousContext context)
 		{
 			Member member => member.Id == Me!.Id && (member.JoinedGroupId == null || IsMemberOf(member.JoinedGroupId)),
 			Role => false,
+			// Only site managers add, change or remove release notes.
+			ReleaseNote => IsSiteManager,
 			SetlistItem item => IsMemberOf(GroupIdOf(item)) && IsMemberOf(SongGroupId(item.SongId)),
 			Play play => IsMemberOf(GroupIdOf(play)) && IsMemberOf(SongGroupId(play.SongId)),
 			SongSetting setting => CanSeeSongSetting(setting) && IsInGroup(setting.MemberId, SongGroupId(setting.SongId)),

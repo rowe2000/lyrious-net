@@ -441,6 +441,7 @@ namespace Lyrious.UILib.Setlists
 			service.StatusChanged -= OnStatusChanged;
 			service.JoinedGroupChanged -= OnJoinedGroupChanged;
 			service.MySongSettingChanged -= OnMySongSettingChanged;
+			App.AuthService.SiteManagerChanged -= OnSiteManagerChanged;
 			UserSettings.Detach();
 			_ = service.StopLiveUpdatesAsync();
 		}
@@ -1401,7 +1402,7 @@ namespace Lyrious.UILib.Setlists
 			about.Click += (_, _) =>
 			{
 				OpenFromDrawer();
-				page.Content = new AboutView();
+				page.Content = new AboutView(service);
 			};
 			account.Children.Add(about);
 			account.Children.Add(profile);
@@ -1427,9 +1428,12 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			// A site manager's page: every band and member (see SiteManagerView), last of the upper part.
-			if (App.AuthService.IsSiteManager)
+			// Shown only while logged in elevated (see OnSiteManagerChanged and the Profile page's tool).
 			{
 				var siteManager = DrawerItem(L.T("Site manager"));
+				siteManagerButton = siteManager;
+				siteManager.IsVisible = App.AuthService.IsSiteManager;
+				App.AuthService.SiteManagerChanged += OnSiteManagerChanged;
 				siteManager.Click += (_, _) =>
 				{
 					OpenFromDrawer();
@@ -3478,13 +3482,39 @@ namespace Lyrious.UILib.Setlists
 				offerForgetSavedPassword = false;
 				ForgetSavedPasswordRequested?.Invoke();
 			};
-			view.LogOutRequested += () =>
-			{
-				menuDrawer.IsPaneOpen = false;
-				StopLiveUpdates();
-				LogOutRequested?.Invoke();
-			};
+			view.LogOutRequested += LogOut;
 			page.Content = view;
+		}
+
+		// The drawer's Site manager item (null for members who can't log in elevated).
+		private Button? siteManagerButton;
+
+		/// <summary>
+		/// Logged in elevated (or no longer): the Site manager item shows (or hides), and a sync fetches
+		/// what the member may see now (every band, or only their own again).
+		/// </summary>
+		private void OnSiteManagerChanged() => Dispatcher.UIThread.Post(() =>
+		{
+			var on = App.AuthService.IsSiteManager;
+			if (siteManagerButton != null)
+			{
+				siteManagerButton.IsVisible = on;
+			}
+
+			if (!on && page.Content is SiteManagerView)
+			{
+				_ = RunAsync(() => OpenStartPageAsync());
+			}
+
+			_ = RunAsync(() => service.SyncNowAsync());
+		});
+
+		/// <summary>Logs out (the Profile page's tool): the drawer closes, live updates stop, and the host shows the login.</summary>
+		private void LogOut()
+		{
+			menuDrawer.IsPaneOpen = false;
+			StopLiveUpdates();
+			LogOutRequested?.Invoke();
 		}
 
 		/// <summary>Shows a page; with <paramref name="replace"/>, the current one isn't kept to go back to.</summary>

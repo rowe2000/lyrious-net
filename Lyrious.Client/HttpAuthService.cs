@@ -56,7 +56,7 @@ public sealed class HttpAuthService : IAuthService
         }
     }
 
-    /// <summary>Creates a service for the API at <paramref name="apiBaseUrl"/>, e.g. https://lyrious.se.</summary>
+    /// <summary>Creates a service for the API at <paramref name="apiBaseUrl"/>, e.g. https://www.lyrious.se.</summary>
     public HttpAuthService(string apiBaseUrl, ISettingsStore? store = null)
         : this(CreateClient(new System.Uri(apiBaseUrl.TrimEnd('/') + "/")), store)
     {
@@ -130,7 +130,7 @@ public sealed class HttpAuthService : IAuthService
         if (!System.Uri.TryCreate(text.TrimEnd('/') + "/", System.UriKind.Absolute, out var uri)
             || (uri.Scheme != System.Uri.UriSchemeHttp && uri.Scheme != System.Uri.UriSchemeHttps))
         {
-            return new ServerCheck(null, false, L.T("That isn't a web address. Use for example https://lyrious.se."));
+            return new ServerCheck(null, false, L.T("That isn't a web address. Use for example https://www.lyrious.se."));
         }
 
         var normalized = uri.ToString().TrimEnd('/');
@@ -291,7 +291,9 @@ public sealed class HttpAuthService : IAuthService
         offlineServer = null;
         MemberId = member.Id;
         Email = string.IsNullOrWhiteSpace(member.Email) ? null : member.Email;
-        IsSiteManager = body.IsSiteManager;
+        CanElevate = body.CanElevate;
+        // A login (also one made again in the background) has a member's rights: elevated no more.
+        SetSiteManager(body.IsSiteManager);
         JoinedGroupId = member.JoinedGroupId;
         IsOfflineSession = false;
         sessionUserName = userName;
@@ -348,8 +350,58 @@ public sealed class HttpAuthService : IAuthService
     /// <summary>The logged-in member's email address, from the last online login (or changed since).</summary>
     public string? Email { get; private set; }
 
-    /// <summary>Whether the logged-in member is a site manager (admin of every band), from the last online login.</summary>
+    /// <summary>Whether the logged-in member is logged in elevated, as a site manager (admin of every band).</summary>
     public bool IsSiteManager { get; private set; }
+
+    /// <summary>Whether the logged-in member is listed as a site manager, so may log in elevated (<see cref="ElevateAsync"/>).</summary>
+    public bool CanElevate { get; private set; }
+
+    /// <summary>Raised when <see cref="IsSiteManager"/> changes (elevating, or a login or logout ending it), on any thread.</summary>
+    public event System.Action? SiteManagerChanged;
+
+    private void SetSiteManager(bool on)
+    {
+        if (IsSiteManager != on)
+        {
+            IsSiteManager = on;
+            SiteManagerChanged?.Invoke();
+        }
+    }
+
+    public async Task<AuthResult> ElevateAsync(string password, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(AccessToken))
+        {
+            return AuthResult.Failure(IsOfflineSession ? L.T("Logging in as site manager needs a connection to the server.") : L.T("Log in first."));
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/auth/elevate")
+        {
+            Content = JsonContent.Create(new ElevateRequest(password), ClientJsonContext.Default.ElevateRequest),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", AccessToken);
+        using var response = await http.SendAsync(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            return AuthResult.Failure(L.T("Your session has expired. Log in again."));
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return AuthResult.Failure(await ReadErrorAsync(response, cancellationToken));
+        }
+
+        var body = await response.Content.ReadFromJsonAsync(ClientJsonContext.Default.LoginResponse, cancellationToken);
+        if (body is not { Token.Length: > 0 })
+        {
+            return AuthResult.Failure(L.T("The server sent an unexpected response."));
+        }
+
+        // The elevated token from now on (until logging out, or a login made again in the background).
+        AccessToken = body.Token;
+        SetSiteManager(body.IsSiteManager);
+        return AuthResult.Success();
+    }
 
     public Task<AuthResult> SendPasswordChangeCodeAsync(CancellationToken cancellationToken = default)
         => PostAsMemberAsync("api/auth/change-password/send-code", null, L.T("Changing your password needs a connection to the server."), cancellationToken);
@@ -429,7 +481,8 @@ public sealed class HttpAuthService : IAuthService
         AccessToken = null;
         MemberId = null;
         Email = null;
-        IsSiteManager = false;
+        CanElevate = false;
+        SetSiteManager(false);
         JoinedGroupId = null;
         IsOfflineSession = false;
         offlineServer = null;

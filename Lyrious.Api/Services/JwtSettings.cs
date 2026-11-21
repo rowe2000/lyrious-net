@@ -61,7 +61,8 @@ public sealed class JwtSettings
 		NameClaimType = ClaimTypes.Name,
 	};
 
-	public string CreateToken(Member member)
+	/// <param name="siteManager">Marks the token as an elevated login (see LyriousRepository.SiteManagerClaim): site-manager rights.</param>
+	public string CreateToken(Member member, bool siteManager = false)
 	{
 		var claims = new List<Claim>
 		{
@@ -69,6 +70,10 @@ public sealed class JwtSettings
 			new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
 			new(ClaimTypes.Name, member.UserName ?? string.Empty),
 		};
+		if (siteManager)
+		{
+			claims.Add(new Claim(Lyrious.CoreLib.LyriousRepository.SiteManagerClaim, "true"));
+		}
 
 		var token = new JwtSecurityToken(
 			issuer: Issuer,

@@ -10,7 +10,7 @@ public class Application
     static void Main(string[] args)
     {
         // Connects the app to the Lyrious API: the host chosen on the Sync page last time, else
-        // https://lyrious.se (plain http is only allowed to local addresses, see Info.plist).
+        // https://www.lyrious.se (plain http is only allowed to local addresses, see Info.plist).
         // Settings and the offline cache are kept in the app's folder.
         var settings = new FileSettingsStore();
         App.Settings = settings;

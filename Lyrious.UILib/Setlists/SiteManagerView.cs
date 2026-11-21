@@ -158,18 +158,22 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>A member: their name (changed here), username, bands and last login, and their own settings.</summary>
 		private Control MemberRow(SiteMember member, IReadOnlyList<string> memberBands)
 		{
-			var name = new TextBox { Text = member.Name, MinWidth = 200, MaxWidth = 300 };
-			var saveName = new Button { Content = L.T("Save name"), IsEnabled = false, VerticalAlignment = VerticalAlignment.Center };
+			// The name in a box of its own height, with a tick beside it ("Save name" as its tip), shown
+			// once the name differs from the saved one; the row as tall as the tick either way.
+			var name = new TextBox { Text = member.Name, MinWidth = 200, MaxWidth = 300, VerticalAlignment = VerticalAlignment.Center };
+			var saveName = HomeView.IconButton("M5,12 L10,17 L19,7", L.T("Save name"));
+			saveName.VerticalAlignment = VerticalAlignment.Center;
+			saveName.IsVisible = false;
 			var message = Message("", error: false);
 			message.IsVisible = false;
-			name.TextChanged += (_, _) => saveName.IsEnabled = !string.IsNullOrWhiteSpace(name.Text) && name.Text.Trim() != member.Name;
+			name.TextChanged += (_, _) => saveName.IsVisible = !string.IsNullOrWhiteSpace(name.Text) && name.Text.Trim() != member.Name;
 			saveName.Click += async (_, _) =>
 			{
 				try
 				{
 					await service.RenameMemberAsync(member.Id, name.Text!.Trim());
 					member = member with { Name = name.Text!.Trim() };
-					saveName.IsEnabled = false;
+					saveName.IsVisible = false;
 					Show(message, L.T("The name has been changed."), error: false);
 				}
 				catch (Exception ex)
@@ -183,7 +187,7 @@ namespace Lyrious.UILib.Setlists
 			info.Add(member.LastLogin is { } last ? L.T("Last login {0:g}", last.ToLocalTime()) : L.T("Never logged in"));
 
 			// Their own settings (the colours and the like), as JSON: read when opened, saved with Save.
-			var settingsButton = new Button { Content = L.T("Settings") };
+			var settingsButton = new Button { Content = L.T("Settings"), VerticalAlignment = VerticalAlignment.Center };
 			var settingsText = new TextBox { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 80, FontFamily = FontFamily.Parse("monospace"), PlaceholderText = "{ }" };
 			var saveSettings = new Button { Content = L.T("Save settings") };
 			var settingsPanel = new StackPanel
@@ -250,7 +254,17 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 6,
 				Children =
 				{
-					new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8, Children = { name, saveName, settingsButton } },
+					new WrapPanel
+					{
+						Orientation = Orientation.Horizontal,
+						ItemSpacing = 8,
+						LineSpacing = 8,
+						Children =
+						{
+							new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, MinHeight = 40, Children = { name, saveName } },
+							settingsButton,
+						},
+					},
 					new TextBlock { Text = string.Join(" · ", info), Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
 					message,
 					settingsPanel,

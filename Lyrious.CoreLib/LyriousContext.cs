@@ -25,6 +25,7 @@ public class LyriousContext : LocalContext<Member, Role>
 	public DbSet<Song> Songs { get; set; }
 	public DbSet<Songbook> Songbooks { get; set; }
 	public DbSet<SongSetting> SongSettings { get; set; }
+	public DbSet<ReleaseNote> ReleaseNotes { get; set; }
 
 	/// <summary>
 	/// Creates the database if there is none, and brings an existing one up to date: EnsureCreated
@@ -51,6 +52,7 @@ public class LyriousContext : LocalContext<Member, Role>
 			CreateSongSettingsIfMissing(sqlite);
 			AddColumnIfMissing(nameof(SongSettings), nameof(SongSetting.TransposeOff), sqlite ? "INTEGER NOT NULL DEFAULT 0" : "bit NOT NULL DEFAULT 0");
 			AddColumnIfMissing(nameof(Members), nameof(Member.Settings), sqlite ? "TEXT NULL" : $"{NVarChar(Member.MaxSettingsLength)} NULL");
+			CreateReleaseNotesIfMissing(sqlite);
 		}
 
 		return created;
@@ -86,6 +88,37 @@ public class LyriousContext : LocalContext<Member, Role>
 			    PRINT 'created'
 			  END
 			  """;
+		ExecuteSql(sql);
+	}
+
+	/// <summary>The app's release notes (added after the first databases were made).</summary>
+	private void CreateReleaseNotesIfMissing(bool sqlite)
+	{
+		ExecuteSql(sqlite
+			? """
+			  CREATE TABLE IF NOT EXISTS "ReleaseNotes" (
+			    "Id" TEXT NOT NULL CONSTRAINT "PK_ReleaseNotes" PRIMARY KEY,
+			    "Text" TEXT NOT NULL DEFAULT '', "Branch" TEXT NOT NULL DEFAULT '', "Version" TEXT NOT NULL DEFAULT '',
+			    "Published" INTEGER NOT NULL DEFAULT 0, "Created" TEXT NOT NULL,
+			    "CreatedAt" TEXT NOT NULL, "ChangedAt" TEXT NOT NULL,
+			    "Removed" INTEGER NOT NULL DEFAULT 0, "Checksum" INTEGER NOT NULL DEFAULT 0)
+			  """
+			: $"""
+			  IF OBJECT_ID('ReleaseNotes') IS NULL
+			  BEGIN
+			    CREATE TABLE [ReleaseNotes] (
+			      [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_ReleaseNotes] PRIMARY KEY,
+			      [Text] {NVarChar(ReleaseNote.MaxTextLength)} NOT NULL DEFAULT '', [Branch] nvarchar(100) NOT NULL DEFAULT '',
+			      [Version] nvarchar(50) NOT NULL DEFAULT '', [Published] bit NOT NULL DEFAULT 0, [Created] datetime2 NOT NULL,
+			      [CreatedAt] datetime2 NOT NULL, [ChangedAt] datetime2 NOT NULL,
+			      [Removed] bit NOT NULL DEFAULT 0, [Checksum] bigint NOT NULL DEFAULT 0);
+			  END
+			  """);
+	}
+
+	/// <summary>Runs a statement on the database (opening the connection for it if it's closed).</summary>
+	private void ExecuteSql(string sql)
+	{
 		var connection = Database.GetDbConnection();
 		var wasClosed = connection.State != System.Data.ConnectionState.Open;
 		if (wasClosed)

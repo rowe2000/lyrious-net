@@ -23,11 +23,12 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised with the new password once it's changed (e.g. to update a saved one).</summary>
 		public event Action<string>? PasswordChanged;
 
+		/// <summary>Raised when the header's Log out tool is pressed.</summary>
+		public event Action? LogOutRequested;
+
 		/// <summary>Raised when "Forget saved password" is pressed.</summary>
 		public event Action? ForgetSavedPasswordRequested;
 
-		/// <summary>Raised when "Log out" is pressed.</summary>
-		public event Action? LogOutRequested;
 
 		/// <param name="offerForgetSavedPassword">Shows "Forget saved password" (a password is saved here and the app can remove it).</param>
 		public ProfileView(AuthenticatedUser user, ISetlistService service, IAuthService auth, bool offerForgetSavedPassword)
@@ -55,26 +56,41 @@ namespace Lyrious.UILib.Setlists
 					forgotten.IsVisible = true;
 					ForgetSavedPasswordRequested?.Invoke();
 				};
-				form.Children.Add(Explanation(L.T("This device fills in your password when you log in.")));
 				form.Children.Add(forget);
 				form.Children.Add(forgotten);
 			}
 
-			form.Children.Add(Section(L.T("Log out")));
-			form.Children.Add(Explanation(L.T("Logged in as {0} on {1}.", user.UserName, auth.ServerAddress)));
-			var logOut = new Button { Content = L.T("Log out") };
-			logOut.Click += (_, _) => LogOutRequested?.Invoke();
-			form.Children.Add(logOut);
-
 			form.Margin = new Thickness(0, 0, 0, 16);
 			var scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-			Content = PageLayout.Page(L.T("Profile"), scroller, subtitle: user.UserName, closable: true, icon: AppIcons.Profile);
+			// The header's tools: logging in as site manager (for those who may), and logging out.
+			var logOut = HomeView.IconButton(AppIcons.LogOut, L.T("Log out"));
+			logOut.Click += (_, _) => LogOutRequested?.Invoke();
+			var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+			if (ElevateTool(auth) is { } elevate)
+			{
+				tools.Children.Add(elevate);
+			}
+
+			tools.Children.Add(logOut);
+			Content = PageLayout.Page(L.T("Profile"), scroller, subtitle: user.UserName, titleAction: tools, closable: true, icon: AppIcons.Profile);
 		}
 
 		private Control NameSection(AuthenticatedUser user, ISetlistService service)
 		{
-			var name = new TextBox { Text = user.DisplayName, MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 240 };
-			var save = new Button { Content = L.T("Save name"), IsEnabled = false };
+			// Its own height, centred beside the tick (not stretched to the tick's).
+			var name = new TextBox { Text = user.DisplayName, MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 240, VerticalAlignment = VerticalAlignment.Center };
+			// A tick beside the name ("Save name" as its tip), shown once the name differs from the saved one.
+			var save = HomeView.IconButton("M5,12 L10,17 L19,7", L.T("Save name"));
+			save.VerticalAlignment = VerticalAlignment.Center;
+			save.IsVisible = false;
+			save.PropertyChanged += (_, e) =>
+			{
+				if (e.Property == IsEnabledProperty)
+				{
+					save.IsVisible = save.IsEnabled;
+				}
+			};
+			save.IsEnabled = false;
 			var message = Message();
 			var saved = user.DisplayName;
 
@@ -123,9 +139,8 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					Section(L.T("Name")),
-					Explanation(L.T("How the band sees you, in the members list and the playback toolbar.")),
-					name,
-					save,
+					// As tall as the tick, shown or not, so nothing below moves when it appears.
+					new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, MinHeight = 40, Children = { name, save } },
 					message,
 				},
 			};
@@ -196,7 +211,6 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					Section(L.T("Password")),
-					Explanation(L.T("Enter your current password, choose a new one, and enter the code that \"Send code\" emails to you. Changing it needs a connection to the server.")),
 					current,
 					next,
 					confirm,
@@ -208,21 +222,21 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// The member's email address, and changing it: a code is emailed to the new address, and the
-		/// change is made with it, so the address is known to be theirs.
+		/// The member's email address, in a box to change it: once it differs from theirs, a tick sends a
+		/// code to the new address; then the code is entered and verified, which makes the change, so the
+		/// address is known to be theirs.
 		/// </summary>
 		private Control EmailSection(IAuthService auth)
 		{
-			var shown = new TextBlock { TextWrapping = TextWrapping.Wrap };
-			void ShowAddress() => shown.Text = auth.Email is { } email
-				? L.T("Your email address is {0}.", email)
-				: L.T("Your account has no email address. Add one to reset a forgotten password and to change your password.");
-			ShowAddress();
-
-			var address = new TextBox { PlaceholderText = L.T("New email address"), MaxWidth = 360, MinWidth = 240, HorizontalAlignment = HorizontalAlignment.Left };
-			var sendCode = new Button { Content = L.T("Send code"), IsEnabled = false };
+			// Its own height, centred beside the tick (not stretched to the tick's).
+			var address = new TextBox { Text = auth.Email ?? "", PlaceholderText = L.T("Email address"), MaxWidth = 360, MinWidth = 240, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+			// A tick beside the box ("Send code" as its tip), shown once the address differs from theirs.
+			var sendCode = HomeView.IconButton("M5,12 L10,17 L19,7", L.T("Send code"));
+			sendCode.VerticalAlignment = VerticalAlignment.Center;
+			sendCode.IsVisible = false;
+			var sent = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
 			var code = new TextBox { PlaceholderText = L.T("Code from the email"), MaxWidth = 200, MinWidth = 160, HorizontalAlignment = HorizontalAlignment.Left, IsVisible = false };
-			var change = new Button { Content = L.T("Change email"), IsVisible = false, IsEnabled = false };
+			var verify = new Button { Content = L.T("Verify"), IsVisible = false, IsEnabled = false };
 			var message = Message();
 			string? sentTo = null;
 			var busy = false;
@@ -230,11 +244,13 @@ namespace Lyrious.UILib.Setlists
 			void Enable()
 			{
 				var typed = address.Text?.Trim() ?? "";
-				sendCode.IsEnabled = !busy && typed.Length > 0;
+				var changed = typed.Length > 0 && !string.Equals(typed, auth.Email, StringComparison.OrdinalIgnoreCase);
+				sendCode.IsVisible = changed;
+				sendCode.IsEnabled = !busy;
 				// The code is for the address it was sent to: another address needs a new one.
 				var codeStep = sentTo != null && typed == sentTo;
-				code.IsVisible = change.IsVisible = codeStep;
-				change.IsEnabled = !busy && codeStep && (code.Text?.Trim().Length ?? 0) > 0;
+				sent.IsVisible = code.IsVisible = verify.IsVisible = codeStep;
+				verify.IsEnabled = !busy && codeStep && (code.Text?.Trim().Length ?? 0) > 0;
 			}
 
 			async Task RunAsync(Func<Task> action)
@@ -259,11 +275,13 @@ namespace Lyrious.UILib.Setlists
 			sendCode.Click += (_, _) => _ = RunAsync(async () =>
 			{
 				var newAddress = address.Text?.Trim() ?? "";
+				message.IsVisible = false;
 				var result = await auth.SendEmailChangeCodeAsync(newAddress);
 				if (result.Succeeded)
 				{
 					sentTo = newAddress;
-					Show(message, L.T("A code has been sent to {0}. Enter it to make it your email address.", newAddress), error: false);
+					sent.Text = L.T("A code was sent to {0}. Please verify it.", newAddress);
+					code.Text = "";
 					code.Focus();
 				}
 				else
@@ -271,14 +289,14 @@ namespace Lyrious.UILib.Setlists
 					Show(message, result.Error ?? L.T("Couldn't send a code."), error: true);
 				}
 			});
-			change.Click += (_, _) => _ = RunAsync(async () =>
+			verify.Click += (_, _) => _ = RunAsync(async () =>
 			{
 				var result = await auth.ChangeEmailAsync(sentTo!, code.Text?.Trim() ?? "");
 				if (result.Succeeded)
 				{
+					// The box keeps the new address, now theirs (so the tick goes).
 					sentTo = null;
-					address.Text = code.Text = "";
-					ShowAddress();
+					code.Text = "";
 					Show(message, L.T("Your email address has been changed."), error: false);
 				}
 				else
@@ -288,6 +306,14 @@ namespace Lyrious.UILib.Setlists
 			});
 			address.TextChanged += (_, _) => Enable();
 			code.TextChanged += (_, _) => Enable();
+			code.KeyDown += (_, e) =>
+			{
+				if (e.Key == Avalonia.Input.Key.Enter && verify.IsEnabled)
+				{
+					e.Handled = true;
+					verify.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+				}
+			};
 
 			return new StackPanel
 			{
@@ -295,15 +321,88 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					Section(L.T("Email")),
-					shown,
-					Explanation(L.T("To change it, enter the new address and press \"Send code\"; then enter the code from the email sent there.")),
-					address,
-					sendCode,
+					new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, MinHeight = 40, Children = { address, sendCode } },
+					sent,
 					code,
-					change,
+					verify,
 					message,
 				},
 			};
+		}
+
+		/// <summary>
+		/// For a member the login said may elevate (CanElevate: listed as a site manager), until they
+		/// have: a tool in the header that opens a popup to log in as site manager (their password
+		/// again). Null for other members, and once elevated.
+		/// </summary>
+		private static Button? ElevateTool(IAuthService auth)
+		{
+			// Only for a member the login said may elevate (listed as a site manager), until they have.
+			if (!auth.CanElevate || auth.IsSiteManager)
+			{
+				return null;
+			}
+
+			var tool = HomeView.IconButton(AppIcons.SiteManager, L.T("Log in as site manager"));
+			var password = new TextBox { PasswordChar = '•', PlaceholderText = L.T("Password"), MinWidth = 220, Classes = { "revealPasswordButton" } };
+			var logIn = new Button { Content = L.T("Log in"), Classes = { "accent" }, IsEnabled = false };
+			var problem = new TextBlock { TextWrapping = TextWrapping.Wrap, MaxWidth = 260, IsVisible = false };
+			problem.Bind(TextBlock.ForegroundProperty, problem.GetResourceObservable(LyriousTheme.ErrorBrush));
+			var popup = new Flyout
+			{
+				Content = new StackPanel
+				{
+					Spacing = 8,
+					Children =
+					{
+						new TextBlock { Text = L.T("Log in as site manager"), FontWeight = FontWeight.SemiBold },
+						new TextBlock { Text = L.T("Your password again, for the rights to manage every band and member."), TextWrapping = TextWrapping.Wrap, MaxWidth = 260, Opacity = 0.75 },
+						password,
+						logIn,
+						problem,
+					},
+				},
+			};
+
+			password.TextChanged += (_, _) => logIn.IsEnabled = !string.IsNullOrEmpty(password.Text);
+			async Task LogInAsync()
+			{
+				logIn.IsEnabled = false;
+				problem.IsVisible = false;
+				try
+				{
+					var result = await auth.ElevateAsync(password.Text ?? "");
+					if (result.Succeeded)
+					{
+						password.Text = "";
+						popup.Hide();
+						tool.IsVisible = false;
+						return;
+					}
+
+					problem.Text = result.Error ?? L.T("Couldn't log in as site manager.");
+				}
+				catch (Exception ex)
+				{
+					problem.Text = L.T("Couldn't reach the server. {0}", ex.Message);
+				}
+
+				problem.IsVisible = true;
+				logIn.IsEnabled = !string.IsNullOrEmpty(password.Text);
+			}
+
+			logIn.Click += (_, _) => _ = LogInAsync();
+			password.KeyDown += (_, e) =>
+			{
+				if (e.Key == Avalonia.Input.Key.Enter && logIn.IsEnabled)
+				{
+					e.Handled = true;
+					_ = LogInAsync();
+				}
+			};
+			popup.Opened += (_, _) => password.Focus();
+			tool.Click += (_, _) => popup.ShowAt(tool);
+			return tool;
 		}
 
 		private static TextBlock Section(string title) => new()

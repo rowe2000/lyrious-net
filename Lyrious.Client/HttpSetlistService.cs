@@ -1036,6 +1036,46 @@ public sealed class HttpSetlistService : ISetlistService
         using var response = await SendMySettingsAsync(HttpMethod.Put, settings, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ReleaseNoteEntry>> GetReleaseNotesAsync(CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(auth.AccessToken))
+        {
+            throw new InvalidOperationException(L.T("The release notes need a connection to the server."));
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "api/releasenote");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", auth.AccessToken);
+        using var response = await auth.Http.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var notes = await response.Content.ReadFromJsonAsync(ClientJsonContext.Default.ReleaseNoteDtoArray, cancellationToken) ?? [];
+        return notes
+            .Where(note => !note.Removed)
+            .Select(note => new ReleaseNoteEntry(note.Id, note.Text ?? "", note.Branch ?? "", note.Version ?? "", note.Published, note.Created))
+            .OrderByDescending(note => note.Created)
+            .ToArray();
+    }
+
+    public async Task SaveReleaseNoteAsync(ReleaseNoteEntry note, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(auth.AccessToken))
+        {
+            throw new InvalidOperationException(L.T("The release notes need a connection to the server."));
+        }
+
+        // Posted whole (added, or replacing the stored one); the server lets only site managers.
+        var body = new[] { new ReleaseNoteSaveDto(note.Id, note.Text, note.Branch, note.Version, note.Published, note.Created, note.Created, DateTime.Now, Removed: false) };
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/releasenote")
+        {
+            Content = JsonContent.Create(body, ClientJsonContext.Default.ReleaseNoteSaveDtoArray),
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", auth.AccessToken);
+        using var response = await auth.Http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(await HttpAuthService.ReadErrorAsync(response, cancellationToken));
+        }
+    }
+
     public async Task<IReadOnlyList<SiteMember>> GetAllMembersAsync(CancellationToken cancellationToken = default)
     {
         var current = await CacheAsync();
