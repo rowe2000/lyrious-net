@@ -456,11 +456,24 @@ namespace Lyrious.UILib.Setlists
 				}
 			}
 
+			// At least one kind is always shown: all of them hidden (as saved) shows them all.
+			if (boxes.All(b => hidden.Contains(b.Scope.ToString())))
+			{
+				hidden = [];
+			}
+
 			foreach (var (scope, box) in boxes)
 			{
 				box.IsChecked = !hidden.Contains(scope.ToString());
 				box.IsCheckedChanged += (_, _) =>
 				{
+					// The last one checked can't be unchecked: it's checked again at once.
+					if (boxes.All(b => b.Box.IsChecked != true))
+					{
+						box.IsChecked = true;
+						return;
+					}
+
 					var off = boxes.Where(b => b.Box.IsChecked != true).Select(b => b.Scope.ToString()).ToArray();
 					App.Settings.Set(SettingKeys.SettingsFilter, off.Length == 0 ? null : string.Join(",", off));
 					Show();

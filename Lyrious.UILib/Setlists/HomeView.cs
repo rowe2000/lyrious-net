@@ -2240,8 +2240,24 @@ namespace Lyrious.UILib.Setlists
 				outline.Bind(Border.BorderBrushProperty, outline.GetResourceObservable(LyriousTheme.SelectionBrush));
 				return outline;
 			});
+			// Darker than the drawer behind it (not the highlighted one: it keeps the highlight colour;
+			// pointed at or pressed, the theme's colours as usual).
+			button.Classes.Add(DrawerItemClass);
+			button.Styles.Add(DrawerItemStyle());
 			return button;
 		}
+
+		// Marks a drawer's items and songs (see RoundedHighlight).
+		private const string DrawerItemClass = "drawer-item";
+
+		// A drawer item's background when it isn't highlighted: the drawer's colour, darker.
+		private static Avalonia.Styling.Style DrawerItemStyle() => new(x =>
+			Avalonia.Styling.Selectors.Not(
+				Avalonia.Styling.Selectors.Class(Avalonia.Styling.Selectors.OfType<Button>(x), DrawerItemClass),
+				y => Avalonia.Styling.Selectors.Class(y, "accent")))
+		{
+			Setters = { new Avalonia.Styling.Setter(BackgroundProperty, new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0))) },
+		};
 
 		/// <summary>
 		/// A button showing a stroked icon. Icons are drawn as shapes because the browser has no system

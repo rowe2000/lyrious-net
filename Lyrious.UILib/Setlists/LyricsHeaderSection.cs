@@ -34,7 +34,7 @@ namespace Lyrious.UILib.Setlists
 					new TextBlock
 					{
 						Text = L.T("Shown above every song's lyrics, and scrolls with them. Written in ChordPro, as the lyrics: \"# \" is a heading, a chord in brackets is over the words. ")
-						       + L.T("The song's details go in with $songname, $artist, $key, $tempo, $beat and $tags (its tags, separated by commas); [$key] is the key as a chord, transposed with the song. Empty is no header.")
+						       + L.T("The song's details go in with $songname, $artist, $key, $tempo, $beat and $tags (its tags, separated by spaces); [$key] is the key as a chord, transposed with the song. Empty is no header.")
 						       + (canEdit ? "" : L.T(" Only the band's admins change it.")),
 						TextWrapping = TextWrapping.Wrap,
 						Opacity = 0.75,

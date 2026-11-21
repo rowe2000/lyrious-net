@@ -11,7 +11,7 @@ namespace Lyrious.UILib.Setlists
 	/// scrolls, zooms and transposes with them, like the lyrics' own first lines.
 	/// <para>
 	/// Placeholders (any case): $songname, $artist, $key, $tempo, $beat and $tags (the song's tags,
-	/// separated by commas: "ballad, christmas, Rock"). $key is the key the
+	/// separated by spaces: "ballad christmas Rock"). $key is the key the
 	/// lyrics are written in, so in brackets ("[$key]") it's a chord that's transposed with the
 	/// lyrics' chords and shows the key that's played. A line whose placeholders were all empty (e.g.
 	/// "## $artist" for a song without an artist) is left out.
@@ -74,8 +74,8 @@ namespace Lyrious.UILib.Setlists
 				("key", key.Trim()),
 				("tempo", song.Tempo > 0 ? song.Tempo.ToString("0.##", CultureInfo.InvariantCulture) : ""),
 				("beat", song.Beat.Trim()),
-				// The song's tags as a list, in the order they're shown elsewhere: "ballad, christmas, Rock".
-				("tags", string.Join(", ", SongTags.Sorted(song.Tags))),
+				// The song's tags in the order they're shown elsewhere, separated by spaces: "ballad christmas Rock".
+				("tags", string.Join(" ", SongTags.Sorted(song.Tags))),
 			};
 
 			var lines = definition.Replace("\r\n", "\n").Split('\n').Select(line =>

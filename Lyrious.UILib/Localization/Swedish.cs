@@ -355,7 +355,7 @@ namespace Lyrious.UILib.Localization
 			["Couldn't save the band settings. {0}"] = "Det gick inte att spara bandets inställningar. {0}",
 			["Lyrics header"] = "Rubrik över texten",
 			["Shown above every song's lyrics, and scrolls with them. Written in ChordPro, as the lyrics: \"# \" is a heading, a chord in brackets is over the words. "] = "Visas ovanför varje låts text och rullar med den. Skrivs i ChordPro, som texten: \"# \" är en rubrik, ett ackord inom hakparentes står över orden. ",
-			["The song's details go in with $songname, $artist, $key, $tempo, $beat and $tags (its tags, separated by commas); [$key] is the key as a chord, transposed with the song. Empty is no header."] = "Låtens uppgifter fylls i med $songname, $artist, $key, $tempo, $beat och $tags (dess taggar, åtskilda med kommatecken); [$key] är tonarten som ett ackord, transponerat med låten. Tom betyder ingen rubrik.",
+			["The song's details go in with $songname, $artist, $key, $tempo, $beat and $tags (its tags, separated by spaces); [$key] is the key as a chord, transposed with the song. Empty is no header."] = "Låtens uppgifter fylls i med $songname, $artist, $key, $tempo, $beat och $tags (dess taggar, åtskilda med mellanslag); [$key] är tonarten som ett ackord, transponerat med låten. Tom betyder ingen rubrik.",
 			[" Only the band's admins change it."] = " Bara bandets administratörer ändrar den.",
 			["No header."] = "Ingen rubrik.",
 			["No header"] = "Ingen rubrik",
