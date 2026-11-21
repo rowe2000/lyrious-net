@@ -1426,6 +1426,27 @@ namespace Lyrious.UILib.Setlists
 				header.Children.Add(soundFiles);
 			}
 
+			// A site manager's page: every band and member (see SiteManagerView), last of the upper part.
+			if (App.AuthService.IsSiteManager)
+			{
+				var siteManager = DrawerItem(L.T("Site manager"));
+				siteManager.Click += (_, _) =>
+				{
+					OpenFromDrawer();
+					page.Content = new SiteManagerView(
+						service,
+						bandId => RunAsync(async () =>
+						{
+							await service.SelectGroupAsync(bandId);
+							await OpenStartPageAsync();
+						}),
+						bandId => RunAsync(() => ShowGroupsAsync(bandId)),
+						ShowBandSettingsAsync);
+				};
+				WithDrawerIcon(siteManager, AppIcons.SiteManager);
+				header.Children.Add(siteManager);
+			}
+
 			// An icon before each item's text.
 			WithDrawerIcon(chooseGroupButton, AppIcons.Band);
 			WithDrawerIcon(chooseSetlistButton, AppIcons.Setlist);
@@ -3304,7 +3325,7 @@ namespace Lyrious.UILib.Setlists
 				var band = (await service.GetGroupsAsync()).FirstOrDefault(g => g.Id == groupId);
 				var members = await service.GetGroupMembersAsync();
 				var me = members.TryGetValue(groupId, out var list) ? list.FirstOrDefault(member => member.IsMe) : null;
-				var canEdit = me?.Role == GroupRole.Admin;
+				var canEdit = me?.Role == GroupRole.Admin || (App.AuthService.IsSiteManager && band is { IsPrivate: false });
 
 				// Stopping at the end of the lyrics goes on to the next song: on unless the band turned it off.
 				var nextOnStop = new ToggleSwitch

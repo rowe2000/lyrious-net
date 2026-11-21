@@ -12,6 +12,57 @@ namespace Lyrious.Api.Controllers;
 
 public class MemberController(LyriousRepository repo, IEmailSender emailSender, IHubContext<LyriousHub> hub, HubConnectionRegistry registry) : Controller<Member>(repo)
 {
+	// GET api/member/{id}/settings
+	/// <summary>A member's own settings, for a site manager (see LyriousRepository.SiteManagers): a JSON object; 204 if none.</summary>
+	[HttpGet("{id:guid}/settings")]
+	public ActionResult<JsonObject> GetSettingsOf(Guid id)
+	{
+		Repo.SetIdentity(User.Identity);
+		if (!Repo.IsSiteManager)
+		{
+			return StatusCode(StatusCodes.Status403Forbidden, "Only site managers see other members' settings.");
+		}
+
+		if (Repo.MemberForSiteManager(id) is not { } member)
+		{
+			return NotFound();
+		}
+
+		return string.IsNullOrEmpty(member.Settings) ? NoContent() : JsonNode.Parse(member.Settings) as JsonObject ?? [];
+	}
+
+	// PUT api/member/{id}/settings
+	/// <summary>Replaces a member's own settings, as a site manager; sent to that member's connected devices.</summary>
+	[HttpPut("{id:guid}/settings")]
+	public async Task<IActionResult> PutSettingsOf(Guid id, [FromBody] JsonObject settings)
+	{
+		Repo.SetIdentity(User.Identity);
+		if (!Repo.IsSiteManager)
+		{
+			return StatusCode(StatusCodes.Status403Forbidden, "Only site managers change other members' settings.");
+		}
+
+		var json = settings.ToJsonString();
+		if (json.Length > Member.MaxSettingsLength)
+		{
+			return BadRequest($"Settings may be at most {Member.MaxSettingsLength} characters.");
+		}
+
+		if (!Repo.SaveSettingsOf(id, json))
+		{
+			return NotFound();
+		}
+
+		// The member's devices take the change at once, as when they change it themselves.
+		var connections = registry.GetConnections(id.ToString()).ToList();
+		if (connections.Count > 0)
+		{
+			await hub.Clients.Clients(connections).SendAsync(LyriousHub.SettingsChangedMethod, json);
+		}
+
+		return NoContent();
+	}
+
 	// GET api/member/me/settings
 	/// <summary>The caller's own settings (the same on all their devices): a JSON object; 204 No Content if they've never saved any.</summary>
 	[HttpGet("me/settings")]

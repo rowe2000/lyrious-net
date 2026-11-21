@@ -34,6 +34,9 @@ namespace Lyrious.UILib.Login
 		/// <summary>The logged-in member's email address; null if they have none (or it isn't known, e.g. offline).</summary>
 		string? Email { get; }
 
+		/// <summary>Whether the logged-in member is a site manager: an admin of every band (but others' private ones), named on the server.</summary>
+		bool IsSiteManager { get; }
+
 		/// <summary>
 		/// Asks the server to email a password reset code. Succeeds whether or not the account exists
 		/// (the server doesn't say), so the page only says a code was sent if the account has an email.
@@ -126,6 +129,8 @@ namespace Lyrious.UILib.Login
 			=> Task.FromResult(AuthResult.Failure(NotConnected));
 
 		public string? Email => null;
+
+		public bool IsSiteManager => false;
 
 		public Task<AuthResult> RequestPasswordResetAsync(string userNameOrEmail, CancellationToken cancellationToken = default)
 			=> Task.FromResult(AuthResult.Failure(NotConnected));

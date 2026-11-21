@@ -1036,18 +1036,40 @@ public sealed class HttpSetlistService : ISetlistService
         using var response = await SendMySettingsAsync(HttpMethod.Put, settings, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<SiteMember>> GetAllMembersAsync(CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        return current.All("member")
+            .Select(member => As(member, ClientJsonContext.Default.MemberDto))
+            .Select(member => new SiteMember(member.Id, !string.IsNullOrWhiteSpace(member.Name) ? member.Name : member.UserName ?? "Unknown", member.UserName ?? "", member.LastLoginAt))
+            .OrderBy(member => member.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+    }
+
+    public async Task<string?> GetMemberSettingsAsync(Guid memberId, CancellationToken cancellationToken = default)
+    {
+        using var response = await SendMySettingsAsync(HttpMethod.Get, null, cancellationToken, $"api/member/{memberId}/settings");
+        var settings = await response.Content.ReadAsStringAsync(cancellationToken);
+        return string.IsNullOrWhiteSpace(settings) ? null : settings;
+    }
+
+    public async Task SaveMemberSettingsAsync(Guid memberId, string settings, CancellationToken cancellationToken = default)
+    {
+        using var response = await SendMySettingsAsync(HttpMethod.Put, settings, cancellationToken, $"api/member/{memberId}/settings");
+    }
+
     /// <summary>
     /// Gets or puts api/member/me/settings. Tells the server this app's live connection, so it
     /// doesn't send this app its own change back. Throws if the server can't be reached or refuses.
     /// </summary>
-    private async Task<HttpResponseMessage> SendMySettingsAsync(HttpMethod method, string? body, CancellationToken cancellationToken)
+    private async Task<HttpResponseMessage> SendMySettingsAsync(HttpMethod method, string? body, CancellationToken cancellationToken, string path = "api/member/me/settings")
     {
         if (string.IsNullOrEmpty(auth.AccessToken))
         {
             throw new InvalidOperationException(L.T("Your settings need a connection to the server."));
         }
 
-        using var request = new HttpRequestMessage(method, "api/member/me/settings");
+        using var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", auth.AccessToken);
         if (live.ConnectionId is { } connectionId)
         {

@@ -162,6 +162,13 @@ internal class Program
 
 		builder.Logging.AddConsole();
 
+		// Site managers: admins of every band (see LyriousRepository.SiteManagers), named in the
+		// SITE_MANAGERS setting, e.g. a Railway variable: SITE_MANAGERS=robert,anna@example.com.
+		LyriousRepository.SiteManagers = LyriousRepository.ParseSiteManagers(builder.Configuration["SITE_MANAGERS"]);
+		Console.WriteLine(LyriousRepository.SiteManagers.Count == 0
+			? "Site managers: none (set SITE_MANAGERS to name them)."
+			: $"Site managers: {LyriousRepository.SiteManagers.Count} named in SITE_MANAGERS.");
+
 		var app = builder.Build();
 
 		using (var scope = app.Services.CreateScope())

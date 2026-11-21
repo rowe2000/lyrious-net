@@ -110,6 +110,15 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		Task<string?> GetMySettingsAsync(CancellationToken cancellationToken = default);
 
+		/// <summary>Every member the logged-in member can see (a site manager: all of them), by name.</summary>
+		Task<IReadOnlyList<SiteMember>> GetAllMembersAsync(CancellationToken cancellationToken = default);
+
+		/// <summary>Another member's own settings (a JSON object; null if none), for a site manager. Needs the server.</summary>
+		Task<string?> GetMemberSettingsAsync(Guid memberId, CancellationToken cancellationToken = default);
+
+		/// <summary>Replaces another member's own settings (a JSON object), as a site manager. Needs the server.</summary>
+		Task SaveMemberSettingsAsync(Guid memberId, string settings, CancellationToken cancellationToken = default);
+
 		/// <summary>Replaces the logged-in member's own settings (a JSON object). Needs the server: throws if it can't be reached.</summary>
 		Task SaveMySettingsAsync(string settings, CancellationToken cancellationToken = default);
 
@@ -280,6 +289,9 @@ namespace Lyrious.UILib.Setlists
 	/// </summary>
 	public sealed record GroupMember(Guid MemberId, string Name, GroupRole Role, bool Approved, DateTime? LastLogin = null, bool IsMe = false, bool Joined = false, bool Connected = false);
 
+	/// <summary>A member as the site manager's page lists them.</summary>
+	public sealed record SiteMember(Guid Id, string Name, string UserName, DateTime? LastLogin);
+
 	/// <summary>A member found to invite.</summary>
 	public sealed record FoundMember(Guid Id, string Name, string UserName);
 
@@ -348,6 +360,9 @@ namespace Lyrious.UILib.Setlists
 		public Task RenameMeAsync(string name, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<string?> GetMySettingsAsync(CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SaveMySettingsAsync(string settings, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<IReadOnlyList<SiteMember>> GetAllMembersAsync(CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<string?> GetMemberSettingsAsync(Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task SaveMemberSettingsAsync(Guid memberId, string settings, CancellationToken cancellationToken = default) => throw NotConnected();
 		public event Action<string>? MySettingsChanged { add { } remove { } }
 		public Task<MySongSetting> GetMySongSettingAsync(Guid songId, CancellationToken cancellationToken = default) => Task.FromResult(MySongSetting.None);
 		public Task SaveMySongSettingAsync(Guid songId, MySongSetting setting, CancellationToken cancellationToken = default) => throw NotConnected();

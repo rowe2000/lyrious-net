@@ -291,6 +291,7 @@ public sealed class HttpAuthService : IAuthService
         offlineServer = null;
         MemberId = member.Id;
         Email = string.IsNullOrWhiteSpace(member.Email) ? null : member.Email;
+        IsSiteManager = body.IsSiteManager;
         JoinedGroupId = member.JoinedGroupId;
         IsOfflineSession = false;
         sessionUserName = userName;
@@ -346,6 +347,9 @@ public sealed class HttpAuthService : IAuthService
 
     /// <summary>The logged-in member's email address, from the last online login (or changed since).</summary>
     public string? Email { get; private set; }
+
+    /// <summary>Whether the logged-in member is a site manager (admin of every band), from the last online login.</summary>
+    public bool IsSiteManager { get; private set; }
 
     public Task<AuthResult> SendPasswordChangeCodeAsync(CancellationToken cancellationToken = default)
         => PostAsMemberAsync("api/auth/change-password/send-code", null, L.T("Changing your password needs a connection to the server."), cancellationToken);
@@ -425,6 +429,7 @@ public sealed class HttpAuthService : IAuthService
         AccessToken = null;
         MemberId = null;
         Email = null;
+        IsSiteManager = false;
         JoinedGroupId = null;
         IsOfflineSession = false;
         offlineServer = null;

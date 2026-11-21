@@ -128,7 +128,8 @@ namespace Lyrious.UILib.Setlists
 			var bandMembers = MembersOf(group);
 			var me = bandMembers.FirstOrDefault(member => member.IsMe);
 			// The private band has only its member in it, and nothing to manage: no invites, roles or delete.
-			var isAdmin = me?.Role == GroupRole.Admin && !group.IsPrivate;
+			// A site manager manages every band but private ones (see IAuthService.IsSiteManager).
+			var isAdmin = (me?.Role == GroupRole.Admin || App.AuthService.IsSiteManager) && !group.IsPrivate;
 			var joined = group.Id == currentGroupId;
 			var admins = bandMembers.Count(member => member.Role == GroupRole.Admin);
 
@@ -141,6 +142,11 @@ namespace Lyrious.UILib.Setlists
 			else if (me != null)
 			{
 				status.Add(me.Approved ? $"You're {Article(me.Role)} {RoleName(me.Role)}" : L.T("You're invited"));
+			}
+
+			if (App.AuthService.IsSiteManager && !group.IsPrivate)
+			{
+				status.Add(L.T("You manage it as site manager"));
 			}
 
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };

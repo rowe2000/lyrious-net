@@ -281,6 +281,29 @@ public class LyriousRepository(LyriousContext context)
 		return Get<Membership>(o => o.GroupId == groupId && o.MemberId == memberId && !o.Removed).FirstOrDefault();
 	}
 
+	/// <summary>
+	/// The site managers: usernames or email addresses (any case), set at startup from the server's
+	/// SITE_MANAGERS setting (e.g. a Railway variable, "robert,anna@example.com"). A site manager is
+	/// an admin of every band, also ones they're not in, except other members' private bands.
+	/// </summary>
+	public static IReadOnlySet<string> SiteManagers { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>Reads a SITE_MANAGERS value: names or addresses separated by commas, semicolons or spaces.</summary>
+	public static IReadOnlySet<string> ParseSiteManagers(string? value)
+		=> new HashSet<string>((value ?? "").Split([',', ';', ' ', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>Whether the current member is a site manager (see <see cref="SiteManagers"/>).</summary>
+	public bool IsSiteManager => Me is { } me && IsSiteManagerAccount(me);
+
+	/// <summary>Whether the member is a site manager: their username or email address is listed.</summary>
+	public static bool IsSiteManagerAccount(Member member)
+		=> SiteManagers.Count > 0
+		   && ((member.UserName is { } name && SiteManagers.Contains(name)) || (member.Email is { Length: > 0 } email && SiteManagers.Contains(email)));
+
+	/// <summary>A band a site manager may manage without being in it: any band but a private one.</summary>
+	private bool IsManagedBySiteManager(Guid? groupId)
+		=> IsSiteManager && groupId != null && context.Groups.Any(g => g.Id == groupId && !g.IsPrivate);
+
 	public void SetIdentity(IIdentity? identity)
 	{
 		Me = identity != null ? context.Members.FirstOrDefault(o => o.UserName == identity.Name) : null;
@@ -332,7 +355,9 @@ public class LyriousRepository(LyriousContext context)
 			// Their own: the joined group they move to must be one of theirs (the one they leave may
 			// not be any more, e.g. after being removed from it). Someone else's: their name, by an
 			// admin of a band they're in.
-			Member stored when entity is Member changed => stored.Id == Me.Id ? CanModify(changed) : CanRenameBandMember(stored, changed),
+			Member stored when entity is Member changed => stored.Id == Me.Id ? CanModify(changed)
+				: IsSiteManager ? CanSiteManagerChangeMember(stored, changed)
+				: CanRenameBandMember(stored, changed),
 			// Whether a band is private never changes; a private band keeps its name and isn't deleted.
 			Group stored when entity is Group changed && (changed.IsPrivate != stored.IsPrivate
 				|| stored.IsPrivate && (changed.Name != stored.Name || changed.Removed)) => false,
@@ -397,6 +422,9 @@ public class LyriousRepository(LyriousContext context)
 		if (Me == null || groupId == null)
 			return false;
 
+		if (IsManagedBySiteManager(groupId))
+			return true;
+
 		var meId = Me.Id;
 		return context.Memberships.Any(m => m.GroupId == groupId && m.MemberId == meId && !m.Removed && m.RoleEnum == RoleEnum.Admin);
 	}
@@ -410,6 +438,29 @@ public class LyriousRepository(LyriousContext context)
 
 	/// <summary>Notes that the current member has just logged in (or opened the app connected).</summary>
 	/// <summary>Stores the current member's own settings (a JSON object, or null for none).</summary>
+	/// <summary>
+	/// What a site manager may change of another member: their name (not empty). Where they are, their
+	/// removal and their settings stay (their settings through <see cref="SaveSettingsOf"/>).
+	/// </summary>
+	private static bool CanSiteManagerChangeMember(Member stored, Member changed)
+		=> !string.IsNullOrWhiteSpace(changed.Name) && changed.JoinedGroupId == stored.JoinedGroupId
+		   && changed.Removed == stored.Removed && changed.Settings == stored.Settings;
+
+	/// <summary>A member's own settings (a JSON object, or null), for a site manager; null if they aren't one or there's no such member.</summary>
+	public Member? MemberForSiteManager(Guid memberId)
+		=> IsSiteManager ? context.Members.FirstOrDefault(m => m.Id == memberId && !m.Removed) : null;
+
+	/// <summary>Stores another member's own settings (a JSON object, or null), as a site manager.</summary>
+	public bool SaveSettingsOf(Guid memberId, string? settings)
+	{
+		if (MemberForSiteManager(memberId) is not { } member)
+			return false;
+
+		member.Settings = settings;
+		context.SaveChanges();
+		return true;
+	}
+
 	public void SaveMySettings(string? settings)
 	{
 		if (Me == null)
@@ -540,7 +591,11 @@ public class LyriousRepository(LyriousContext context)
 			return [];
 
 		var meId = Me.Id;
-		return context.Memberships.Where(m => m.MemberId == meId && !m.Removed).Select(m => m.GroupId).Distinct().ToArray();
+		var mine = context.Memberships.Where(m => m.MemberId == meId && !m.Removed).Select(m => m.GroupId);
+		// A site manager also follows every band but other members' private ones.
+		return IsSiteManager
+			? context.Groups.Where(g => !g.Removed && (!g.IsPrivate || mine.Contains(g.Id))).Select(g => g.Id).ToArray()
+			: mine.Distinct().ToArray();
 	}
 
 	/// <summary>
@@ -562,6 +617,9 @@ public class LyriousRepository(LyriousContext context)
 		if (Me == null || groupId == null)
 			return false;
 
+		if (IsManagedBySiteManager(groupId))
+			return true;
+
 		var meId = Me.Id;
 		return context.Memberships.Any(m => m.GroupId == groupId && m.MemberId == meId && !m.Removed);
 	}
@@ -570,6 +628,10 @@ public class LyriousRepository(LyriousContext context)
 	{
 		if (Me == null)
 			return false;
+
+		// A site manager sees every member (as they see every band).
+		if (IsSiteManager)
+			return true;
 
 		var meId = Me.Id;
 		var myGroupIds = context.Memberships.Where(m => m.MemberId == meId && !m.Removed).Select(m => m.GroupId);

@@ -5,7 +5,7 @@ namespace Lyrious.Client;
 
 internal sealed record LoginRequest(string Username, string Password);
 
-internal sealed record LoginResponse(string? Token, MemberProfile? Member);
+internal sealed record LoginResponse(string? Token, MemberProfile? Member, bool IsSiteManager = false);
 
 internal sealed record MemberProfile(System.Guid Id, string? UserName, string? Name, System.Guid? JoinedGroupId, string? Email = null);
 

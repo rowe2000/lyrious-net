@@ -111,7 +111,7 @@ public class AuthController(
 
 		member.LastLoginAt = DateTime.Now;
 		await userManager.UpdateAsync(member);
-		return Ok(new TokenModel { Token = jwtSettings.CreateToken(member), Member = PublicProfile(member) });
+		return Ok(new TokenModel { Token = jwtSettings.CreateToken(member), Member = PublicProfile(member), IsSiteManager = LyriousRepository.IsSiteManagerAccount(member) });
 	}
 
 	[Authorize]
