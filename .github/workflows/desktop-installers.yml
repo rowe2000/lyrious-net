@@ -1,0 +1,128 @@
+# The desktop app's installers: macOS disk images (Apple Silicon and Intel), a Windows installer
+# with a portable zip, and Linux packages (.deb, AppImage and .tar.gz). Built for every version tag (attached to its GitHub release) or by hand
+# (Actions → Desktop installers → Run workflow; the files are the run's artifacts).
+#
+# Optional signing, from the repository's secrets:
+#   macOS:   MACOS_CERTIFICATE_P12 (base64 of a "Developer ID Application" .p12),
+#            MACOS_CERTIFICATE_PASSWORD, MACOS_SIGN_IDENTITY (e.g. "Developer ID Application: Name (TEAMID)")
+#   Windows: WINDOWS_CERTIFICATE_PFX (base64 of a code signing .pfx), WINDOWS_CERTIFICATE_PASSWORD
+name: Desktop installers
+
+on:
+  push:
+    tags: ["*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    env:
+      # Secrets can't be used in a step's if: directly.
+      HAS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole history and the tags: the version is the last tag and the commits since it.
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Signing certificate
+        if: env.HAS_CERTIFICATE == 'true'
+        env:
+          P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$P12" | base64 --decode > cert.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+          rm cert.p12
+      - name: Disk images
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: installers/macos/build-dmg.sh arm64 x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: installers/out/*.dmg
+
+  windows:
+    runs-on: windows-latest
+    env:
+      HAS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE_PFX != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup --no-progress -y }
+      - name: Signing certificate
+        if: env.HAS_CERTIFICATE == 'true'
+        shell: pwsh
+        env:
+          PFX: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
+        run: |
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\sign.pfx", [Convert]::FromBase64String($env:PFX))
+          "WINDOWS_SIGN_PFX=$env:RUNNER_TEMP\sign.pfx" >> $env:GITHUB_ENV
+      - name: Installer
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: installers/windows/build-installer.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            installers/out/*-setup.exe
+            installers/out/*-portable.zip
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: appimagetool
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+      - name: Packages
+        env:
+          APPIMAGETOOL: ${{ runner.temp }}/appimagetool
+          # The runner has no FUSE: appimagetool unpacks itself and runs from there.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: installers/linux/build-linux.sh x64 arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            installers/out/*.deb
+            installers/out/*.AppImage
+            installers/out/*.tar.gz
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: installers/*

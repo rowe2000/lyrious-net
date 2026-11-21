@@ -183,7 +183,7 @@ namespace Lyrious.UILib.Setlists
 			findSongButton = DrawerItem(L.T("Find song online"));
 			findSongButton.IsEnabled = false;
 			findSongButton.Click += (_, _) => OpenInternetSearch();
-			playlogButton = DrawerItem(L.T("Jam sessions"));
+			playlogButton = DrawerItem(L.T("Sessions"));
 			playlogButton.IsEnabled = false;
 			playlogButton.Click += (_, _) =>
 			{
@@ -1413,7 +1413,7 @@ namespace Lyrious.UILib.Setlists
 				account.Children.Add(exit);
 			}
 
-			// The songs' sound files kept on this device: last of the upper part (under Jam sessions).
+			// The songs' sound files kept on this device: last of the upper part (under Sessions).
 			if (App.SoundStore is { } sounds)
 			{
 				var soundFiles = DrawerItem(L.T("Sound files"));
@@ -2667,9 +2667,9 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// The setlists used in each jam session, worked out from its songs (a play doesn't keep which
+		/// The setlists used in each session, worked out from its songs (a play doesn't keep which
 		/// setlist it was played from): the band's setlists (not its songbook) that cover most of the songs
-		/// played, best first, each covering at least two songs not yet covered (or the jam session's only
+		/// played, best first, each covering at least two songs not yet covered (or the session's only
 		/// song). None if it can't be read.
 		/// </summary>
 		private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<string>>?> SetlistsUsedAsync(Guid groupId, IReadOnlyList<PlaylogSummary> playlogs)

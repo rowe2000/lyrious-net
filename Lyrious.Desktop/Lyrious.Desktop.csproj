@@ -5,6 +5,8 @@
     <Nullable>enable</Nullable>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The program's icon on Windows (the installers' icons are in installers/icons). -->
+    <ApplicationIcon>..\installers\icons\Lyrious.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

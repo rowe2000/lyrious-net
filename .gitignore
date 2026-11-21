@@ -464,3 +464,8 @@ Lyrious.Api/media/
 
 # Copies of Avalonia's scripts, made by the build (see Lyrious.Web.csproj)
 Lyrious.Web/wwwroot/_framework/
+
+# Installers built by installers/ (see installers/README.md)
+installers/out/
+installers/macos/.work/
+installers/linux/.work/

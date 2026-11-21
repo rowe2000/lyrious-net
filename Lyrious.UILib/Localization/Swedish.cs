@@ -190,8 +190,8 @@ namespace Lyrious.UILib.Localization
 			["Songbook"] = "Sångbok",
 			["Choose a song from the songbook"] = "Välj en låt ur sångboken",
 			["Find song online"] = "Hitta låt på nätet",
-			["Jam sessions"] = "Jamsessioner",
-			["Jam session"] = "Jamsession",
+			["Sessions"] = "Sessioner",
+			["Session"] = "Session",
 			["Open menu"] = "Öppna menyn",
 			["Open setlist"] = "Öppna låtlistan",
 			["Band sync on; no setlist picked here to send"] = "Bandsynk på; ingen låtlista vald här att skicka",
@@ -431,11 +431,11 @@ namespace Lyrious.UILib.Localization
 
 			// Playlog
 			["Nothing has been played yet."] = "Inget har spelats än.",
-			["All jam sessions"] = "Alla jamsessioner",
-			["Last jam session"] = "Senaste jamsession",
+			["All sessions"] = "Alla sessioner",
+			["Last session"] = "Senaste session",
 			["1 song"] = "1 låt",
 			["{0} songs"] = "{0} låtar",
-			["No songs in this jam session."] = "Inga låtar i den här jamsessionen.",
+			["No songs in this session."] = "Inga låtar i den här sessionen.",
 
 			// Profile
 			["Saved password"] = "Sparat lösenord",

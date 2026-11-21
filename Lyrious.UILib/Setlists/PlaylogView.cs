@@ -11,8 +11,8 @@ using Lyrious.UILib.Localization;
 namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
-	/// The band's jam sessions (playlogs): at the top the latest one with the songs played in it (time,
-	/// song, key, tempo, length and conductor's initials); below, all jam sessions, newest first, each by
+	/// The band's sessions (playlogs): at the top the latest one with the songs played in it (time,
+	/// song, key, tempo, length and conductor's initials); below, all sessions, newest first, each by
 	/// its date, its number of songs and the setlists used. Tapping one there shows it at the top instead;
 	/// the one shown is highlighted.
 	/// </summary>
@@ -26,7 +26,7 @@ namespace Lyrious.UILib.Setlists
 		private readonly TextBlock shownDate = new() { Opacity = 0.7, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 2) };
 		private readonly List<(PlaylogSummary Playlog, Button Row)> rows = [];
 
-		/// <param name="setlistsUsed">The setlists used in each jam session (by its id), as far as is known.</param>
+		/// <param name="setlistsUsed">The setlists used in each session (by its id), as far as is known.</param>
 		public PlaylogView(GroupSummary group, IReadOnlyList<PlaylogSummary> playlogs, IReadOnlyDictionary<Guid, IReadOnlyList<string>>? setlistsUsed = null)
 		{
 			this.playlogs = playlogs;
@@ -62,7 +62,7 @@ namespace Lyrious.UILib.Setlists
 						{
 							new WrapPanel { Orientation = Orientation.Horizontal, Children = { shownTitle, shownDate } },
 							shown,
-							Section(L.T("All jam sessions")),
+							Section(L.T("All sessions")),
 							list,
 						},
 					},
@@ -70,18 +70,18 @@ namespace Lyrious.UILib.Setlists
 				Show(playlogs[0]);
 			}
 
-			Content = PageLayout.Page(L.T("Jam sessions"), body, closable: true, icon: AppIcons.Playlog);
+			Content = PageLayout.Page(L.T("Sessions"), body, closable: true, icon: AppIcons.Playlog);
 		}
 
 		/// <summary>Shows the playlog's songs at the top, and highlights its row in the list.</summary>
 		private void Show(PlaylogSummary playlog)
 		{
-			shownTitle.Text = ReferenceEquals(playlog, playlogs[0]) ? L.T("Last jam session") : L.T("Jam session");
+			shownTitle.Text = ReferenceEquals(playlog, playlogs[0]) ? L.T("Last session") : L.T("Session");
 			shownDate.Text = Date(playlog.CreatedAt);
 			shown.Children.Clear();
 			if (playlog.Plays.Count == 0)
 			{
-				shown.Children.Add(new TextBlock { Text = L.T("No songs in this jam session."), Opacity = 0.7 });
+				shown.Children.Add(new TextBlock { Text = L.T("No songs in this session."), Opacity = 0.7 });
 			}
 
 			foreach (var (play, number) in playlog.Plays.Select((play, index) => (play, index + 1)))

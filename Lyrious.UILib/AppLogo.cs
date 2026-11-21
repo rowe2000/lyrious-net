@@ -5,7 +5,7 @@ using Avalonia.Media;
 namespace Lyrious.UILib
 {
 	/// <summary>
-	/// The app's logo, the singer (from Lyrious.Desktop/singer.svg: one grey path), drawn as a shape,
+	/// The app's logo, the singer (from branding/lyrious-logo.svg: one grey path), drawn as a shape,
 	/// so it scales sharply to any size without an SVG library.
 	/// </summary>
 	public static class AppLogo
