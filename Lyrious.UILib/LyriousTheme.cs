@@ -26,6 +26,10 @@ namespace Lyrious.UILib
 		public const string ForegroundBrush = "LyriousForegroundBrush";
 		/// <summary>The outline of a selected list row (the current item is filled with the accent colour instead).</summary>
 		public const string SelectionBrush = "LyriousSelectionBrush";
+		/// <summary>The drawers' background.</summary>
+		public const string DrawerBrush = "LyriousDrawerBrush";
+		/// <summary>A drawer item's background when it isn't highlighted: a little apart from the drawer's.</summary>
+		public const string DrawerItemBrush = "LyriousDrawerItemBrush";
 
 		public static void AddTo(IResourceDictionary resources)
 		{
@@ -42,6 +46,8 @@ namespace Lyrious.UILib
 				[HeadingBrush] = new SolidColorBrush(Color.Parse("#1B1B1B")),
 				[ForegroundBrush] = new SolidColorBrush(Color.Parse("#1B1B1B")),
 				[SelectionBrush] = new SolidColorBrush(Color.Parse("#A23BFF")),
+				[DrawerBrush] = new SolidColorBrush(Color.Parse("#E4E4E4")),
+				[DrawerItemBrush] = new SolidColorBrush(Color.Parse("#99FFFFFF")),
 			};
 			resources.ThemeDictionaries[ThemeVariant.Dark] = new ResourceDictionary
 			{
@@ -55,6 +61,8 @@ namespace Lyrious.UILib
 				[HeadingBrush] = new SolidColorBrush(Color.Parse("#D6A308")),
 				[ForegroundBrush] = new SolidColorBrush(Color.Parse("#FFFFFF")),
 				[SelectionBrush] = new SolidColorBrush(Color.Parse("#A23BFF")),
+				[DrawerBrush] = new SolidColorBrush(Color.Parse("#151515")),
+				[DrawerItemBrush] = new SolidColorBrush(Color.Parse("#99000000")),
 			};
 		}
 	}

@@ -18,7 +18,8 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="bandSettings">The current band's settings (saved with the band, the same for all its members), shown under "Band settings".</param>
 		/// <param name="bandMidiExpressions">The band's MIDI expressions as bands kept them, which count until the member saves their own.</param>
 		/// <param name="bandMidiCommands">The band's MIDI commands as bands kept them, which count until the member saves their own.</param>
-		public SettingsView(string? bandName = null, Control? bandSettings = null, string? bandMidiExpressions = null, string? bandMidiCommands = null)
+		/// <param name="memberName">The logged-in member's name, for the User check box's tooltip.</param>
+		public SettingsView(string? bandName = null, Control? bandSettings = null, string? bandMidiExpressions = null, string? bandMidiCommands = null, string? memberName = null)
 		{
 			var capoMode = new ToggleSwitch
 			{
@@ -63,6 +64,23 @@ namespace Lyrious.UILib.Setlists
 
 			var scale = InterfaceSizeChoice();
 
+			// The theme: dark (the default), light, or the computer's; applied at once.
+			var themes = new (string Value, string Name)[] { (ThemeSettings.Dark, L.T("Dark")), (ThemeSettings.Light, L.T("Light")), (ThemeSettings.System, L.T("Same as the computer")) };
+			var theme = new ComboBox { MinWidth = 100 };
+			foreach (var (value, name) in themes)
+			{
+				theme.Items.Add(new ComboBoxItem { Content = name, Tag = value });
+			}
+
+			theme.SelectedIndex = Math.Max(0, Array.FindIndex(themes, choice => choice.Value == ThemeSettings.Chosen));
+			theme.SelectionChanged += (_, _) =>
+			{
+				if (theme.SelectedItem is ComboBoxItem { Tag: string value } && value != ThemeSettings.Chosen)
+				{
+					ThemeSettings.Chosen = value;
+				}
+			};
+
 			var colorsSection = Section(L.T("Colors"));
 			var form = new StackPanel
 			{
@@ -74,6 +92,10 @@ namespace Lyrious.UILib.Setlists
 						L.T("Language"),
 						L.T("The language of the app. Yours on all your devices."),
 						language)),
+					Scoped(SettingScope.User, Setting(
+						L.T("Theme"),
+						L.T("Dark, light, or the same as the computer (following it when it changes). Yours on all your devices."),
+						theme)),
 					Scoped(SettingScope.Device, Setting(
 						L.T("Interface size"),
 						L.T("Makes the whole app larger or smaller: text, buttons, icons and spacing."),
@@ -181,7 +203,7 @@ namespace Lyrious.UILib.Setlists
 			scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
 
 			// At the top (not scrolling): which settings show, by where they're kept.
-			var filter = ScopeFilter(form);
+			var filter = ScopeFilter(form, bandName, memberName);
 			DockPanel.SetDock(filter, Dock.Top);
 			Content = PageLayout.Page(L.T("Settings"), new DockPanel { Children = { filter, scroller } }, closable: true, icon: AppIcons.Settings);
 		}
@@ -241,6 +263,8 @@ namespace Lyrious.UILib.Setlists
 				return box;
 			}
 
+			var lettersOnlyNames = Task(L.T("Remove everything but letters and spaces from the song names (digits, punctuation, symbols)"), L.T("e.g. \"01. Go Your Own Way (live) ✓\" becomes \"Go Your Own Way live\""));
+			lettersOnlyNames.IsChecked = false;
 			var overwriteSongs = Task(L.T("Overwrite songs with the same name"), L.T("Names are compared by their letters only: case, spaces, digits and punctuation don't count. Unchecked, those songs are kept as they are."));
 			var importSetlists = Task(L.T("Import the sets as setlists"));
 			var replaceSetlists = Task(L.T("Replace the songs of setlists with the same name"), L.T("Unchecked, a set with the name of an existing setlist is left out."));
@@ -261,6 +285,7 @@ namespace Lyrious.UILib.Setlists
 					Heading(L.T("Songs")),
 					new TextBlock { Text = L.T("New songs are added to the songbook. PDF songs are left out."), TextWrapping = TextWrapping.Wrap, Opacity = 0.7, FontSize = 13 },
 					overwriteSongs,
+					lettersOnlyNames,
 					Heading(L.T("Setlists")),
 					importSetlists,
 					replaceSetlists,
@@ -283,7 +308,8 @@ namespace Lyrious.UILib.Setlists
 					CommentsAsHeadings: commentsAsHeadings.IsChecked == true,
 					HeadingChords: headingChords.IsChecked == true,
 					ArtistTags: artistTags.IsChecked == true,
-					CheckTags: checkTags.IsChecked == true);
+					CheckTags: checkTags.IsChecked == true,
+					LettersOnlyNames: lettersOnlyNames.IsChecked == true);
 				button.IsEnabled = false;
 				status.IsVisible = true;
 				status.Text = L.T("Importing…");
@@ -384,6 +410,68 @@ namespace Lyrious.UILib.Setlists
 			};
 		}
 
+		/// <summary>
+		/// "Remove duplicate songs…": a button that asks first (in a popup), then merges the songbook's
+		/// songs whose names have the same letters (see <see cref="SongbookProImport.NameKey"/>); what
+		/// happened shows below it.
+		/// </summary>
+		internal static Control RemoveDuplicatesSetting(Func<Task<string>> removeDuplicates)
+		{
+			var button = new Button { Content = L.T("Remove duplicate songs…") };
+			var status = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Opacity = 0.85 };
+			var confirm = PageLayout.DangerButton(L.T("Remove duplicates"));
+			var cancel = new Button { Content = L.T("Cancel") };
+			var question = new Flyout
+			{
+				Content = new StackPanel
+				{
+					Spacing = 12,
+					MaxWidth = 320,
+					Children =
+					{
+						new TextBlock
+						{
+							Text = L.T("Remove the duplicate songs? Of the songs whose names have the same letters (case, spaces, digits and punctuation don't count), the one with the most lyrics is kept; it takes the others' places in the setlists, and they're deleted. This can't be undone."),
+							TextWrapping = TextWrapping.Wrap,
+						},
+						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { confirm, cancel } },
+					},
+				},
+			};
+			cancel.Click += (_, _) => question.Hide();
+			confirm.Click += async (_, _) =>
+			{
+				question.Hide();
+				button.IsEnabled = false;
+				status.IsVisible = true;
+				status.Text = L.T("Removing duplicates…");
+				try
+				{
+					status.Text = await removeDuplicates();
+				}
+				catch (Exception ex)
+				{
+					status.Text = L.T("Couldn't remove the duplicates. {0}", ex.Message);
+				}
+				finally
+				{
+					button.IsEnabled = true;
+				}
+			};
+			button.Flyout = question;
+
+			return new StackPanel
+			{
+				Spacing = 8,
+				Children =
+				{
+					new TextBlock { Text = L.T("Merges songs with the same name, comparing only their letters."), TextWrapping = TextWrapping.Wrap, Opacity = 0.7 },
+					button,
+					status,
+				},
+			};
+		}
+
 		/// <summary>The colours offered: bright enough for a dark background, deep enough for a light one.</summary>
 		private static readonly string[] Swatches =
 		[
@@ -425,7 +513,9 @@ namespace Lyrious.UILib.Setlists
 		/// the checked ones show in <paramref name="form"/>, and a section's heading while any of its do. The
 		/// choice is remembered on this device.
 		/// </summary>
-		private static Control ScopeFilter(Panel form)
+		/// <param name="bandName">The current band's name, for the Band check box's tooltip.</param>
+		/// <param name="memberName">The member's name, for the User check box's tooltip.</param>
+		private static Control ScopeFilter(Panel form, string? bandName, string? memberName)
 		{
 			var hidden = (App.Settings.Get(SettingKeys.SettingsFilter) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
 			var boxes = new (SettingScope Scope, CheckBox Box)[]
@@ -434,9 +524,10 @@ namespace Lyrious.UILib.Setlists
 				(SettingScope.User, new CheckBox { Content = L.T("User") }),
 				(SettingScope.Band, new CheckBox { Content = L.T("Band") }),
 			};
-			ToolTip.SetTip(boxes[0].Box, L.T("Settings kept on this device"));
-			ToolTip.SetTip(boxes[1].Box, L.T("Your settings, the same on all your devices"));
-			ToolTip.SetTip(boxes[2].Box, L.T("The band's settings, the same for all its members"));
+			// Whose settings each box shows: this device's, the member's (by name), the band's (by name).
+			ToolTip.SetTip(boxes[0].Box, L.T("This device settings"));
+			ToolTip.SetTip(boxes[1].Box, string.IsNullOrWhiteSpace(memberName) ? L.T("Your user settings") : L.T("{0} user settings", memberName));
+			ToolTip.SetTip(boxes[2].Box, string.IsNullOrWhiteSpace(bandName) ? L.T("Band settings") : L.T("{0} band settings", bandName));
 
 			void Show()
 			{

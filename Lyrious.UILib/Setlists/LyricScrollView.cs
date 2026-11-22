@@ -124,8 +124,48 @@ namespace Lyrious.UILib.Setlists
 		// part starts: (seconds, first line), in time order.
 		private const double DimmedOpacity = 0.7;
 
-		/// <summary>The toolbar's height (its 40-high buttons) and a little more: the room above the lyrics.</summary>
+		/// <summary>The toolbar's height (its 40-high buttons) and a little more: where the lyrics' top is at the start.</summary>
 		private const double ToolbarRoom = 44;
+
+		// The room above and below the lyrics: half the view's height, so their first and last lines can
+		// be scrolled to the middle of the view (see UpdateOverscroll). Scroll offsets count it; the
+		// lyrics' own positions (content y, as the timeline and line tops are measured) don't.
+		private double overscroll;
+
+		/// <summary>Where the lyrics start: their top just below the toolbar (scrolled up from there, the room above them shows).</summary>
+		private double StartOffset => Math.Max(0, overscroll - ToolbarRoom);
+
+		/// <summary>The scroll offset that puts the lyrics' content y in the middle of the view.</summary>
+		private double OffsetCentering(double contentY) => contentY + overscroll - (scroller?.Viewport.Height ?? 0) / 2;
+
+		/// <summary>The lyrics' content y in the middle of the view at a scroll offset.</summary>
+		private double CenterAt(double offset) => offset - overscroll + (scroller?.Viewport.Height ?? 0) / 2;
+
+		/// <summary>
+		/// The room above and below the lyrics follows the view's height (half of it); what's shown
+		/// stays where it is. The first time, the lyrics go to their start (just below the toolbar).
+		/// </summary>
+		private void UpdateOverscroll()
+		{
+			if (scroller == null || zoomHost == null || scroller.Viewport.Height <= 0)
+			{
+				return;
+			}
+
+			var room = Math.Round(scroller.Viewport.Height / 2);
+			if (Math.Abs(room - overscroll) < 1 && zoomHost.Margin.Top == room)
+			{
+				return;
+			}
+
+			var first = zoomHost.Margin.Top == 0;
+			var shift = room - overscroll;
+			overscroll = room;
+			zoomHost.Margin = new Thickness(0, room, 0, room);
+			scroller.UpdateLayout();
+			scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(first ? StartOffset : scroller.Offset.Y + shift, 0, MaxOffset(scroller)));
+			timeline = null; // Its start depends on the view's height.
+		}
 		private List<Control> lines = [];
 		private List<double> lineOpacities = [];
 		private List<(double Seconds, int Line)> parts = [];
@@ -871,7 +911,7 @@ namespace Lyrious.UILib.Setlists
 			if (scroller != null)
 			{
 				StopNudge();
-				scroller.Offset = new Vector(scroller.Offset.X, 0);
+				scroller.Offset = new Vector(scroller.Offset.X, StartOffset);
 				scrollPosition = null;
 				if (IsTimed && scrollTimer.IsEnabled)
 				{
@@ -900,17 +940,17 @@ namespace Lyrious.UILib.Setlists
 
 			if (on)
 			{
-				// Starting at the end begins again from the top.
+				// Starting at the end begins again from the start.
 				if (scroller!.Offset.Y >= MaxOffset(scroller) - 1)
 				{
-					scroller.Offset = new Vector(scroller.Offset.X, 0);
+					scroller.Offset = new Vector(scroller.Offset.X, StartOffset);
 				}
 
 				scrollPosition = null;
 				timedPoints = null;
 				// Timed: pick up the song's timeline where the lyrics are now (0:00 at the top).
-				playbackStart = IsTimed && scroller.Offset.Y > 0 && Timeline() is { } points
-					? TimeAt(points, scroller.Offset.Y + scroller.Viewport.Height / 2)
+				playbackStart = IsTimed && scroller.Offset.Y > StartOffset + 1 && Timeline() is { } points
+					? TimeAt(points, CenterAt(scroller.Offset.Y))
 					: 0;
 				scrollClock.Restart();
 				ScrollClockRestarted();
@@ -1046,13 +1086,13 @@ namespace Lyrious.UILib.Setlists
 				// layout changed (zoom, resize): then the same time is simply somewhere else.
 				if (ReferenceEquals(points, timedPoints) && Math.Abs(scroller.Offset.Y - timedOffset) >= 1)
 				{
-					now = TimeAt(points, scroller.Offset.Y + scroller.Viewport.Height / 2);
+					now = TimeAt(points, CenterAt(scroller.Offset.Y));
 					playbackStart = now - ScrollSeconds;
 					StopNudge(); // A gliding nudge was measured from where the lyrics were.
 				}
 
 				ShowCurrentPart(now);
-				var target = OnScreenPixel(Math.Clamp(CenterAt(points, now) - scroller.Viewport.Height / 2, 0, MaxOffset(scroller)));
+				var target = OnScreenPixel(Math.Clamp(OffsetCentering(CenterAt(points, now)), 0, MaxOffset(scroller)));
 				scroller.Offset = new Vector(scroller.Offset.X, target);
 				timedPoints = points;
 				timedOffset = target;
@@ -1115,20 +1155,20 @@ namespace Lyrious.UILib.Setlists
 				return null;
 			}
 
-			// At 0:00 the lyrics start at the top: the middle of the view shows the content's y = half its height.
-			var half = scroller.Viewport.Height / 2;
+			// At 0:00 the lyrics are at their start (their top just below the toolbar): the middle of the
+			// view shows the content's y there.
+			var start = CenterAt(StartOffset);
 			if (points[0].Seconds > 0)
 			{
-				points.Insert(0, (0, Math.Min(half, points[0].Y)));
+				points.Insert(0, (0, Math.Min(start, points[0].Y)));
 			}
 
-			// Tags in the top half of the lyrics can't reach the middle of the view (the lyrics can't
-			// scroll above their top), so they'd hold the lyrics still. Instead the lyrics move on from
-			// the start, to reach the first tag that can be in the middle at its time.
-			if (points[0].Y < half)
+			// Tags above that would have the lyrics move back down first to put them in the middle. Instead
+			// the lyrics move on from the start, to reach the first tag that's further down at its time.
+			if (points[0].Y < start)
 			{
-				points[0] = (points[0].Seconds, half);
-				while (points.Count > 1 && points[1].Y <= half)
+				points[0] = (points[0].Seconds, start);
+				while (points.Count > 1 && points[1].Y <= start)
 				{
 					points.RemoveAt(1);
 				}
@@ -1309,8 +1349,8 @@ namespace Lyrious.UILib.Setlists
 				}
 				else
 				{
-					var now = TimeAt(points, y + scroller.Viewport.Height / 2);
-					var target = Math.Clamp(CenterAt(points, Math.Max(0, now + step)) - scroller.Viewport.Height / 2, 0, MaxOffset(scroller));
+					var now = TimeAt(points, CenterAt(y));
+					var target = Math.Clamp(OffsetCentering(CenterAt(points, Math.Max(0, now + step))), 0, MaxOffset(scroller));
 					StartNudge(target - y, time: false);
 				}
 
@@ -1320,7 +1360,8 @@ namespace Lyrious.UILib.Setlists
 			// The line just below (or above) the top of the view goes to the top. A line only a few
 			// pixels away (a margin) is already there.
 			const double near = 6;
-			var tops = LineTops().Select(top => top * zoom).ToList();
+			// (As offsets: a line at the top is just below the toolbar, as the first line is at the start.)
+			var tops = LineTops().Select(top => top * zoom + StartOffset).ToList();
 			var lineTarget = direction > 0
 				? tops.Where(top => top > y + near).Cast<double?>().FirstOrDefault() ?? MaxOffset(scroller)
 				: tops.Where(top => top < y - near).Cast<double?>().LastOrDefault() ?? 0;
@@ -1336,7 +1377,7 @@ namespace Lyrious.UILib.Setlists
 			}
 			else
 			{
-				GlideTo(0);
+				GlideTo(StartOffset);
 			}
 		}
 
@@ -1765,15 +1806,15 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			// Centred too (outside the zoom): the zoom lays its content out from the left, at the content's own size.
-			// With lyrics the song's title is hidden and they start at the top of the page, under the
-			// toolbar: room above them (outside the zoom, so the same at any zoom) puts the first line
-			// just below it when scrolled to the top; scrolled down, the lyrics pass under it.
+			// Room above and below (outside the zoom, so the same at any zoom), half the view's height once
+			// laid out (see UpdateOverscroll): the first and last lines can scroll to the middle of the view.
+			// They start with the first line just below the toolbar (the song's title is hidden with lyrics).
+			overscroll = 0;
 			zoomHost = new LayoutTransformControl
 			{
 				LayoutTransform = new ScaleTransform(zoom, zoom),
 				Child = content,
 				HorizontalAlignment = grid ? HorizontalAlignment.Stretch : HorizontalAlignment.Center,
-				Margin = new Thickness(0, hasLyrics ? ToolbarRoom : 0, 0, 0),
 			};
 			var scroller = new ScrollViewer
 			{
@@ -1792,8 +1833,16 @@ namespace Lyrious.UILib.Setlists
 			}, RoutingStrategies.Bubble, handledEventsToo: true);
 			scroller.AddHandler(InputElement.ScrollGestureEvent, (_, _) => ScrolledByHand(), RoutingStrategies.Bubble, handledEventsToo: true);
 			scroller.AddHandler(Avalonia.Controls.Primitives.Thumb.DragDeltaEvent, (_, _) => ScrolledByHand(), RoutingStrategies.Bubble, handledEventsToo: true);
-			// The timeline depends on the view's height too.
+			// The timeline depends on the view's height too, and so does the room above and below the lyrics.
 			scroller.SizeChanged += (_, _) => ScheduleBars();
+			scroller.PropertyChanged += (_, e) =>
+			{
+				if (e.Property == ScrollViewer.ViewportProperty)
+				{
+					// Right after this layout pass (changing the room lays the view out again).
+					Dispatcher.UIThread.Post(UpdateOverscroll, DispatcherPriority.Loaded);
+				}
+			};
 			// A tap (not a drag to scroll) toggles focus mode.
 			scroller.Tapped += (_, e) =>
 			{
@@ -1917,14 +1966,16 @@ namespace Lyrious.UILib.Setlists
 			// Where the anchor is, as a share of the lyrics' height: the lines rewrap, so this keeps the
 			// same words there better than scaling the offset.
 			var anchor = Math.Clamp(pendingZoomAnchor, 0, scroller.Viewport.Height);
-			var share = scroller.Extent.Height > 0 ? (scroller.Offset.Y + anchor) / scroller.Extent.Height : 0;
+			// (Of the lyrics themselves: the room above and below them doesn't zoom.)
+			var lyricsHeight = scroller.Extent.Height - 2 * overscroll;
+			var share = lyricsHeight > 0 ? (scroller.Offset.Y + anchor - overscroll) / lyricsHeight : 0;
 			zoom = value;
 			LyricsZoom = value;
 			zoomHost.LayoutTransform = new ScaleTransform(zoom, zoom);
 			scroller.UpdateLayout();
 			if (!scrollTimer.IsEnabled || !IsTimed)
 			{
-				scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(Math.Round(share * scroller.Extent.Height - anchor), 0, MaxOffset(scroller)));
+				scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(Math.Round(share * (scroller.Extent.Height - 2 * overscroll) + overscroll - anchor), 0, MaxOffset(scroller)));
 			}
 
 			ScheduleBars();
@@ -2458,12 +2509,13 @@ namespace Lyrious.UILib.Setlists
 			{
 				var seconds = position.TotalSeconds;
 				ShowCurrentPart(seconds);
-				target = CenterAt(points, seconds) - viewer.Viewport.Height / 2;
+				target = OffsetCentering(CenterAt(points, seconds));
 				timedPoints = points;
 			}
 			else if (sounds.Duration is { TotalSeconds: > 0 } duration)
 			{
-				target = position.TotalSeconds / duration.TotalSeconds * MaxOffset(viewer);
+				// From the start (the first line just below the toolbar) to the end.
+				target = StartOffset + position.TotalSeconds / duration.TotalSeconds * Math.Max(0, MaxOffset(viewer) - StartOffset);
 			}
 			else
 			{

@@ -313,7 +313,8 @@ namespace Lyrious.UILib.Setlists
 					icon.Stroke = new SolidColorBrush(Color.Parse("#FF0033"));
 					break;
 				default:
-					icon.Bind(Shape.StrokeProperty, icon.GetResourceObservable(LyriousTheme.ForegroundBrush));
+					// In the button's text colour, as the theme gives it (also when highlighted).
+					icon.Bind(Shape.StrokeProperty, icon.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
 					break;
 			}
 

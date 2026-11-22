@@ -33,6 +33,7 @@ namespace Lyrious.UILib.Setlists
 	/// <param name="HeadingChords">A heading that starts with a chord, "# [d] Intro", becomes "# [D]Intro".</param>
 	/// <param name="ArtistTags">Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist.</param>
 	/// <param name="CheckTags">A ✓ in a song's name or lyrics becomes the tag ✓.</param>
+	/// <param name="LettersOnlyNames">Song names keep only their letters and spaces: digits, punctuation and symbols are taken out.</param>
 	public sealed record SongbookProImportOptions(
 		bool OverwriteSongs = true,
 		bool ImportSetlists = true,
@@ -40,7 +41,8 @@ namespace Lyrious.UILib.Setlists
 		bool CommentsAsHeadings = true,
 		bool HeadingChords = true,
 		bool ArtistTags = true,
-		bool CheckTags = true);
+		bool CheckTags = true,
+		bool LettersOnlyNames = false);
 
 	/// <summary>
 	/// Reads SongbookPro backups (a "SongbookPro Backup.zip", or the same as a .sbpbackup) and imports
@@ -120,6 +122,11 @@ namespace Lyrious.UILib.Setlists
 					tags = SongTags.Tidy($"{tags} {Check}");
 				}
 
+				if (options.LettersOnlyNames)
+				{
+					name = LettersOnly(name);
+				}
+
 				if (lyrics.Length > MaxLyricsLength)
 				{
 					skipped.Add($"{name} (too long: {lyrics.Length} characters, at most {MaxLyricsLength})");
@@ -190,12 +197,18 @@ namespace Lyrious.UILib.Setlists
 		{
 			options ??= new SongbookProImportOptions();
 			var imported = new Dictionary<int, Guid>();
-			// The songbook's songs by name, only its letters counting (see NameKey): a song of the same
-			// name is overwritten (or kept) rather than added again.
-			var byName = new Dictionary<string, SongDetails>(StringComparer.Ordinal);
+			// The songbook's songs by name, only its letters counting (see NameKey): songs of the same
+			// name are overwritten (or kept) rather than added again; all of them, when there are several.
+			var byName = new Dictionary<string, List<SongDetails>>(StringComparer.Ordinal);
 			foreach (var existing in await service.GetSongbookSongsAsync(groupId))
 			{
-				byName.TryAdd(NameKey(existing.Name), existing);
+				var key = NameKey(existing.Name);
+				if (!byName.TryGetValue(key, out var same))
+				{
+					byName[key] = same = [];
+				}
+
+				same.Add(existing);
 			}
 
 			var replaced = 0;
@@ -203,29 +216,38 @@ namespace Lyrious.UILib.Setlists
 			foreach (var song in backup.Songs)
 			{
 				SongDetails stored;
-				if (byName.TryGetValue(NameKey(song.Name), out var existing) && !options.OverwriteSongs)
+				var matching = byName.GetValueOrDefault(NameKey(song.Name)) ?? [];
+				if (matching.Count > 0 && !options.OverwriteSongs)
 				{
 					// Kept as it is, but in the setlists where the backup has the song.
-					stored = existing;
+					stored = matching[0];
 					kept++;
 				}
-				else if (existing != null)
+				else if (matching.Count > 0)
 				{
-					// The backup's lyrics, key (as both the playing and the original key), tempo and beat; the song keeps its link when the backup
-					// has none, and its tags with the backup's added.
-					stored = await service.UpdateSongAsync(existing with
+					// Each song of that name gets the backup's lyrics (they replace the band's lyrics), key (as
+					// both the playing and the original key), tempo and beat; it keeps its link when the backup
+					// has none, and its tags with the backup's added. The first is the one put in the setlists.
+					var updated = new List<SongDetails>();
+					foreach (var existing in matching)
 					{
-						// The backup's name: the same letters, but maybe other spaces, digits or punctuation (or no ✓).
-						Name = song.Name,
-						Lyrics = song.Lyrics,
-						PlayingKey = song.Key,
-						OriginalKey = song.Key,
-						Artist = song.Artist,
-						Tempo = song.Tempo,
-						Beat = song.Beat,
-						MediaLink = song.MediaLink.Length > 0 ? song.MediaLink : existing.MediaLink,
-						Tags = SongTags.Join(SongTags.Parse(existing.Tags).Concat(SongTags.Parse(song.Tags))),
-					});
+						updated.Add(await service.UpdateSongAsync(existing with
+						{
+							// The backup's name: the same letters, but maybe other spaces, digits or punctuation (or no ✓).
+							Name = song.Name,
+							Lyrics = song.Lyrics,
+							PlayingKey = song.Key,
+							OriginalKey = song.Key,
+							Artist = song.Artist,
+							Tempo = song.Tempo,
+							Beat = song.Beat,
+							MediaLink = song.MediaLink.Length > 0 ? song.MediaLink : existing.MediaLink,
+							Tags = SongTags.Join(SongTags.Parse(existing.Tags).Concat(SongTags.Parse(song.Tags))),
+						}));
+					}
+
+					stored = updated[0];
+					byName[NameKey(song.Name)] = updated;
 					replaced++;
 				}
 				else
@@ -234,7 +256,11 @@ namespace Lyrious.UILib.Setlists
 					stored = await service.UpdateSongAsync(created with { PlayingKey = song.Key, OriginalKey = song.Key, Artist = song.Artist, Tempo = song.Tempo, Beat = song.Beat, MediaLink = song.MediaLink, Tags = song.Tags });
 				}
 
-				byName[NameKey(song.Name)] = stored;
+				if (!byName.ContainsKey(NameKey(song.Name)))
+				{
+					byName[NameKey(song.Name)] = [stored];
+				}
+
 				imported[song.SourceId] = stored.Id;
 			}
 
@@ -338,6 +364,31 @@ namespace Lyrious.UILib.Setlists
 		{
 			var letters = new string(name.Where(char.IsLetter).Select(char.ToLowerInvariant).ToArray());
 			return letters.Length > 0 ? letters : name.Trim();
+		}
+
+		/// <summary>
+		/// A name with only its letters and spaces (one between words): "01. Go Your Own Way (live) ✓" is
+		/// "Go Your Own Way live". Spaces, dashes, slashes, underscores and dots part words; anything else
+		/// (digits, apostrophes, brackets, marks) is simply left out, so "Don't" is "Dont". A name without
+		/// letters stays as it is.
+		/// </summary>
+		internal static string LettersOnly(string name)
+		{
+			var kept = new System.Text.StringBuilder(name.Length);
+			foreach (var c in name)
+			{
+				if (char.IsLetter(c))
+				{
+					kept.Append(c);
+				}
+				else if (char.IsWhiteSpace(c) || c is '-' or '–' or '—' or '/' or '\\' or '_' or '.' or ',' or ':' or ';' or '+' or '&')
+				{
+					kept.Append(' ');
+				}
+			}
+
+			var words = kept.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+			return words.Length > 0 ? string.Join(' ', words) : name;
 		}
 
 		/// <summary>The text without its ✓ marks, each with the space or tab before it (if any).</summary>

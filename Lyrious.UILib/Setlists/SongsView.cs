@@ -92,14 +92,14 @@ namespace Lyrious.UILib.Setlists
 
 		/// <param name="songbooks">The songbooks to choose between (e.g. the private one and the joined band's), shown as buttons above the list; none hides them.</param>
 		/// <param name="playingSongbookId">The songbook (its band's id) whose songs are played as the setlist now; null if none.</param>
-		/// <summary>
-		/// Picks a SongbookPro backup and imports it into the band (converted to Lyrious' format or not),
-		/// returning what happened (null: nothing picked); offered under the page's "more" button. None: not offered.
-		/// </summary>
-		public Func<Control, SongbookProImportOptions, Task<string?>>? ImportSongbookPro { get; set; }
+		/// <summary>Raised by "Import SongbookPro backup…" under the page's "more" button (offered only when handled): the import page.</summary>
+		public event Action? ImportRequested;
 
 		/// <summary>Deletes every song in the songbook, returning what happened; offered under the "more" button. None: not offered.</summary>
 		public Func<Task<string>>? ClearSongbook { get; set; }
+
+		/// <summary>Merges the songbook's duplicate songs, returning what happened; offered under the "more" button. None: not offered.</summary>
+		public Func<Task<string>>? RemoveDuplicates { get; set; }
 
 		public SongsView(GroupSummary group, IReadOnlyList<SongDetails> songs, Guid? currentSongId, IReadOnlyList<GroupSummary>? songbooks = null, Guid? playingSongbookId = null)
 		{
@@ -125,6 +125,9 @@ namespace Lyrious.UILib.Setlists
 			var withoutTags = new HashSet<string>(allTags.Where(savedWithoutTags.Contains), StringComparer.CurrentCultureIgnoreCase);
 			// The songs the list shows now, for the setlist tool.
 			IReadOnlyList<SongDetails> shownSongs = songs;
+			// How many songs there are, above the list: "142 songs", or "12 of 142 songs" while searching or filtering by tags.
+			var count = new TextBlock { FontSize = 13, Opacity = 0.7, Margin = new Avalonia.Thickness(0, 0, 0, 8) };
+			DockPanel.SetDock(count, Dock.Top);
 
 			void ShowList()
 			{
@@ -152,6 +155,10 @@ namespace Lyrious.UILib.Setlists
 
 				shownSongs = shown;
 				list.Content = SongList(shown, currentSongId, emptyText);
+				count.Text = shown.Count == songs.Count
+					? L.Plural(songs.Count, "{0} song", "{0} songs")
+					: L.Plural(songs.Count, "{1} of {0} song", "{1} of {0} songs", shown.Count);
+				count.IsVisible = songs.Count > 0;
 
 				// Kept for the next time the page shows. Chosen tags this songbook doesn't have stay
 				// chosen (for a songbook that has them).
@@ -165,6 +172,16 @@ namespace Lyrious.UILib.Setlists
 			var tagFilter = TagFilter(allTags, chosenTags, withoutTags, ShowList);
 
 			search.TextChanged += (_, _) => ShowList();
+			// Ctrl/⌘+E edits the selected song (as its pencil does), also while typing in the search box.
+			AddHandler(KeyDownEvent, (_, e) =>
+			{
+				var command = e.KeyModifiers == Avalonia.Input.KeyModifiers.Control || e.KeyModifiers == Avalonia.Input.KeyModifiers.Meta;
+				if (e.Key == Avalonia.Input.Key.E && command && (list.Content as SelectableList<SongDetails>)?.Selected is { } selected)
+				{
+					e.Handled = true;
+					SongEditRequested?.Invoke(selected);
+				}
+			}, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 			// The search box has the focus when the page shows, so typing searches at once (the text
 			// kept from last time stays, with the cursor at its end).
 			AttachedToVisualTree += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -372,9 +389,22 @@ namespace Lyrious.UILib.Setlists
 			moreButton.Click += (_, _) =>
 			{
 				var panel = new StackPanel { Spacing = 16, Width = 360 };
-				if (ImportSongbookPro is { } importBackup)
+				Flyout? flyout = null;
+				if (ImportRequested != null)
 				{
-					panel.Children.Add(SettingsView.ImportSetting(importBackup));
+					// The import has a page of its own (its checklist of what to do).
+					var import = new Button { Content = L.T("Import SongbookPro backup…") };
+					import.Click += (_, _) =>
+					{
+						flyout?.Hide();
+						ImportRequested?.Invoke();
+					};
+					panel.Children.Add(import);
+				}
+
+				if (RemoveDuplicates is { } removeDuplicates)
+				{
+					panel.Children.Add(SettingsView.RemoveDuplicatesSetting(removeDuplicates));
 				}
 
 				if (ClearSongbook is { } clear)
@@ -384,13 +414,14 @@ namespace Lyrious.UILib.Setlists
 
 				if (panel.Children.Count > 0)
 				{
-					new Flyout { Content = panel, Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedRight }.ShowAt(moreButton);
+					flyout = new Flyout { Content = panel, Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedRight };
+					flyout.ShowAt(moreButton);
 				}
 			};
 
 			Content = PageLayout.Page(
 				L.T("Songbook"),
-				new DockPanel { Children = { SongbookChooser(group, songbooks ?? [], playingSongbookId), nameRow, status, search, tagFilter, list } },
+				new DockPanel { Children = { SongbookChooser(group, songbooks ?? [], playingSongbookId), nameRow, status, search, tagFilter, count, list } },
 				titleAction: new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Children = { asSetlistButton, addButton, moreButton } },
 				closable: true,
 				icon: AppIcons.Songbook);

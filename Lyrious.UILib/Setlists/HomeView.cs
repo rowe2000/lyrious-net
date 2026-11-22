@@ -1187,11 +1187,8 @@ namespace Lyrious.UILib.Setlists
 				OpenPaneLength = width,
 				IsPaneOpen = false,
 			};
-			// The cards' colour half way to black (in the light theme and the dark one alike).
-			drawer.Bind(SplitView.PaneBackgroundProperty, drawer.GetResourceObservable(LyriousTheme.CardBrush, card =>
-				card is ISolidColorBrush brush
-					? new SolidColorBrush(Color.FromArgb(brush.Color.A, (byte)(brush.Color.R / 2), (byte)(brush.Color.G / 2), (byte)(brush.Color.B / 2)))
-					: card));
+			// The theme's drawer colour (light or dark), following a change of theme.
+			drawer.Bind(SplitView.PaneBackgroundProperty, drawer.GetResourceObservable(LyriousTheme.DrawerBrush));
 			return drawer;
 		}
 
@@ -2354,13 +2351,13 @@ namespace Lyrious.UILib.Setlists
 		// Marks a drawer's items and songs (see RoundedHighlight).
 		private const string DrawerItemClass = "drawer-item";
 
-		// A drawer item's background when it isn't highlighted: the drawer's colour, darker.
+		// A drawer item's background when it isn't highlighted: the theme's (lighter in the light theme, darker in the dark one).
 		private static Avalonia.Styling.Style DrawerItemStyle() => new(x =>
 			Avalonia.Styling.Selectors.Not(
 				Avalonia.Styling.Selectors.Class(Avalonia.Styling.Selectors.OfType<Button>(x), DrawerItemClass),
 				y => Avalonia.Styling.Selectors.Class(y, "accent")))
 		{
-			Setters = { new Avalonia.Styling.Setter(BackgroundProperty, new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0))) },
+			Setters = { new Avalonia.Styling.Setter(BackgroundProperty, new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension(LyriousTheme.DrawerItemBrush)) },
 		};
 
 		/// <summary>
@@ -2379,7 +2376,8 @@ namespace Lyrious.UILib.Setlists
 				Height = 24,
 				RenderTransformOrigin = RelativePoint.Center,
 			};
-			icon.Bind(Shape.StrokeProperty, icon.GetResourceObservable(LyriousTheme.ForegroundBrush));
+			// In the button's text colour, as the theme gives it: also when highlighted (accent), hovered or pressed.
+			icon.Bind(Shape.StrokeProperty, icon.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
 
 			var button = new Button { Content = icon, Padding = new Thickness(8), Background = Brushes.Transparent, BorderThickness = new Thickness(0) };
 			ToolTip.SetTip(button, description);
@@ -2881,22 +2879,31 @@ namespace Lyrious.UILib.Setlists
 			// The songbook played as the setlist (its id is its band's), for the note on its button.
 			var playing = currentSetlist is { } shownSetlist && IsSongbookSetlist(shownSetlist) ? shownSetlist.GroupId : (Guid?)null;
 			var view = new SongsView(group, songs, currentSongId, await SongbookChoicesAsync(), playing);
-			// Importing a SongbookPro backup into it, and clearing it: then the songbook again, updated,
-			// with what happened as a notice (the popup closes with the old page).
-			view.ImportSongbookPro = async (anchor, options) =>
+			// Importing a SongbookPro backup into it (on a page of its own), and clearing it: then the
+			// songbook again, updated, with what happened as a notice.
+			view.ImportRequested += () => page.Content = new ImportView(group.Name, async (anchor, options) =>
 			{
 				var done = await ImportSongbookProAsync(anchor, group, options);
 				if (done != null)
 				{
 					ShowNotice(done);
+					// In the import page's place, and instead of the songbook it came from (now out of date).
+					ForgetBackTo<SongsView>();
 					await ShowSongsAsync(group, replace: true);
 				}
 
 				return done;
-			};
+			});
 			view.ClearSongbook = async () =>
 			{
 				var done = await ClearSongbookAsync(group);
+				ShowNotice(done);
+				await ShowSongsAsync(group, replace: true);
+				return done;
+			};
+			view.RemoveDuplicates = async () =>
+			{
+				var done = await RemoveDuplicateSongsAsync(group);
 				ShowNotice(done);
 				await ShowSongsAsync(group, replace: true);
 				return done;
@@ -3400,7 +3407,7 @@ namespace Lyrious.UILib.Setlists
 						pane.IsVisible = true;
 					}
 
-					drawer.Bind(SplitView.PaneBackgroundProperty, drawer.GetResourceObservable(LyriousTheme.CardBrush));
+					drawer.Bind(SplitView.PaneBackgroundProperty, drawer.GetResourceObservable(LyriousTheme.DrawerBrush));
 					break;
 			}
 		}
@@ -3412,14 +3419,14 @@ namespace Lyrious.UILib.Setlists
 			SettingsView view;
 			if (currentGroup is not { } group)
 			{
-				view = new SettingsView();
+				view = new SettingsView(memberName: memberName.Text);
 			}
 			else
 			{
 				// The band settings are made once the band (and the member's role in it) is read: an empty
 				// place for them until then.
 				var bandSettings = new ContentControl();
-				view = new SettingsView(group.Name, bandSettings, group.MidiExpressions, group.MidiCommands);
+				view = new SettingsView(group.Name, bandSettings, group.MidiExpressions, group.MidiCommands, memberName.Text);
 				_ = ShowBandSettingsAsync(group.Id, bandSettings);
 			}
 
@@ -3503,6 +3510,63 @@ namespace Lyrious.UILib.Setlists
 			{
 				place.Content = new TextBlock { Text = L.T("Couldn't read the band settings. {0}", ex.Message), TextWrapping = TextWrapping.Wrap };
 			}
+		}
+
+		/// <summary>
+		/// Merges the band's duplicate songs: those whose names have the same letters (see
+		/// <see cref="SongbookProImport.NameKey"/>). The one with the most lyrics is kept; it takes the
+		/// others' places in the band's setlists (once per setlist), and the others are deleted. Returns what happened.
+		/// </summary>
+		private async Task<string> RemoveDuplicateSongsAsync(GroupSummary group)
+		{
+			var songs = await service.GetSongbookSongsAsync(group.Id);
+			// Each removed song's id, and the kept one that takes its place.
+			var keptFor = new Dictionary<Guid, Guid>();
+			foreach (var same in songs.GroupBy(song => SongbookProImport.NameKey(song.Name)).Where(same => same.Count() > 1))
+			{
+				var keep = same.OrderByDescending(song => song.Lyrics.Length).First();
+				foreach (var other in same.Where(song => song.Id != keep.Id))
+				{
+					keptFor[other.Id] = keep.Id;
+				}
+			}
+
+			if (keptFor.Count == 0)
+			{
+				return L.T("{0}'s songbook has no duplicate songs.", group.Name);
+			}
+
+			// The setlists with a removed song: the kept one in its place (not twice in the same setlist).
+			foreach (var setlist in await service.GetSetlistsAsync(group.Id))
+			{
+				var entries = await service.GetEntriesAsync(setlist.Id);
+				if (!entries.Any(entry => keptFor.ContainsKey(entry.Song.Id)))
+				{
+					continue;
+				}
+
+				var songIds = entries
+					.OrderBy(entry => entry.Position)
+					.Select(entry => keptFor.GetValueOrDefault(entry.Song.Id, entry.Song.Id))
+					.Distinct()
+					.ToList();
+				await service.ReplaceSongsAsync(setlist.Id, songIds);
+			}
+
+			foreach (var removed in keptFor.Keys)
+			{
+				await service.DeleteSongAsync(removed);
+			}
+
+			// The current song may have been one of them.
+			if (currentSongId is { } current && keptFor.ContainsKey(current))
+			{
+				SetCurrentSong(null, null);
+			}
+
+			playbackEntries = [];
+			RefreshSetlistDrawer(reload: true);
+			return L.Plural(keptFor.Count, "Removed {0} duplicate song from {1}'s songbook.", "Removed {0} duplicate songs from {1}'s songbook.", group.Name);
 		}
 
 		/// <summary>Deletes every song in the band's songbook (they leave its setlists too); returns how many.</summary>

@@ -74,6 +74,9 @@ namespace Lyrious.UILib
 		/// <summary>The language chosen: "sv" or "en"; none for the device's (see <see cref="Localization.Language"/>). Kept with the user.</summary>
 		public const string Language = "language";
 
+		/// <summary>The theme: "light", or "system" (the computer's); none for dark (see <see cref="ThemeSettings"/>). Kept with the user.</summary>
+		public const string Theme = "theme";
+
 		/// <summary>
 		/// "true" counts the member's own transpose as a capo (in frets, −11 to +11, moving the chords
 		/// down: the transpose −n); none as a transpose in semitones (−11 to +11). Kept with the user.

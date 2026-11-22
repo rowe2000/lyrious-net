@@ -77,12 +77,43 @@ namespace Lyrious.UILib
 				resources[key] = Shade(highlight, amount);
 			}
 
+			// The text and icons on the highlight (highlighted buttons, the current row, checked toggles):
+			// black on a light fill, white on a dark one, as each theme fills with it (the light theme with
+			// Dark1, the dark theme with Light2). So they can be read whatever highlight was chosen.
+			SetOnHighlight(resources, Avalonia.Styling.ThemeVariant.Light, Shade(highlight, -0.2));
+			SetOnHighlight(resources, Avalonia.Styling.ThemeVariant.Dark, Shade(highlight, 0.4));
+
 			// Top-level entries win over the light/dark ones in LyriousTheme.
 			SetBrush(resources, LyriousTheme.SelectionBrush, Highlight);
 			SetBrush(resources, LyriousTheme.ChordBrush, Chord);
 			SetBrush(resources, LyriousTheme.Heading1Brush, Heading1);
 			SetBrush(resources, LyriousTheme.Heading2Brush, Heading2);
 			SetBrush(resources, LyriousTheme.HeadingBrush, Heading);
+		}
+
+		// The theme's brushes for what's drawn on the accent fill (Fluent's), each state alike.
+		private static readonly string[] OnHighlightKeys =
+		[
+			"AccentButtonForeground", "AccentButtonForegroundPointerOver", "AccentButtonForegroundPressed",
+			"ToggleButtonForegroundChecked", "ToggleButtonForegroundCheckedPointerOver", "ToggleButtonForegroundCheckedPressed",
+		];
+
+		/// <summary>The theme's colour for text and icons on a fill of the highlight: black or white, whichever reads better.</summary>
+		private static void SetOnHighlight(Avalonia.Controls.IResourceDictionary resources, Avalonia.Styling.ThemeVariant theme, Color fill)
+		{
+			if (!resources.ThemeDictionaries.TryGetValue(theme, out var provider) || provider is not Avalonia.Controls.IResourceDictionary dictionary)
+			{
+				var created = new Avalonia.Controls.ResourceDictionary();
+				resources.ThemeDictionaries[theme] = created;
+				dictionary = created;
+			}
+
+			var light = (0.299 * fill.R + 0.587 * fill.G + 0.114 * fill.B) / 255 > 0.6;
+			var brush = new SolidColorBrush(light ? Colors.Black : Colors.White);
+			foreach (var key in OnHighlightKeys)
+			{
+				dictionary[key] = brush;
+			}
 		}
 
 		/// <summary>"#RRGGBB" for a colour.</summary>

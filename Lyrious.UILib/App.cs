@@ -53,8 +53,8 @@ namespace Lyrious.UILib
 
 		public override void Initialize()
 		{
-			// Default follows the system theme; ThemeVariant.Dark or ThemeVariant.Light force one.
-			RequestedThemeVariant = ThemeVariant.Default;
+			// Dark unless the user chose light or the computer's (see ThemeSettings, applied below).
+			RequestedThemeVariant = ThemeVariant.Dark;
 			Styles.Add(new FluentTheme());
 			LyriousTheme.AddTo(Resources);
 		}
@@ -63,6 +63,8 @@ namespace Lyrious.UILib
 		{
 			// The language (chosen in Settings, else the device's), before anything is shown.
 			Localization.Language.Apply();
+			// The theme the user chose (dark unless light or the computer's).
+			ThemeSettings.Apply();
 			// The user's own colours (Settings → Colors), over the theme's.
 			ColorSettings.Apply();
 			EscapeKey.Register();

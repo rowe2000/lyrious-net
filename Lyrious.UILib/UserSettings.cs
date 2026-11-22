@@ -30,6 +30,7 @@ namespace Lyrious.UILib
 			SettingKeys.Heading2Color,
 			SettingKeys.HeadingColor,
 			SettingKeys.Language,
+			SettingKeys.Theme,
 			SettingKeys.CapoMode,
 			SettingKeys.ChordGridButton,
 			SettingKeys.SendYamahaTranspose,
@@ -201,6 +202,8 @@ namespace Lyrious.UILib
 			if (changed)
 			{
 				ColorSettings.Apply();
+				// The theme chosen on another device.
+				ThemeSettings.Apply();
 				// The language chosen on another device (the screens are made anew if it changed).
 				Localization.Language.ApplyChanged();
 				Changed?.Invoke();
