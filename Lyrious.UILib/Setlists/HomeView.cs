@@ -209,7 +209,28 @@ namespace Lyrious.UILib.Setlists
 			// pages start at the same height with or without them (as in focus mode). The page keeps
 			// clear of the corners at the sides, so narrow windows don't put text under the buttons.
 			topRow = new Grid { Margin = new Thickness(4), VerticalAlignment = VerticalAlignment.Top, Children = { menuButton, setlistButton } };
+			drawerButtons = (menuButton, setlistButton);
+			// Swiping sideways on the lyrics: another song, or from the edges, the drawers (see OnSwipe*).
+			AddHandler(PointerPressedEvent, OnSwipePressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+			AddHandler(PointerMovedEvent, OnSwipeMoved, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+			// Two fingers sideways on a touchpad (sideways wheel steps) likewise.
+			AddHandler(PointerWheelChangedEvent, OnSwipeWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+			AddHandler(PointerReleasedEvent, OnSwipeReleased, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+			AddHandler(PointerCaptureLostEvent, (_, e) =>
+			{
+				// Taken away (not let go): the song slides back.
+				if (swipe is { } current && current.Pointer == e.Pointer)
+				{
+					swipe = null;
+					if (slidePreview != null && slideTimer == null)
+					{
+						FinishSlide(current.Dx, go: false);
+					}
+				}
+			}, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
 			page.Margin = PageMargin;
+			pageFrame.Child = page;
+			pageHost.Children.Add(pageFrame);
 
 			setlistDrawer = Drawer(SplitViewPanePlacement.Right, 280);
 			// The playback toolbar sits under the lyrics page, also in focus mode.
@@ -231,7 +252,7 @@ namespace Lyrious.UILib.Setlists
 			var mediaPlayer = new MediaPlayerLayer();
 			MediaPlayerLayer.Current = mediaPlayer;
 			mediaPlayer.PlayingChanged += OnMediaPlayingChanged;
-			setlistDrawer.Content = new Grid { Children = { new DockPanel { Children = { playbackBar, page } }, mediaPlayer, topRow, notice } };
+			setlistDrawer.Content = new Grid { Children = { new DockPanel { Children = { playbackBar, pageHost } }, mediaPlayer, topRow, notice } };
 			playbackBar.PlayPauseRequested += () => PlayPause();
 			playbackBar.RestartRequested += () => (page.Content as LyricScrollView)?.ScrollToStart();
 			playbackBar.NextRequested += NextSong;
@@ -3304,6 +3325,407 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Shows the next song in the current setlist.</summary>
 		private void NextSong() => StepSong(1);
+
+		// The buttons that open the drawers (the menu at the left, the setlist at the right).
+		private (Button Menu, Button Setlist) drawerButtons;
+
+		/// <summary>The width of the columns at the left and right edges where a swipe opens a drawer: the drawer buttons' (40) and their margin.</summary>
+		private const double SwipeEdge = 44;
+
+		/// <summary>How far sideways a swipe goes before it counts (and more sideways than up or down).</summary>
+		private const double SwipeDistance = 60;
+
+		/// <summary>How far a press moves before it's locked to scrolling (more up or down) or to swiping (more sideways), until it's released.</summary>
+		private const double SwipeLockDistance = 5;
+
+		/// <summary>How fast (px/ms) a swipe let go short of the way still goes on to the other song.</summary>
+		private const double SwipeFlingSpeed = 0.4;
+
+		/// <summary>How long (ms) a song takes to slide the rest of the way in or away (or back).</summary>
+		private const double SlideDuration = 200;
+
+		/// <summary>A swipe going on: its pointer, where it started (in the drawer buttons' row), from which edge (-1 left, 1 right, 0 neither), whether it's locked sideways, and how far and fast it went.</summary>
+		private sealed class SwipeState(Avalonia.Input.IPointer pointer, Point start, int edge, ulong time)
+		{
+			public Avalonia.Input.IPointer Pointer { get; } = pointer;
+			public Point Start { get; } = start;
+			public int Edge { get; } = edge;
+			public bool Sideways { get; set; }
+			public double Dx { get; set; }
+			public ulong Time { get; set; } = time;
+			public double Speed { get; set; }
+		}
+
+		private SwipeState? swipe;
+
+		// The page in a frame (opaque and shadowed while it slides away) in a clipped grid, with the
+		// song sliding in over it or lying under it (see StartSlide).
+		private readonly Border pageFrame = new();
+		private readonly Grid pageHost = new() { ClipToBounds = true };
+		private Control? slidePreview;
+		private int slideStep;
+		private IDisposable? pageFrameBackground;
+		private DispatcherTimer? slideTimer;
+
+		private static readonly BoxShadows SlideShadow = BoxShadows.Parse("0 0 18 0 #70000000");
+
+		/// <summary>A press on the lyrics page (not while editing, nor with a drawer sliding over it): perhaps a swipe.</summary>
+		private void OnSwipePressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+		{
+			swipe = null;
+			if (slideTimer == null)
+			{
+				EndSlide();
+			}
+
+			if (page.Content is not LyricScrollView { IsEditing: false } || menuDrawer.IsPaneOpen && !IsPinned(menuDrawer)
+			    || setlistDrawer.IsPaneOpen && !IsPinned(setlistDrawer)
+			    || e.Pointer.Type == Avalonia.Input.PointerType.Mouse && !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+			{
+				return;
+			}
+
+			var start = e.GetPosition(topRow);
+			var width = topRow.Bounds.Width;
+			// Only on the page itself (not a pinned drawer beside it).
+			if (start.X < -topRow.Margin.Left || start.X > width + topRow.Margin.Right || e.GetPosition(page) is var onPage && (onPage.Y < 0 || onPage.Y > page.Bounds.Height + page.Margin.Bottom))
+			{
+				return;
+			}
+
+			var edge = start.X <= SwipeEdge - topRow.Margin.Left ? -1 : start.X >= width - (SwipeEdge - topRow.Margin.Right) ? 1 : 0;
+			swipe = new SwipeState(e.Pointer, start, edge, e.Timestamp);
+		}
+
+		/// <summary>
+		/// A press moving on the lyrics page. Its first few pixels lock it, until it's released: more up or
+		/// down, it only scrolls the lyrics; more sideways, it only swipes (the lyrics don't scroll). A
+		/// swipe from the left edge to the right opens the menu drawer, from the right edge to the left the
+		/// setlist drawer (once it's gone far enough); anywhere else, the next song slides in over this one
+		/// (to the left) or this one slides away from the one before (to the right), following the finger
+		/// (not while the lyrics scroll by themselves).
+		/// </summary>
+		private void OnSwipeMoved(object? sender, Avalonia.Input.PointerEventArgs e)
+		{
+			if (swipe is not { } current || current.Pointer != e.Pointer)
+			{
+				return;
+			}
+
+			var now = e.GetPosition(topRow);
+			var dx = now.X - current.Start.X;
+			var dy = now.Y - current.Start.Y;
+			if (!current.Sideways)
+			{
+				if (Math.Max(Math.Abs(dx), Math.Abs(dy)) < SwipeLockDistance)
+				{
+					return;
+				}
+
+				if (Math.Abs(dy) >= Math.Abs(dx))
+				{
+					swipe = null; // A scroll, until released.
+					return;
+				}
+
+				// A swipe, until released: the lyrics no longer get the moves (so they don't scroll).
+				current.Sideways = true;
+				e.Pointer.Capture(this);
+			}
+
+			e.Handled = true;
+			if (e.Timestamp > current.Time)
+			{
+				current.Speed = (dx - current.Dx) / (e.Timestamp - current.Time);
+				current.Time = e.Timestamp;
+			}
+
+			current.Dx = dx;
+			if (current.Edge != 0)
+			{
+				if (Math.Abs(dx) >= SwipeDistance && Math.Sign(dx) == -current.Edge)
+				{
+					swipe = null; // Once per swipe.
+					Swiped(current.Edge, dx);
+				}
+
+				return;
+			}
+
+			if (slideTimer != null)
+			{
+				return;
+			}
+
+			var step = dx < 0 ? 1 : -1;
+			if (dx != 0 && StartSlide(step))
+			{
+				SetSlide(dx);
+			}
+			else
+			{
+				EndSlide(); // No song that way (or back where it started).
+			}
+		}
+
+		/// <summary>The swipe let go: far or fast enough, the song slides the rest of the way and is shown; else it slides back.</summary>
+		private void OnSwipeReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+		{
+			if (swipe is not { } current || current.Pointer != e.Pointer)
+			{
+				return;
+			}
+
+			swipe = null;
+			if (slidePreview == null || slideTimer != null)
+			{
+				return;
+			}
+
+			var dx = current.Dx;
+			var far = Math.Abs(dx) >= Math.Max(SwipeDistance, pageHost.Bounds.Width / 4);
+			var fast = Math.Abs(current.Speed) >= SwipeFlingSpeed && Math.Sign(current.Speed) == Math.Sign(dx);
+			FinishSlide(dx, go: Math.Sign(dx) == -slideStep && (far || fast));
+		}
+
+		/// <summary>A swipe sideways (dx: its direction, as the fingers moved), from an edge (-1 left, 1 right) or not (0).</summary>
+		private void Swiped(int edge, double dx)
+		{
+			switch (edge)
+			{
+				case -1 when dx > 0:
+					drawerButtons.Menu.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+					break;
+				case 1 when dx < 0:
+					drawerButtons.Setlist.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+					break;
+				case 0 when page.Content is LyricScrollView { IsAutoScrolling: false }:
+					var step = dx < 0 ? 1 : -1;
+					if (slideTimer == null && StartSlide(step))
+					{
+						FinishSlide(0, go: true);
+					}
+					else if (slideTimer == null)
+					{
+						StepSong(step); // (Says why not, e.g. while playing.)
+					}
+
+					break;
+			}
+		}
+
+		/// <summary>
+		/// The song before (-1) or after (+1) the current one, made ready to slide: the next one at the
+		/// right, to slide in over this one; the one before under this one, to show as this one slides
+		/// away. False when there's none that way (or the song can't change now).
+		/// </summary>
+		private bool StartSlide(int step)
+		{
+			if (slidePreview != null && slideStep == step)
+			{
+				return true;
+			}
+
+			EndSlide();
+			if (IsPlaying || page.Content is not LyricScrollView { IsAutoScrolling: false, IsEditing: false } || currentEntryId is not { } entryId)
+			{
+				return false;
+			}
+
+			var current = IndexOfEntry(playbackEntries, entryId);
+			var target = current + step;
+			if (current < 0 || target < 0 || target >= playbackEntries.Count)
+			{
+				return false;
+			}
+
+			// The song as it will show (without the member's own settings, read when it's shown).
+			var view = new LyricScrollView(playbackEntries[target].Song, Task.FromResult);
+			view.SetFocusMode(focusMode);
+			var preview = new Border { Child = view, IsHitTestVisible = false, Margin = page.Margin };
+			preview.Bind(Border.BackgroundProperty, preview.GetResourceObservable(SlideBackground));
+			slidePreview = preview;
+			slideStep = step;
+			if (step > 0)
+			{
+				preview.BoxShadow = SlideShadow;
+				preview.RenderTransform = new TranslateTransform(pageHost.Bounds.Width, 0);
+				pageHost.Children.Add(preview);
+			}
+			else
+			{
+				pageFrameBackground = pageFrame.Bind(Border.BackgroundProperty, pageFrame.GetResourceObservable(SlideBackground));
+				pageFrame.BoxShadow = SlideShadow;
+				pageHost.Children.Insert(0, preview);
+			}
+
+			return true;
+		}
+
+		/// <summary>The window's background, behind the songs as they slide.</summary>
+		private const string SlideBackground = "SystemControlBackgroundAltHighBrush";
+
+		/// <summary>The slide, dx (as the finger moved) from where it started: the next song in from the right, or this one away to the right.</summary>
+		private void SetSlide(double dx)
+		{
+			var width = pageHost.Bounds.Width;
+			if (slideStep > 0 && slidePreview != null)
+			{
+				slidePreview.RenderTransform = new TranslateTransform(Math.Clamp(width + dx, 0, width), 0);
+			}
+			else if (slideStep < 0)
+			{
+				pageFrame.RenderTransform = new TranslateTransform(Math.Clamp(dx, 0, width), 0);
+			}
+		}
+
+		/// <summary>The slide goes the rest of the way from dx: with <paramref name="go"/>, then the song is shown; else back, as it was.</summary>
+		private void FinishSlide(double dx, bool go)
+		{
+			var step = slideStep;
+			var width = pageHost.Bounds.Width;
+			var from = Math.Clamp(dx, -width, width);
+			var to = go ? -step * width : 0;
+			var started = DateTime.UtcNow;
+			var duration = SlideDuration * Math.Max(0.3, Math.Abs(to - from) / Math.Max(1, width));
+			slideTimer?.Stop();
+			slideTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(15), DispatcherPriority.Render, (_, _) =>
+			{
+				var t = Math.Min(1, (DateTime.UtcNow - started).TotalMilliseconds / duration);
+				var eased = 1 - Math.Pow(1 - t, 3);
+				SetSlide(from + (to - from) * eased);
+				if (t < 1)
+				{
+					return;
+				}
+
+				slideTimer?.Stop();
+				if (!go)
+				{
+					slideTimer = null;
+					EndSlide();
+					return;
+				}
+
+				StepSong(step);
+				// The slid song stays a moment, until the one shown in its place is laid out.
+				slideTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(60), DispatcherPriority.Background, (_, _) =>
+				{
+					slideTimer?.Stop();
+					slideTimer = null;
+					EndSlide();
+				});
+				slideTimer.Start();
+			});
+			slideTimer.Start();
+		}
+
+		/// <summary>No slide: the song that slid (or would have) gone, the page where it belongs.</summary>
+		private void EndSlide()
+		{
+			if (slidePreview != null)
+			{
+				pageHost.Children.Remove(slidePreview);
+				slidePreview = null;
+			}
+
+			slideStep = 0;
+			pageFrame.RenderTransform = null;
+			pageFrame.BoxShadow = default;
+			pageFrameBackground?.Dispose();
+			pageFrameBackground = null;
+			pageFrame.Background = null;
+		}
+
+		/// <summary>How far sideways (in wheel steps) two fingers on a touchpad go before it counts as a swipe.</summary>
+		private const double WheelSwipeDistance = 2;
+
+		/// <summary>The longest pause (ms) between the wheel steps of one touchpad gesture (with its glide).</summary>
+		private const ulong WheelSwipeGap = 400;
+
+		/// <summary>How long (ms) after a touchpad swipe no other one counts (from the swipe, not made longer by its glide).</summary>
+		private const long WheelSwipeRest = 200;
+
+		// The touchpad gesture going on: how far it went each way, when its last step came, from which
+		// edge it started, and whether it already swiped (once per gesture, its glide included).
+		private double wheelSwipeX;
+		private double wheelSwipeY;
+		private ulong wheelSwipeLast;
+		private int wheelSwipeEdge;
+		private bool wheelSwiped;
+
+		// Until when (Environment.TickCount64) the touchpad can't swipe again.
+		private long wheelSwipeBlockedUntil;
+
+		// After a swipe, its glide: the biggest sideways step since the swipe, whether the steps have
+		// been slowing down (a glide, not the fingers still moving), and the smallest step since then.
+		private double wheelGlidePeak;
+		private bool wheelGliding;
+		private double wheelGlideLow;
+
+		/// <summary>
+		/// Two fingers on a touchpad on the lyrics page: sideways wheel steps, added up over the gesture.
+		/// Once they've gone far enough sideways (and more sideways than up or down), a swipe as with a
+		/// finger (see <see cref="Swiped"/>), with the edges where the pointer was when the gesture began.
+		/// Once per gesture: its glide (the steps slowing down after the fingers let go) doesn't swipe
+		/// again, but a new swipe during it does: the steps getting faster again, or going the other way.
+		/// Not with Ctrl/⌘ (that zooms).
+		/// </summary>
+		private void OnSwipeWheel(object? sender, Avalonia.Input.PointerWheelEventArgs e)
+		{
+			var step = Math.Abs(e.Delta.X);
+			var newGesture = e.Timestamp - wheelSwipeLast > WheelSwipeGap;
+			if (!newGesture && wheelSwiped && step > 0)
+			{
+				if (wheelGliding)
+				{
+					// In the glide: faster again (or the other way) is the fingers swiping anew.
+					newGesture = Math.Sign(e.Delta.X) != Math.Sign(wheelSwipeX) || step > Math.Max(2 * wheelGlideLow, 0.1) && step > wheelGlideLow + 0.05;
+					wheelGlideLow = Math.Min(wheelGlideLow, step);
+				}
+				else if (step < wheelGlidePeak / 2)
+				{
+					wheelGliding = true; // Slowing down: the fingers let go.
+					wheelGlideLow = step;
+				}
+				else
+				{
+					wheelGlidePeak = Math.Max(wheelGlidePeak, step);
+				}
+			}
+
+			// A new gesture: counted from nothing again.
+			if (newGesture)
+			{
+				wheelSwipeX = 0;
+				wheelSwipeY = 0;
+				wheelSwiped = false;
+				var at = e.GetPosition(topRow);
+				var width = topRow.Bounds.Width;
+				wheelSwipeEdge = at.X <= SwipeEdge - topRow.Margin.Left ? -1 : at.X >= width - (SwipeEdge - topRow.Margin.Right) ? 1 : 0;
+			}
+
+			wheelSwipeLast = e.Timestamp;
+			if (wheelSwiped || Environment.TickCount64 < wheelSwipeBlockedUntil || slideTimer != null
+			    || page.Content is not LyricScrollView { IsEditing: false }
+			    || e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control) || e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Meta)
+			    || menuDrawer.IsPaneOpen && !IsPinned(menuDrawer) || setlistDrawer.IsPaneOpen && !IsPinned(setlistDrawer))
+			{
+				return;
+			}
+
+			wheelSwipeX += e.Delta.X;
+			wheelSwipeY += e.Delta.Y;
+			if (Math.Abs(wheelSwipeX) >= WheelSwipeDistance && Math.Abs(wheelSwipeX) > 2 * Math.Abs(wheelSwipeY))
+			{
+				wheelSwiped = true;
+				wheelSwipeBlockedUntil = Environment.TickCount64 + WheelSwipeRest;
+				wheelGlidePeak = step;
+				wheelGliding = false;
+				// The wheel's sideways delta goes the way the fingers moved (as with natural scrolling).
+				Swiped(wheelSwipeEdge, wheelSwipeX);
+			}
+		}
 
 		/// <summary>Goes to the song before (-1) or after (+1) the current one in the setlist, if any (not while playing).</summary>
 		private void StepSong(int step)
