@@ -15,8 +15,8 @@ namespace Lyrious.UILib.Setlists
 	/// The site manager's page (left drawer → Site manager, for a member the server names as one, see
 	/// <see cref="Login.IAuthService.IsSiteManager"/>): every band and every member.
 	/// <list type="bullet">
-	/// <item>A band: open it (it becomes the current band, with its songbook, setlists and songs), its
-	/// members (the band page, as its admin), and its band settings, here.</item>
+	/// <item>A band: its name (changed here), its members (the band page for that band alone, as its
+	/// admin), and its band settings, here.</item>
 	/// <item>A member: their name (changed here), username, bands and last login, and their own settings
 	/// (e.g. the colours), changed here as JSON.</item>
 	/// </list>
@@ -25,50 +25,66 @@ namespace Lyrious.UILib.Setlists
 	public sealed class SiteManagerView : UserControl
 	{
 		private readonly ISetlistService service;
-		private readonly Func<Guid, Task> openBand;
 		private readonly Func<Guid, Task> showBandMembers;
 		private readonly Func<Guid, ContentControl, Task> showBandSettings;
 		private readonly StackPanel bands = new() { Spacing = 8 };
 		private readonly StackPanel members = new() { Spacing = 8 };
-		private readonly TextBlock bandsTitle = Section("");
-		private readonly TextBlock membersTitle = Section("");
+		// The tabs' headers, with the number of bands and members the search shows.
+		private readonly TextBlock bandsTitle = new() { FontSize = 16 };
+		private readonly TextBlock membersTitle = new() { FontSize = 16 };
 		private readonly TextBox filter = new() { PlaceholderText = L.T("Search bands and members"), MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 240 };
 		private IReadOnlyList<GroupSummary> allBands = [];
 		private IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>> bandMembers = new Dictionary<Guid, IReadOnlyList<GroupMember>>();
 		private IReadOnlyList<SiteMember> allMembers = [];
 
-		/// <param name="openBand">Makes the band the current one and shows its start page.</param>
 		/// <param name="showBandMembers">Shows the band page with the band, its members and their roles.</param>
 		/// <param name="showBandSettings">Puts the band's settings in the place given.</param>
-		public SiteManagerView(ISetlistService service, Func<Guid, Task> openBand, Func<Guid, Task> showBandMembers, Func<Guid, ContentControl, Task> showBandSettings)
+		public SiteManagerView(ISetlistService service, Func<Guid, Task> showBandMembers, Func<Guid, ContentControl, Task> showBandSettings)
 		{
 			this.service = service;
-			this.openBand = openBand;
 			this.showBandMembers = showBandMembers;
 			this.showBandSettings = showBandSettings;
 
 			filter.TextChanged += (_, _) => Show();
-			var form = new StackPanel
+			// A magnifying glass at the left in the search box, dimmed like its placeholder.
+			var searchIcon = SongsView.LineIcon(SongsView.SearchIcon, 16);
+			searchIcon.Margin = new Thickness(10, 0, 0, 0);
+			searchIcon.Opacity = 0.6;
+			searchIcon.IsHitTestVisible = false;
+			filter.InnerLeftContent = searchIcon;
+
+			// The intro and the search above two tabs, Bands and Members (with how many the search
+			// shows); each tab's list scrolls on its own.
+			var top = new StackPanel
 			{
 				Spacing = 12,
-				Margin = new Thickness(0, 0, 0, 16),
 				Children =
 				{
 					new TextBlock
 					{
-						Text = L.T("As site manager you can see and change every band and member: open a band to work with its songbook, setlists and songs, change its members and settings, and change members' names and settings. Other members' private bands stay private."),
+						Text = L.T("As site manager you can see and change every band and member: rename bands, change their members and settings, and change members' names and settings. Other members' private bands stay private."),
 						TextWrapping = TextWrapping.Wrap,
 						Opacity = 0.75,
 					},
 					filter,
-					bandsTitle,
-					bands,
-					membersTitle,
-					members,
 				},
 			};
-			var scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-			Content = PageLayout.Page(L.T("Site manager"), scroller, closable: true, icon: AppIcons.SiteManager);
+			DockPanel.SetDock(top, Dock.Top);
+			static ScrollViewer Scrolling(Control list) => new()
+			{
+				Content = new Border { Child = list, Margin = new Thickness(0, 8, 0, 16) },
+				HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+			};
+			var tabs = new TabControl
+			{
+				Margin = new Thickness(0, 8, 0, 0),
+				ItemsSource = new[]
+				{
+					new TabItem { Header = bandsTitle, Content = Scrolling(bands) },
+					new TabItem { Header = membersTitle, Content = Scrolling(members) },
+				},
+			};
+			Content = PageLayout.Page(L.T("Site manager"), new DockPanel { Children = { top, tabs } }, closable: true, icon: AppIcons.SiteManager);
 			_ = LoadAsync();
 		}
 
@@ -120,14 +136,12 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
-		/// <summary>A band: its name and members; open it, its members, and its settings (shown below it).</summary>
+		/// <summary>A band: its name (click to change) and members; its members page, and its settings (shown below it).</summary>
 		private Control BandRow(GroupSummary band)
 		{
 			var count = bandMembers.GetValueOrDefault(band.Id)?.Count ?? 0;
 			var details = band.IsPrivate ? L.T("Your private band") : count == 1 ? L.T("1 member") : L.T("{0} members", count);
-			var open = new Button { Content = L.T("Open"), Classes = { "accent" } };
-			open.Click += async (_, _) => await openBand(band.Id);
-			var membersButton = new Button { Content = L.T("Members") };
+			var membersButton = new Button { Content = L.T("Members"), IsVisible = !band.IsPrivate };
 			membersButton.Click += async (_, _) => await showBandMembers(band.Id);
 			var settingsButton = new Button { Content = L.T("Band settings") };
 			var settings = new ContentControl { IsVisible = false, Margin = new Thickness(0, 8, 0, 0) };
@@ -142,14 +156,27 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 
+			var message = Message("", error: false);
+			message.IsVisible = false;
+			// The private band keeps its name (in italics, not to be changed) and has no members to manage.
+			Control name = band.IsPrivate
+				? new TextBlock { Text = band.Name, FontStyle = FontStyle.Italic, TextWrapping = TextWrapping.Wrap, MinHeight = 40, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0, 10) }
+				: EditableName(band.Name, L.T("Rename band"), message, async newName =>
+				{
+					await service.RenameGroupAsync(band.Id, newName);
+					band = band with { Name = newName };
+					allBands = allBands.Select(other => other.Id == band.Id ? band : other).ToList();
+				});
+
 			return Card(new StackPanel
 			{
 				Spacing = 6,
 				Children =
 				{
-					new TextBlock { Text = band.Name, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
+					name,
 					new TextBlock { Text = details, Opacity = 0.7 },
-					new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8, Children = { open, membersButton, settingsButton } },
+					message,
+					new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8, Children = { membersButton, settingsButton } },
 					settings,
 				},
 			});
@@ -158,29 +185,13 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>A member: their name (changed here), username, bands and last login, and their own settings.</summary>
 		private Control MemberRow(SiteMember member, IReadOnlyList<string> memberBands)
 		{
-			// The name in a box of its own height, with a tick beside it ("Save name" as its tip), shown
-			// once the name differs from the saved one; the row as tall as the tick either way.
-			var name = new TextBox { Text = member.Name, MinWidth = 200, MaxWidth = 300, VerticalAlignment = VerticalAlignment.Center };
-			var saveName = HomeView.IconButton("M5,12 L10,17 L19,7", L.T("Save name"));
-			saveName.VerticalAlignment = VerticalAlignment.Center;
-			saveName.IsVisible = false;
 			var message = Message("", error: false);
 			message.IsVisible = false;
-			name.TextChanged += (_, _) => saveName.IsVisible = !string.IsNullOrWhiteSpace(name.Text) && name.Text.Trim() != member.Name;
-			saveName.Click += async (_, _) =>
+			var name = EditableName(member.Name, L.T("Change name"), message, async newName =>
 			{
-				try
-				{
-					await service.RenameMemberAsync(member.Id, name.Text!.Trim());
-					member = member with { Name = name.Text!.Trim() };
-					saveName.IsVisible = false;
-					Show(message, L.T("The name has been changed."), error: false);
-				}
-				catch (Exception ex)
-				{
-					Show(message, L.T("Couldn't change the name. {0}", ex.Message), error: true);
-				}
-			};
+				await service.RenameMemberAsync(member.Id, newName);
+				member = member with { Name = newName };
+			});
 
 			var info = new List<string> { "@" + member.UserName };
 			info.Add(memberBands.Count > 0 ? string.Join(", ", memberBands) : L.T("In no band"));
@@ -261,7 +272,7 @@ namespace Lyrious.UILib.Setlists
 						LineSpacing = 8,
 						Children =
 						{
-							new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, MinHeight = 40, Children = { name, saveName } },
+							name,
 							settingsButton,
 						},
 					},
@@ -272,14 +283,114 @@ namespace Lyrious.UILib.Setlists
 			});
 		}
 
+		/// <summary>
+		/// A name shown as a title; a click on it puts it in a text box to change, with a tick beside it
+		/// once the text differs. Enter or the tick saves it (<paramref name="save"/>); Escape, focus
+		/// moving elsewhere, or leaving it unchanged puts the title back (unsaved text dropped). The row keeps its height either way; how it went shows in <paramref name="message"/>.
+		/// </summary>
+		private static Control EditableName(string current, string tip, TextBlock message, Func<string, Task> save)
+		{
+			var title = new TextBlock { Text = current, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+			var shown = new Button
+			{
+				Content = title,
+				Background = Brushes.Transparent,
+				BorderThickness = new Thickness(0),
+				Padding = new Thickness(0),
+				VerticalAlignment = VerticalAlignment.Center,
+				Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+			};
+			ToolTip.SetTip(shown, tip);
+			var box = new TextBox { MinWidth = 200, MaxWidth = 300, VerticalAlignment = VerticalAlignment.Center };
+			var ok = HomeView.IconButton("M5,12 L10,17 L19,7", L.T("OK"));
+			ok.VerticalAlignment = VerticalAlignment.Center;
+			ok.IsVisible = false;
+			var editor = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, IsVisible = false, Children = { box, ok } };
+			var saving = false;
+
+			void Edit(bool on)
+			{
+				shown.IsVisible = !on;
+				editor.IsVisible = on;
+				if (on)
+				{
+					box.Text = current;
+					ok.IsVisible = false;
+					box.SelectAll();
+					box.Focus();
+				}
+			}
+
+			async Task CommitAsync()
+			{
+				var newName = (box.Text ?? "").Trim();
+				if (newName.Length == 0 || newName == current)
+				{
+					Edit(false);
+					return;
+				}
+
+				ok.IsEnabled = false;
+				saving = true;
+				try
+				{
+					await save(newName);
+					current = newName;
+					title.Text = newName;
+					Edit(false);
+					Show(message, L.T("The name has been changed."), error: false);
+				}
+				catch (Exception ex)
+				{
+					Show(message, L.T("Couldn't change the name. {0}", ex.Message), error: true);
+					box.Focus();
+				}
+
+				saving = false;
+				ok.IsEnabled = true;
+			}
+
+			box.TextChanged += (_, _) => ok.IsVisible = (box.Text ?? "").Trim() is { Length: > 0 } text && text != current;
+			// Focus elsewhere: back to the title, unless it went to the tick (or a press on it is under way).
+			box.LostFocus += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+			{
+				if (editor.IsVisible && !box.IsFocused && !ok.IsFocused && !ok.IsPointerOver && !saving)
+				{
+					Edit(false);
+				}
+			});
+			ok.LostFocus += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+			{
+				if (editor.IsVisible && !box.IsFocused && !ok.IsFocused && !saving)
+				{
+					Edit(false);
+				}
+			});
+			shown.Click += (_, _) => Edit(true);
+			ok.Click += (_, _) => _ = CommitAsync();
+			box.KeyDown += (_, e) =>
+			{
+				if (e.Key == Avalonia.Input.Key.Enter)
+				{
+					e.Handled = true;
+					_ = CommitAsync();
+				}
+				else if (e.Key == Avalonia.Input.Key.Escape)
+				{
+					e.Handled = true;
+					Edit(false);
+				}
+			};
+
+			return new Panel { MinHeight = 40, Children = { shown, editor } };
+		}
+
 		private static Control Card(Control content)
 		{
 			var card = new Border { Padding = new Thickness(12), CornerRadius = new CornerRadius(8), Child = content };
 			card.Bind(Border.BackgroundProperty, card.GetResourceObservable(LyriousTheme.CardBrush));
 			return card;
 		}
-
-		private static TextBlock Section(string title) => new() { Text = title, FontSize = 20, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 12, 0, 0) };
 
 		private static TextBlock Message(string text, bool error)
 		{

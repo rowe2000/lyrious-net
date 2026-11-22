@@ -1439,12 +1439,7 @@ namespace Lyrious.UILib.Setlists
 					OpenFromDrawer();
 					page.Content = new SiteManagerView(
 						service,
-						bandId => RunAsync(async () =>
-						{
-							await service.SelectGroupAsync(bandId);
-							await OpenStartPageAsync();
-						}),
-						bandId => RunAsync(() => ShowGroupsAsync(bandId)),
+						bandId => RunAsync(() => ShowGroupsAsync(bandId, singleBand: true)),
 						ShowBandSettingsAsync);
 				};
 				WithDrawerIcon(siteManager, AppIcons.SiteManager);
@@ -2460,27 +2455,28 @@ namespace Lyrious.UILib.Setlists
 		private async Task ShowGroupsAsync() => await ShowGroupsAsync(null);
 
 		/// <param name="replace">Updates the band page in place (✕ doesn't go back to the old one).</param>
-		private async Task ShowGroupsAsync(Guid? selectedGroupId, bool replace = false)
+		/// <param name="singleBand">Only the selected band (e.g. from the Site manager page): no list of bands above it.</param>
+		private async Task ShowGroupsAsync(Guid? selectedGroupId, bool replace = false, bool singleBand = false)
 		{
 			var groups = await service.GetGroupsAsync();
 			var members = await service.GetGroupMembersAsync();
-			var view = new GroupsView(groups, members, currentGroup?.Id, selectedGroupId);
+			var view = new GroupsView(groups, members, currentGroup?.Id, selectedGroupId, singleBand && selectedGroupId != null);
 			// Choosing a band changes the current one but stays in the band list, now with that band highlighted.
 			view.GroupSelected += group => _ = RunAsync(async () =>
 			{
 				await service.SelectGroupAsync(group.Id);
 				await OpenStartPageAsync(showPage: false);
-				await ShowGroupsAsync(group.Id, replace: true);
+				await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
 			});
 			view.MemberRoleChangeRequested += (group, member, role) => _ = RunAsync(async () =>
 			{
 				await service.SetMemberRoleAsync(group.Id, member.MemberId, role);
-				await ShowGroupsAsync(group.Id, replace: true);
+				await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
 			});
 			view.MemberRenameRequested += (group, member, name) => _ = RunAsync(async () =>
 			{
 				await service.RenameMemberAsync(member.MemberId, name);
-				await ShowGroupsAsync(group.Id, replace: true);
+				await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
 				_ = ShowPresentMembersAsync();
 			});
 			// Renamed: the page (and, for the joined band, the menu) show the new name.
@@ -2493,12 +2489,12 @@ namespace Lyrious.UILib.Setlists
 					groupName.Text = name;
 				}
 
-				await ShowGroupsAsync(group.Id, replace: true);
+				await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
 			});
 			view.MemberRemoveRequested += (group, member) => _ = RunAsync(async () =>
 			{
 				await service.RemoveMemberAsync(group.Id, member.MemberId);
-				await ShowGroupsAsync(group.Id, replace: true);
+				await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
 			});
 			view.GroupDeleteRequested += group => _ = RunAsync(async () =>
 			{
@@ -2526,13 +2522,13 @@ namespace Lyrious.UILib.Setlists
 
 						await service.InviteByEmailAsync(group.Id, query);
 						ShowNotice(L.T("{0} has no account yet: sent them an email invitation", query));
-						await ShowGroupsAsync(group.Id, replace: true);
+						await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
 						return null;
 					}
 
 					await service.InviteMemberAsync(group.Id, found.Id);
 					ShowNotice(L.T("Invited {0} to {1}", found.Name, group.Name));
-					await ShowGroupsAsync(group.Id, replace: true);
+					await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
 					return null;
 				}
 				catch (Exception ex)
@@ -3491,7 +3487,7 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// Logged in elevated (or no longer): the Site manager item shows (or hides), and a sync fetches
-		/// what the member may see now (every band, or only their own again).
+		/// what the member may see now (every band, or only their own again); elevating ends on the start page.
 		/// </summary>
 		private void OnSiteManagerChanged() => Dispatcher.UIThread.Post(() =>
 		{
@@ -3501,13 +3497,33 @@ namespace Lyrious.UILib.Setlists
 				siteManagerButton.IsVisible = on;
 			}
 
-			if (!on && page.Content is SiteManagerView)
+			// Elevated (from the Profile page), or no longer while on the Site manager page: a sync (every
+			// band now, or only their own again), then back to the start page (the song's lyrics).
+			if (on || page.Content is SiteManagerView)
 			{
-				_ = RunAsync(() => OpenStartPageAsync());
+				_ = RunAsync(async () =>
+				{
+					await service.SyncNowAsync();
+					await OpenStartPageAsync();
+				});
+				return;
 			}
 
-			_ = RunAsync(() => service.SyncNowAsync());
+			// No longer elevated elsewhere (a login made again in the background): a quiet sync, the page stays.
+			_ = SyncQuietlyAsync();
 		});
+
+		private async Task SyncQuietlyAsync()
+		{
+			try
+			{
+				await service.SyncNowAsync();
+			}
+			catch (Exception)
+			{
+				// The next sync fetches it.
+			}
+		}
 
 		/// <summary>Logs out (the Profile page's tool): the drawer closes, live updates stop, and the host shows the login.</summary>
 		private void LogOut()

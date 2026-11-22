@@ -745,7 +745,7 @@ namespace Lyrious.UILib.Setlists
 		};
 
 		/// <summary>A line icon (24×24 path data) drawn in the text colour around it, at the size given.</summary>
-		private static Avalonia.Controls.Shapes.Path LineIcon(string data, double size)
+		internal static Avalonia.Controls.Shapes.Path LineIcon(string data, double size)
 		{
 			var icon = new Avalonia.Controls.Shapes.Path
 			{
@@ -769,7 +769,7 @@ namespace Lyrious.UILib.Setlists
 		private const string TrashIcon = "M5,7 H19 M10,7 V5 H14 V7 M7,7 L8,20 H16 L17,7 M10,11 V16 M14,11 V16";
 		// An empty check box (a rounded square), for clearing the checks.
 		private const string UncheckedIcon = "M7,4 H17 A3,3 0 0 1 20,7 V17 A3,3 0 0 1 17,20 H7 A3,3 0 0 1 4,17 V7 A3,3 0 0 1 7,4 Z";
-		private const string SearchIcon = "M4,10.5 A6.5,6.5 0 1 0 17,10.5 A6.5,6.5 0 1 0 4,10.5 M15.2,15.2 L20,20";
+		internal const string SearchIcon = "M4,10.5 A6.5,6.5 0 1 0 17,10.5 A6.5,6.5 0 1 0 4,10.5 M15.2,15.2 L20,20";
 
 		private void ShowStatus(string text)
 		{

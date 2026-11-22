@@ -67,7 +67,8 @@ namespace Lyrious.UILib.Setlists
 
 		/// <param name="members">Each band's members, keyed by group id.</param>
 		/// <param name="selectedGroupId">The band to show selected (e.g. the one just managed); else the joined one.</param>
-		public GroupsView(IReadOnlyList<GroupSummary> groups, IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>> members, Guid? currentGroupId, Guid? selectedGroupId = null)
+		/// <param name="singleBand">Only the selected band: no list of the other bands, and no adding one.</param>
+		public GroupsView(IReadOnlyList<GroupSummary> groups, IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>> members, Guid? currentGroupId, Guid? selectedGroupId = null, bool singleBand = false)
 		{
 			this.members = members;
 			this.currentGroupId = currentGroupId;
@@ -76,7 +77,7 @@ namespace Lyrious.UILib.Setlists
 			var shown = groups.FirstOrDefault(group => group.Id == selectedGroupId) ?? current ?? groups.FirstOrDefault();
 
 			// The other bands above the details, flowing left to right.
-			otherBands.IsVisible = groups.Count > 1;
+			otherBands.IsVisible = groups.Count > 1 && !singleBand;
 			ShowBand(shown);
 
 			// "+" reveals a name box above the list; Add (or Enter) creates the band.
@@ -89,7 +90,7 @@ namespace Lyrious.UILib.Setlists
 				L.T("Band"),
 				new ScrollViewer { Content = column, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
 				subtitle: current == null ? L.T("Choose a band") : null,
-				titleAction: addButton,
+				titleAction: singleBand ? null : addButton,
 				closable: true,
 				icon: AppIcons.Band);
 		}
@@ -150,7 +151,8 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-			if (!joined)
+			// Join only for the band's own members (a site manager looking at another band has none).
+			if (!joined && me != null)
 			{
 				var join = new Button { Content = me is { Approved: false } ? L.T("Accept and join") : "Join", Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center, Height = 40, VerticalContentAlignment = VerticalAlignment.Center };
 				join.Click += (_, _) => GroupSelected?.Invoke(group);
