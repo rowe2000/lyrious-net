@@ -36,8 +36,9 @@ namespace Lyrious.UILib.Setlists
 		private const string CancelIcon = "M6,6 L18,18 M18,6 L6,18";
 		// A grid of three columns: the chord grid.
 		private const string ChordGridIcon = "M4,5 H20 V19 H4 Z M9.3,5 V19 M14.7,5 V19";
-		// The transpose button's icon: a sharp and a flat side by side, close together, as tall as the grid icon.
-		private const string TransposeIcon = "M6.6,5 V19 M10.2,5 V19 M4,10.6 L12.8,9 M4,15 L12.8,13.4 M15.2,5 V19 C17.8,18.2 19.8,16.6 19.8,14.6 C19.8,12.6 17.2,12 15.2,13.8";
+		// The transpose button's icon: a sharp (x 5–11) and a flat (x 15–19) a couple of pixels apart, as tall
+		// as the grid icon and as wide as it's tall (with the round line ends, 4–20 both ways).
+		private const string TransposeIcon = "M7,5 V19 M9.4,5 V19 M5,10.6 L11,9.4 M5,15 L11,13.8 M15,5 V19 C17,18.3 19,16.8 19,14.8 C19,12.8 17,12.2 15,13.8";
 
 		/// <summary>The most the server stores for a song's name and lyrics.</summary>
 		private const int MaxNameLength = 100;
@@ -2543,6 +2544,36 @@ namespace Lyrious.UILib.Setlists
 		/// The song's name, key, tempo and beat, and its lyrics in a text box (with the error above, if
 		/// saving fails); Save and Cancel go beside the title. This is the one place a song is edited.
 		/// </summary>
+		// The open editor's Save button (for Ctrl/⌘+S).
+		private Button? editorSave;
+
+		// The open editor's Tab key: the next item to edit (see ShowEditor).
+		private EventHandler<KeyEventArgs>? editTabHandler;
+
+		/// <summary>Ctrl/⌘+E: opens the song's editor, as the pencil does; false when it's open already.</summary>
+		public bool EditFromKey()
+		{
+			if (IsEditing || !editButton.IsEffectivelyVisible || !editButton.IsEnabled)
+			{
+				return false;
+			}
+
+			ShowEditor();
+			return true;
+		}
+
+		/// <summary>Ctrl/⌘+S: saves the song being edited, as Save does (when it can be, e.g. it has a name).</summary>
+		public bool SaveFromKey()
+		{
+			if (!IsEditing || editorSave is not { IsEnabled: true } save)
+			{
+				return false;
+			}
+
+			save.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+			return true;
+		}
+
 		private void ShowEditor()
 		{
 			SetAutoScroll(false);
@@ -2745,6 +2776,7 @@ namespace Lyrious.UILib.Setlists
 				_ = LoadMembersAsync(loadMembers);
 			}
 			var save = PageLayout.OkButton(L.T("Save song"));
+			editorSave = save;
 			// Escape cancels too (before the page's ✕).
 			var cancel = EscapeKey.MarkAsClose(HomeView.IconButton(CancelIcon, L.T("Cancel editing")), first: true);
 			var error = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Margin = new Thickness(0, 0, 0, 12) };
@@ -2938,14 +2970,19 @@ namespace Lyrious.UILib.Setlists
 				shown.Tapped += (_, e) =>
 				{
 					e.Handled = true;
-					artistSlot.Content = artist;
-					Dispatcher.UIThread.Post(() =>
-					{
-						artist.Focus();
-						artist.SelectAll();
-					});
+					ShowArtistBox();
 				};
 				artistSlot.Content = shown;
+			}
+
+			void ShowArtistBox()
+			{
+				artistSlot.Content = artist;
+				Dispatcher.UIThread.Post(() =>
+				{
+					artist.Focus();
+					artist.SelectAll();
+				});
 			}
 
 			artist.LostFocus += (_, _) => ShowArtistText();
@@ -3079,14 +3116,19 @@ namespace Lyrious.UILib.Setlists
 				holder.Tapped += (_, e) =>
 				{
 					e.Handled = true;
-					tagsSlot.Content = tagsEditor;
-					Dispatcher.UIThread.Post(() =>
-					{
-						tagsBox.Focus();
-						tagsBox.CaretIndex = tagsBox.Text?.Length ?? 0;
-					});
+					ShowTagsBox();
 				};
 				tagsSlot.Content = holder;
+			}
+
+			void ShowTagsBox()
+			{
+				tagsSlot.Content = tagsEditor;
+				Dispatcher.UIThread.Post(() =>
+				{
+					tagsBox.Focus();
+					tagsBox.CaretIndex = tagsBox.Text?.Length ?? 0;
+				});
 			}
 
 			// Checked a moment after the focus left: a tag clicked in the popup brings it back.
@@ -3111,6 +3153,60 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 			ShowTagsText();
+
+			// Tab opens the next item to edit (Shift+Tab the one before), round in this order: the name,
+			// the artist, the playing key, original key, tempo and beat, the tags, and the lyrics.
+			Control[] tabOrder = [name, artist, key, originalKey, tempo, beat, tagsBox, editor];
+			void OpenForEditing(int index)
+			{
+				switch (index)
+				{
+					case 0:
+						ShowNameBox();
+						break;
+					case 1:
+						ShowArtistBox();
+						break;
+					case 6:
+						ShowTagsBox();
+						break;
+					case 7:
+						editor.Focus();
+						break;
+					default:
+						detailsSlot.Content = detailsInputs;
+						var input = tabOrder[index];
+						Dispatcher.UIThread.Post(() => input.Focus());
+						break;
+				}
+			}
+
+			if (editTabHandler != null)
+			{
+				RemoveHandler(KeyDownEvent, editTabHandler);
+			}
+
+			editTabHandler = (_, e) =>
+			{
+				var backwards = e.KeyModifiers == KeyModifiers.Shift;
+				if (e.Key != Key.Tab || !(backwards || e.KeyModifiers == KeyModifiers.None) || !IsEditing
+				    || key.IsDropDownOpen || originalKey.IsDropDownOpen || beat.IsDropDownOpen)
+				{
+					return;
+				}
+
+				// Where the focus is now (the tempo's own text box is inside it); nowhere: before the name.
+				var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
+				var at = Array.FindIndex(tabOrder, control => focused != null && (control == focused || control.IsVisualAncestorOf(focused)));
+				if (at < 0 && !backwards)
+				{
+					at = tabOrder.Length - 1;
+				}
+
+				e.Handled = true;
+				OpenForEditing(((at < 0 ? 0 : at) + (backwards ? -1 : 1) + tabOrder.Length) % tabOrder.Length);
+			};
+			AddHandler(KeyDownEvent, editTabHandler, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
 			// Beside the tools as far as they fit; what doesn't goes on the next line, which takes the
 			// whole width, under the tools too.

@@ -344,6 +344,17 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var tool = HomeView.IconButton(AppIcons.SiteManager, L.T("Log in as site manager"));
+			var popup = ElevateFlyout(auth, () => tool.IsVisible = false);
+			tool.Click += (_, _) => popup.ShowAt(tool);
+			return tool;
+		}
+
+		/// <summary>
+		/// The popup to log in as site manager: the member's password again, and Log in (or Enter);
+		/// what went wrong shows in it. It closes once logged in elevated, and then calls <paramref name="elevated"/>.
+		/// </summary>
+		internal static Flyout ElevateFlyout(IAuthService auth, Action? elevated = null)
+		{
 			var password = new TextBox { PasswordChar = '•', PlaceholderText = L.T("Password"), MinWidth = 220, Classes = { "revealPasswordButton" } };
 			var logIn = new Button { Content = L.T("Log in"), Classes = { "accent" }, IsEnabled = false };
 			var problem = new TextBlock { TextWrapping = TextWrapping.Wrap, MaxWidth = 260, IsVisible = false };
@@ -376,7 +387,7 @@ namespace Lyrious.UILib.Setlists
 					{
 						password.Text = "";
 						popup.Hide();
-						tool.IsVisible = false;
+						elevated?.Invoke();
 						return;
 					}
 
@@ -401,8 +412,7 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 			popup.Opened += (_, _) => password.Focus();
-			tool.Click += (_, _) => popup.ShowAt(tool);
-			return tool;
+			return popup;
 		}
 
 		private static TextBlock Section(string title) => new()

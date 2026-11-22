@@ -68,8 +68,10 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="members">Each band's members, keyed by group id.</param>
 		/// <param name="selectedGroupId">The band to show selected (e.g. the one just managed); else the joined one.</param>
 		/// <param name="singleBand">Only the selected band: no list of the other bands, and no adding one.</param>
-		public GroupsView(IReadOnlyList<GroupSummary> groups, IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>> members, Guid? currentGroupId, Guid? selectedGroupId = null, bool singleBand = false)
+		/// <param name="embedded">Only the selected band's members (their rows and inviting), to put inside another page: no page, header or card.</param>
+		public GroupsView(IReadOnlyList<GroupSummary> groups, IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>> members, Guid? currentGroupId, Guid? selectedGroupId = null, bool singleBand = false, bool embedded = false)
 		{
+			this.embedded = embedded;
 			this.members = members;
 			this.currentGroupId = currentGroupId;
 			this.groups = groups;
@@ -79,6 +81,11 @@ namespace Lyrious.UILib.Setlists
 			// The other bands above the details, flowing left to right.
 			otherBands.IsVisible = groups.Count > 1 && !singleBand;
 			ShowBand(shown);
+			if (embedded)
+			{
+				Content = details;
+				return;
+			}
 
 			// "+" reveals a name box above the list; Add (or Enter) creates the band.
 			var (addButton, nameRow) = PageLayout.AddByName(L.T("Add band"), L.T("Name of the new band"), name => GroupCreateRequested?.Invoke(name));
@@ -123,6 +130,9 @@ namespace Lyrious.UILib.Setlists
 				otherBands.Children.Add(button);
 			}
 		}
+
+		// Only the members, inside another page (see the constructor).
+		private readonly bool embedded;
 
 		private Control Details(GroupSummary group)
 		{
@@ -214,6 +224,11 @@ namespace Lyrious.UILib.Setlists
 			if (isAdmin)
 			{
 				membersTab.Children.Add(InviteRow(group));
+			}
+
+			if (embedded)
+			{
+				return membersTab;
 			}
 
 			var panel = new StackPanel { Spacing = 12, Children = { header } };

@@ -597,6 +597,84 @@ namespace Lyrious.UILib.Setlists
 			// Bubbling: after everything else had its go at the key (see OnLyricsEscape).
 			keyWindow?.AddHandler(KeyDownEvent, OnLyricsEscape, Avalonia.Interactivity.RoutingStrategies.Bubble);
 			keyWindow?.AddHandler(KeyDownEvent, OnLyricsPaste, Avalonia.Interactivity.RoutingStrategies.Bubble);
+			keyWindow?.AddHandler(KeyDownEvent, OnSiteManagerKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+			keyWindow?.AddHandler(KeyDownEvent, OnEditSongKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+			keyWindow?.AddHandler(KeyDownEvent, OnDrawerSearchKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+		}
+
+		// Shows the right drawer's search box, or ends the search when it shows (see the drawer's set-up).
+		private Action? toggleDrawerSearch;
+
+		/// <summary>
+		/// Tab while the right (setlist) drawer is open: shows its search box, or ends the search. Not
+		/// while typing in another box, or editing a song (there Tab moves between its items).
+		/// </summary>
+		private void OnDrawerSearchKey(object? sender, Avalonia.Input.KeyEventArgs e)
+		{
+			if (e.Key != Avalonia.Input.Key.Tab || e.KeyModifiers != Avalonia.Input.KeyModifiers.None || !setlistDrawer.IsPaneOpen
+			    || page.Content is LyricScrollView { IsEditing: true } || (e.Source is TextBox box && box != setlistSearchBox))
+			{
+				return;
+			}
+
+			e.Handled = true;
+			toggleDrawerSearch?.Invoke();
+		}
+
+		/// <summary>On a song's page: Ctrl/⌘+E opens its editor, Ctrl/⌘+S saves what's edited (also while typing in it).</summary>
+		private void OnEditSongKey(object? sender, Avalonia.Input.KeyEventArgs e)
+		{
+			var command = e.KeyModifiers == Avalonia.Input.KeyModifiers.Control || e.KeyModifiers == Avalonia.Input.KeyModifiers.Meta;
+			if (!command || page.Content is not LyricScrollView lyrics)
+			{
+				return;
+			}
+
+			if ((e.Key == Avalonia.Input.Key.E && lyrics.EditFromKey()) || (e.Key == Avalonia.Input.Key.S && lyrics.SaveFromKey()))
+			{
+				e.Handled = true;
+			}
+		}
+
+		/// <summary>The Site manager page (every band and member), for a member logged in elevated.</summary>
+		private void OpenSiteManager()
+		{
+			page.Content = new SiteManagerView(service, ShowBandMembersInlineAsync, ShowBandSettingsAsync);
+		}
+
+		// Ctrl/⌘+M asked for the Site manager page before logging in elevated: it opens once they have.
+		private bool openSiteManagerWhenElevated;
+
+		/// <summary>
+		/// Ctrl/⌘+M, for a member who may log in elevated (listed as a site manager): the Site manager
+		/// page; first the popup to log in as site manager when they haven't yet.
+		/// </summary>
+		private void OnSiteManagerKey(object? sender, Avalonia.Input.KeyEventArgs e)
+		{
+			var command = e.KeyModifiers == Avalonia.Input.KeyModifiers.Control || e.KeyModifiers == Avalonia.Input.KeyModifiers.Meta;
+			if (e.Key != Avalonia.Input.Key.M || !command || !App.AuthService.CanElevate)
+			{
+				return;
+			}
+
+			e.Handled = true;
+			if (App.AuthService.IsSiteManager)
+			{
+				OpenSiteManager();
+				return;
+			}
+
+			openSiteManagerWhenElevated = true;
+			var popup = ProfileView.ElevateFlyout(App.AuthService);
+			popup.Placement = Avalonia.Controls.PlacementMode.Center;
+			popup.Closed += (_, _) =>
+			{
+				if (!App.AuthService.IsSiteManager)
+				{
+					openSiteManagerWhenElevated = false;
+				}
+			};
+			popup.ShowAt(this);
 		}
 
 		// The drawer opened last (by its button, by Escape or otherwise): Escape opens the other one.
@@ -652,6 +730,9 @@ namespace Lyrious.UILib.Setlists
 			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsKey);
 			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsEscape);
 			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsPaste);
+			keyWindow?.RemoveHandler(KeyDownEvent, OnSiteManagerKey);
+			keyWindow?.RemoveHandler(KeyDownEvent, OnEditSongKey);
+			keyWindow?.RemoveHandler(KeyDownEvent, OnDrawerSearchKey);
 			keyWindow = null;
 			if (App.LanSharing is { } sharing)
 			{
@@ -1437,10 +1518,7 @@ namespace Lyrious.UILib.Setlists
 				siteManager.Click += (_, _) =>
 				{
 					OpenFromDrawer();
-					page.Content = new SiteManagerView(
-						service,
-						bandId => RunAsync(() => ShowGroupsAsync(bandId, singleBand: true)),
-						ShowBandSettingsAsync);
+					OpenSiteManager();
 				};
 				WithDrawerIcon(siteManager, AppIcons.SiteManager);
 				header.Children.Add(siteManager);
@@ -1649,6 +1727,7 @@ namespace Lyrious.UILib.Setlists
 
 			searchButton.Click += (_, _) => ShowSearch(true);
 			endSearchButton.Click += (_, _) => ShowSearch(false);
+			toggleDrawerSearch = () => ShowSearch(!setlistSearchBox.IsVisible);
 			setlistSearchBox.TextChanged += (_, _) => FilterDrawerSongs();
 			// Enter opens the first song found. Escape leaves the box as in every text box (see
 			// TextBoxFocus), its search undone; the next Escape ends the search (its ✕ goes before all).
@@ -2460,27 +2539,66 @@ namespace Lyrious.UILib.Setlists
 		{
 			var groups = await service.GetGroupsAsync();
 			var members = await service.GetGroupMembersAsync();
-			var view = new GroupsView(groups, members, currentGroup?.Id, selectedGroupId, singleBand && selectedGroupId != null);
+			var single = singleBand && selectedGroupId != null;
+			var view = GroupsPage(groups, members, selectedGroupId, single, embedded: false, id => ShowGroupsAsync(id, replace: true, singleBand: single && id != null), RunAsync);
+			ShowPage(view, replace);
+		}
+
+		/// <summary>
+		/// The band's members (their rows, roles and inviting) inside <paramref name="host"/>, e.g. a band
+		/// on the Site manager page; changes there show in it again (and errors as a notice).
+		/// </summary>
+		private async Task ShowBandMembersInlineAsync(Guid bandId, ContentControl host)
+		{
+			var groups = await service.GetGroupsAsync();
+			if (groups.All(group => group.Id != bandId))
+			{
+				host.Content = new TextBlock { Text = L.T("The band is gone."), Opacity = 0.7 };
+				return;
+			}
+
+			var members = await service.GetGroupMembersAsync();
+			async Task RunInline(Func<Task> action)
+			{
+				try
+				{
+					await action();
+				}
+				catch (Exception ex)
+				{
+					ShowNotice(L.T("Something went wrong. {0}", ex.Message));
+				}
+			}
+
+			host.Content = GroupsPage(groups, members, bandId, singleBand: true, embedded: true, _ => ShowBandMembersInlineAsync(bandId, host), RunInline);
+		}
+
+		/// <summary>The band page (or, <paramref name="embedded"/>, a band's members alone), its changes made through the service.</summary>
+		/// <param name="refresh">Shows it again after a change, with that band (none: the band was deleted).</param>
+		/// <param name="run">Runs a change (with its progress and errors shown as the place it's in wants).</param>
+		private GroupsView GroupsPage(IReadOnlyList<GroupSummary> groups, IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>> members, Guid? selectedGroupId, bool singleBand, bool embedded, Func<Guid?, Task> refresh, Func<Func<Task>, Task> run)
+		{
+			var view = new GroupsView(groups, members, currentGroup?.Id, selectedGroupId, singleBand, embedded);
 			// Choosing a band changes the current one but stays in the band list, now with that band highlighted.
-			view.GroupSelected += group => _ = RunAsync(async () =>
+			view.GroupSelected += group => _ = run(async () =>
 			{
 				await service.SelectGroupAsync(group.Id);
 				await OpenStartPageAsync(showPage: false);
-				await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
+				await refresh(group.Id);
 			});
-			view.MemberRoleChangeRequested += (group, member, role) => _ = RunAsync(async () =>
+			view.MemberRoleChangeRequested += (group, member, role) => _ = run(async () =>
 			{
 				await service.SetMemberRoleAsync(group.Id, member.MemberId, role);
-				await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
+				await refresh(group.Id);
 			});
-			view.MemberRenameRequested += (group, member, name) => _ = RunAsync(async () =>
+			view.MemberRenameRequested += (group, member, name) => _ = run(async () =>
 			{
 				await service.RenameMemberAsync(member.MemberId, name);
-				await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
+				await refresh(group.Id);
 				_ = ShowPresentMembersAsync();
 			});
 			// Renamed: the page (and, for the joined band, the menu) show the new name.
-			view.GroupRenameRequested += (group, name) => _ = RunAsync(async () =>
+			view.GroupRenameRequested += (group, name) => _ = run(async () =>
 			{
 				await service.RenameGroupAsync(group.Id, name);
 				if (group.Id == currentGroup?.Id)
@@ -2489,14 +2607,14 @@ namespace Lyrious.UILib.Setlists
 					groupName.Text = name;
 				}
 
-				await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
+				await refresh(group.Id);
 			});
-			view.MemberRemoveRequested += (group, member) => _ = RunAsync(async () =>
+			view.MemberRemoveRequested += (group, member) => _ = run(async () =>
 			{
 				await service.RemoveMemberAsync(group.Id, member.MemberId);
-				await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
+				await refresh(group.Id);
 			});
-			view.GroupDeleteRequested += group => _ = RunAsync(async () =>
+			view.GroupDeleteRequested += group => _ = run(async () =>
 			{
 				await service.DeleteGroupAsync(group.Id);
 				if (group.Id == currentGroup?.Id)
@@ -2505,7 +2623,7 @@ namespace Lyrious.UILib.Setlists
 					await OpenStartPageAsync(showPage: false);
 				}
 
-				await ShowGroupsAsync(null, replace: true);
+				await refresh(null);
 			});
 			view.InviteRequested = async (group, query) =>
 			{
@@ -2522,13 +2640,13 @@ namespace Lyrious.UILib.Setlists
 
 						await service.InviteByEmailAsync(group.Id, query);
 						ShowNotice(L.T("{0} has no account yet: sent them an email invitation", query));
-						await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
+						await refresh(group.Id);
 						return null;
 					}
 
 					await service.InviteMemberAsync(group.Id, found.Id);
 					ShowNotice(L.T("Invited {0} to {1}", found.Name, group.Name));
-					await ShowGroupsAsync(group.Id, replace: true, singleBand: singleBand);
+					await refresh(group.Id);
 					return null;
 				}
 				catch (Exception ex)
@@ -2537,13 +2655,13 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 			// A new band becomes the current one straight away.
-			view.GroupCreateRequested += name => _ = RunAsync(async () =>
+			view.GroupCreateRequested += name => _ = run(async () =>
 			{
 				var group = await service.CreateGroupAsync(name);
 				await service.SelectGroupAsync(group.Id);
 				await OpenStartPageAsync();
 			});
-			ShowPage(view, replace);
+			return view;
 		}
 
 		/// <param name="replace">The page shown now isn't kept to go back to (e.g. going back to this one).</param>
@@ -3501,10 +3619,20 @@ namespace Lyrious.UILib.Setlists
 			// band now, or only their own again), then back to the start page (the song's lyrics).
 			if (on || page.Content is SiteManagerView)
 			{
+				// (After Ctrl/⌘+M, to the Site manager page instead.)
+				var toSiteManager = on && openSiteManagerWhenElevated;
+				openSiteManagerWhenElevated = false;
 				_ = RunAsync(async () =>
 				{
 					await service.SyncNowAsync();
-					await OpenStartPageAsync();
+					if (toSiteManager)
+					{
+						OpenSiteManager();
+					}
+					else
+					{
+						await OpenStartPageAsync();
+					}
 				});
 				return;
 			}
