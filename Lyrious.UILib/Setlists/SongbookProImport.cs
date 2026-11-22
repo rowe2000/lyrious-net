@@ -20,7 +20,27 @@ namespace Lyrious.UILib.Setlists
 	public sealed record SongbookProBackup(IReadOnlyList<SongbookProSong> Songs, IReadOnlyList<SongbookProSet> Sets, IReadOnlyList<string> Skipped);
 
 	/// <summary>How an import went: what was added (of which <c>Replaced</c> songs overwrote ones of the same name), and what was left out.</summary>
-	public sealed record SongbookProImportResult(int Songs, int Setlists, IReadOnlyList<string> Skipped, int Replaced = 0, int ReplacedSetlists = 0);
+	public sealed record SongbookProImportResult(int Songs, int Setlists, IReadOnlyList<string> Skipped, int Replaced = 0, int ReplacedSetlists = 0, int Kept = 0);
+
+	/// <summary>
+	/// What an import does, each chosen on its own: what happens to songs and setlists of the same name,
+	/// whether the sets come along, and how the songs are converted to Lyrious' format.
+	/// </summary>
+	/// <param name="OverwriteSongs">A song of the same name (see <see cref="SongbookProImport.NameKey"/>) is overwritten; else it's kept as it is (and used in the setlists).</param>
+	/// <param name="ImportSetlists">The backup's sets become the band's setlists.</param>
+	/// <param name="ReplaceSetlists">A set of the same name as a setlist replaces that setlist's songs; else it's left out.</param>
+	/// <param name="CommentsAsHeadings">A comment line "{c: Verse 1}" becomes the heading "## Verse 1".</param>
+	/// <param name="HeadingChords">A heading that starts with a chord, "# [d] Intro", becomes "# [D]Intro".</param>
+	/// <param name="ArtistTags">Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist.</param>
+	/// <param name="CheckTags">A ✓ in a song's name or lyrics becomes the tag ✓.</param>
+	public sealed record SongbookProImportOptions(
+		bool OverwriteSongs = true,
+		bool ImportSetlists = true,
+		bool ReplaceSetlists = true,
+		bool CommentsAsHeadings = true,
+		bool HeadingChords = true,
+		bool ArtistTags = true,
+		bool CheckTags = true);
 
 	/// <summary>
 	/// Reads SongbookPro backups (a "SongbookPro Backup.zip", or the same as a .sbpbackup) and imports
@@ -30,8 +50,9 @@ namespace Lyrious.UILib.Setlists
 	/// "sets". A song has a name, author, ChordPro content, key (a number: 0 is A, counting up in
 	/// semitones; 12 and up are the minor keys), capo, tempo, time signature and a link. PDF songs
 	/// (type 2: their content is a PDF file) have no text, so they're left out, and so are deleted
-	/// songs and sets. A song with exactly the same name as one in the songbook (case and spaces count) overwrites it,
-	/// and a set with exactly the same name as one of the band's setlists replaces that setlist's songs.
+	/// songs and sets. A song with the same name as one in the songbook (only its letters count, see
+	/// <see cref="NameKey"/>) overwrites it, and a set with exactly the same name as one of the band's
+	/// setlists replaces that setlist's songs (each when chosen, see <see cref="SongbookProImportOptions"/>).
 	/// </para>
 	/// </summary>
 	public static partial class SongbookProImport
@@ -42,9 +63,10 @@ namespace Lyrious.UILib.Setlists
 		private static readonly string[] KeyNames = ["A", "Bb", "B", "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab"];
 
 		/// <summary>Reads the backup; throws <see cref="InvalidOperationException"/> when it isn't a SongbookPro backup.</summary>
-		/// <param name="convert">Converts the lyrics to Lyrious' format (see <see cref="Lyrics"/>).</param>
-		public static SongbookProBackup Read(Stream zip, bool convert = false)
+		/// <param name="options">How the songs are converted to Lyrious' format (see <see cref="Lyrics"/>); none: kept as they are.</param>
+		public static SongbookProBackup Read(Stream zip, SongbookProImportOptions? options = null)
 		{
+			options ??= new SongbookProImportOptions(CommentsAsHeadings: false, HeadingChords: false, ArtistTags: false, CheckTags: false);
 			string data;
 			try
 			{
@@ -87,11 +109,11 @@ namespace Lyrious.UILib.Setlists
 					continue;
 				}
 
-				var lyrics = Lyrics(song, convert);
-				var tags = convert ? Tags(song) : "";
-				// Converted, a ✓ in the name or the lyrics becomes the tag "✓": it's taken out of both
+				var lyrics = Lyrics(song, options);
+				var tags = options.ArtistTags ? Tags(song) : "";
+				// Chosen, a ✓ in the name or the lyrics becomes the tag "✓": it's taken out of both
 				// (with the space before it), so "Go Your Own Way ✓" is "Go Your Own Way", tagged ✓.
-				if (convert && (name.Contains(Check) || lyrics.Contains(Check)))
+				if (options.CheckTags && (name.Contains(Check) || lyrics.Contains(Check)))
 				{
 					name = WithoutCheck(name).Trim();
 					lyrics = WithoutCheck(lyrics);
@@ -117,7 +139,7 @@ namespace Lyrious.UILib.Setlists
 					link.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? link : "",
 					TimeSpan.FromSeconds(Math.Max(0, Int(song, "Duration"))),
 					tags,
-					Artist(song, convert)));
+					Artist(song, options.ArtistTags)));
 			}
 
 			var sets = new List<SongbookProSet>();
@@ -163,11 +185,13 @@ namespace Lyrious.UILib.Setlists
 		/// songs that were imported, in their order). Changes go through the service like any other,
 		/// so this works offline too.
 		/// </summary>
-		public static async Task<SongbookProImportResult> ImportAsync(ISetlistService service, Guid groupId, SongbookProBackup backup)
+		/// <param name="options">What happens to songs and setlists of the same name, and whether the sets come along; none: all of it.</param>
+		public static async Task<SongbookProImportResult> ImportAsync(ISetlistService service, Guid groupId, SongbookProBackup backup, SongbookProImportOptions? options = null)
 		{
+			options ??= new SongbookProImportOptions();
 			var imported = new Dictionary<int, Guid>();
-			// The songbook's songs by name, exactly as written (case and spaces count) but for a ✓ in it:
-			// a song of the same name is overwritten rather than added again.
+			// The songbook's songs by name, only its letters counting (see NameKey): a song of the same
+			// name is overwritten (or kept) rather than added again.
 			var byName = new Dictionary<string, SongDetails>(StringComparer.Ordinal);
 			foreach (var existing in await service.GetSongbookSongsAsync(groupId))
 			{
@@ -175,16 +199,23 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var replaced = 0;
+			var kept = 0;
 			foreach (var song in backup.Songs)
 			{
 				SongDetails stored;
-				if (byName.TryGetValue(NameKey(song.Name), out var existing))
+				if (byName.TryGetValue(NameKey(song.Name), out var existing) && !options.OverwriteSongs)
+				{
+					// Kept as it is, but in the setlists where the backup has the song.
+					stored = existing;
+					kept++;
+				}
+				else if (existing != null)
 				{
 					// The backup's lyrics, key (as both the playing and the original key), tempo and beat; the song keeps its link when the backup
 					// has none, and its tags with the backup's added.
 					stored = await service.UpdateSongAsync(existing with
 					{
-						// The backup's name: the same but for a ✓ (which a converted import leaves out).
+						// The backup's name: the same letters, but maybe other spaces, digits or punctuation (or no ✓).
 						Name = song.Name,
 						Lyrics = song.Lyrics,
 						PlayingKey = song.Key,
@@ -218,7 +249,7 @@ namespace Lyrious.UILib.Setlists
 			var setlists = 0;
 			var replacedSetlists = 0;
 			var skipped = backup.Skipped.ToList();
-			foreach (var set in backup.Sets)
+			foreach (var set in options.ImportSetlists ? backup.Sets : [])
 			{
 				var songIds = set.SongIds.Where(imported.ContainsKey).Select(id => imported[id]).ToList();
 				if (songIds.Count == 0)
@@ -228,7 +259,13 @@ namespace Lyrious.UILib.Setlists
 					continue;
 				}
 
-				if (setlistsByName.TryGetValue(set.Name, out var setlist))
+				if (setlistsByName.TryGetValue(set.Name, out var setlist) && !options.ReplaceSetlists)
+				{
+					skipped.Add($"the set {set.Name} (a setlist of that name is kept)");
+					continue;
+				}
+
+				if (setlist != null)
 				{
 					// Its songs become the set's, in the set's order (it stays the same setlist, so it
 					// stays the band's current one if it was).
@@ -245,7 +282,7 @@ namespace Lyrious.UILib.Setlists
 				setlists++;
 			}
 
-			return new SongbookProImportResult(imported.Count, setlists, skipped, replaced, replacedSetlists);
+			return new SongbookProImportResult(imported.Count - kept, setlists, skipped, replaced, replacedSetlists, kept);
 		}
 
 		/// <summary>
@@ -255,7 +292,7 @@ namespace Lyrious.UILib.Setlists
 		/// heading that starts with a chord has it capitalised and right on its text ("# [d] Intro" is "# [D]Intro").
 		/// The song's name and key aren't put in the lyrics: the band's lyrics header shows them (see <see cref="LyricsHeader"/>).
 		/// </summary>
-		private static string Lyrics(JsonObject song, bool convert)
+		private static string Lyrics(JsonObject song, SongbookProImportOptions options)
 		{
 			var lines = new List<string>();
 			if (Int(song, "Capo") is > 0 and var capo)
@@ -264,14 +301,14 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var content = Text(song, "content").Replace("\r\n", "\n").Trim();
-			if (convert)
+			if (options.CommentsAsHeadings)
 			{
 				content = CommentLine().Replace(content, match => $"## {match.Groups[1].Value.Trim()}");
 			}
 
 			lines.Add(content);
 			var lyrics = string.Join('\n', lines).Trim();
-			if (convert)
+			if (options.HeadingChords)
 			{
 				// A heading that starts with a chord, "# [d] Text", gets the chord capitalised and
 				// right on the text, "# [D]Text", so it's played on the heading's first word.
@@ -293,10 +330,15 @@ namespace Lyrious.UILib.Setlists
 		private const string Check = "✓";
 
 		/// <summary>
-		/// A song's name as songs of the same name are found by: exactly as written, but without its ✓
-		/// (and the space before it), so "Go Your Own Way ✓" and "Go Your Own Way" are the same song.
+		/// A song's name as songs of the same name are found by: only its letters, in lower case, so
+		/// spaces, digits, punctuation and marks such as ✓ don't count ("Go Your Own Way ✓", "go your
+		/// own way!" and "Go-Your-Own-Way" are the same song). A name without letters is matched as written.
 		/// </summary>
-		private static string NameKey(string name) => WithoutCheck(name).Trim();
+		internal static string NameKey(string name)
+		{
+			var letters = new string(name.Where(char.IsLetter).Select(char.ToLowerInvariant).ToArray());
+			return letters.Length > 0 ? letters : name.Trim();
+		}
 
 		/// <summary>The text without its ✓ marks, each with the space or tab before it (if any).</summary>
 		private static string WithoutCheck(string text) => CheckMark().Replace(text, "");
@@ -318,14 +360,14 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// The song's artist: its author in the backup. Converted, Maria, Tobbe and Robert are tags
+		/// The song's artist: its author in the backup. With artist tags, Maria, Tobbe and Robert are tags
 		/// instead (see <see cref="Tags"/>), so they're left out: "Maria" gives no artist, and
 		/// "Maria &amp; Elvis Presley" gives "Elvis Presley".
 		/// </summary>
-		private static string Artist(JsonObject song, bool convert)
+		private static string Artist(JsonObject song, bool artistTags)
 		{
 			var author = Text(song, "author").Trim();
-			if (!convert)
+			if (!artistTags)
 			{
 				return author;
 			}

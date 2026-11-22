@@ -123,6 +123,9 @@ namespace Lyrious.UILib.Setlists
 		// the next) are a little dimmer. The lyrics' lines (a chorus's lines one by one), and where each
 		// part starts: (seconds, first line), in time order.
 		private const double DimmedOpacity = 0.7;
+
+		/// <summary>The toolbar's height (its 40-high buttons) and a little more: the room above the lyrics.</summary>
+		private const double ToolbarRoom = 44;
 		private List<Control> lines = [];
 		private List<double> lineOpacities = [];
 		private List<(double Seconds, int Line)> parts = [];
@@ -1762,11 +1765,15 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			// Centred too (outside the zoom): the zoom lays its content out from the left, at the content's own size.
+			// With lyrics the song's title is hidden and they start at the top of the page, under the
+			// toolbar: room above them (outside the zoom, so the same at any zoom) puts the first line
+			// just below it when scrolled to the top; scrolled down, the lyrics pass under it.
 			zoomHost = new LayoutTransformControl
 			{
 				LayoutTransform = new ScaleTransform(zoom, zoom),
 				Child = content,
 				HorizontalAlignment = grid ? HorizontalAlignment.Stretch : HorizontalAlignment.Center,
+				Margin = new Thickness(0, hasLyrics ? ToolbarRoom : 0, 0, 0),
 			};
 			var scroller = new ScrollViewer
 			{

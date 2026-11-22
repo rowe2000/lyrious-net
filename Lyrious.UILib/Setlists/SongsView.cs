@@ -96,7 +96,7 @@ namespace Lyrious.UILib.Setlists
 		/// Picks a SongbookPro backup and imports it into the band (converted to Lyrious' format or not),
 		/// returning what happened (null: nothing picked); offered under the page's "more" button. None: not offered.
 		/// </summary>
-		public Func<Control, bool, Task<string?>>? ImportSongbookPro { get; set; }
+		public Func<Control, SongbookProImportOptions, Task<string?>>? ImportSongbookPro { get; set; }
 
 		/// <summary>Deletes every song in the songbook, returning what happened; offered under the "more" button. None: not offered.</summary>
 		public Func<Task<string>>? ClearSongbook { get; set; }

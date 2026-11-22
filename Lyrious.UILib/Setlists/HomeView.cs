@@ -1729,14 +1729,19 @@ namespace Lyrious.UILib.Setlists
 			endSearchButton.Click += (_, _) => ShowSearch(false);
 			toggleDrawerSearch = () => ShowSearch(!setlistSearchBox.IsVisible);
 			setlistSearchBox.TextChanged += (_, _) => FilterDrawerSongs();
-			// Enter opens the first song found. Escape leaves the box as in every text box (see
-			// TextBoxFocus), its search undone; the next Escape ends the search (its ✕ goes before all).
+			// Enter opens the first song found; Escape ends the search at once (the box hides, every song
+			// listed again), rather than first only leaving the box as other text boxes do (see TextBoxFocus).
 			setlistSearchBox.KeyDown += (_, e) =>
 			{
 				if (e.Key == Avalonia.Input.Key.Enter && FirstDrawerSongShown() is { } row)
 				{
 					e.Handled = true;
 					row.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+				}
+				else if (e.Key == Avalonia.Input.Key.Escape && e.KeyModifiers == Avalonia.Input.KeyModifiers.None)
+				{
+					e.Handled = true;
+					ShowSearch(false);
 				}
 			};
 			drawerStayTimer.Tick += (_, _) => SlideSetlistDrawerAway();
@@ -2878,9 +2883,9 @@ namespace Lyrious.UILib.Setlists
 			var view = new SongsView(group, songs, currentSongId, await SongbookChoicesAsync(), playing);
 			// Importing a SongbookPro backup into it, and clearing it: then the songbook again, updated,
 			// with what happened as a notice (the popup closes with the old page).
-			view.ImportSongbookPro = async (anchor, convert) =>
+			view.ImportSongbookPro = async (anchor, options) =>
 			{
-				var done = await ImportSongbookProAsync(anchor, group, convert);
+				var done = await ImportSongbookProAsync(anchor, group, options);
 				if (done != null)
 				{
 					ShowNotice(done);
@@ -3526,7 +3531,7 @@ namespace Lyrious.UILib.Setlists
 		/// Picks a SongbookPro backup and imports its songs and sets into the band; returns what was
 		/// imported and what was left out (null when no file was picked).
 		/// </summary>
-		private async Task<string?> ImportSongbookProAsync(Control anchor, GroupSummary group, bool convert)
+		private async Task<string?> ImportSongbookProAsync(Control anchor, GroupSummary group, SongbookProImportOptions options)
 		{
 			if (TopLevel.GetTopLevel(anchor)?.StorageProvider is not { CanOpen: true } storage)
 			{
@@ -3561,8 +3566,8 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			data.Position = 0;
-			var backup = SongbookProImport.Read(data, convert);
-			var result = await SongbookProImport.ImportAsync(service, group.Id, backup);
+			var backup = SongbookProImport.Read(data, options);
+			var result = await SongbookProImport.ImportAsync(service, group.Id, backup, options);
 
 			// The drawer's setlists and songs may include the new ones.
 			RefreshSetlistDrawer(reload: true);
@@ -3571,6 +3576,11 @@ namespace Lyrious.UILib.Setlists
 			if (result.Replaced > 0)
 			{
 				text += L.T(" {0} of the songs overwrote one of the same name.", result.Replaced);
+			}
+
+			if (result.Kept > 0)
+			{
+				text += L.Plural(result.Kept, " {0} song of the same name was kept as it was.", " {0} songs of the same name were kept as they were.");
 			}
 
 			if (result.ReplacedSetlists > 0)

@@ -223,23 +223,73 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// "Import SongbookPro backup…": a button that first asks whether to convert the songs to
-		/// Lyrious' format (Convert, Keep as is, or Cancel), then picks the backup and imports it; what
-		/// happened (or why it couldn't) shows below it.
+		/// "Import SongbookPro backup…": a checklist of what the import does (all checked at first:
+		/// overwriting songs of the same name, the sets as setlists and replacing those of the same name,
+		/// and each conversion to Lyrious' format), then a button that picks the backup and imports it
+		/// so; what happened (or why it couldn't) shows below it.
 		/// </summary>
-		internal static Control ImportSetting(Func<Control, bool, Task<string?>> import)
+		internal static Control ImportSetting(Func<Control, SongbookProImportOptions, Task<string?>> import)
 		{
-			var button = new Button { Content = L.T("Import SongbookPro backup…") };
-			var status = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Opacity = 0.85 };
-
-			async Task ImportAsync(bool convert)
+			CheckBox Task(string text, string? tip = null)
 			{
+				var box = new CheckBox { Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap }, IsChecked = true };
+				if (tip != null)
+				{
+					ToolTip.SetTip(box, tip);
+				}
+
+				return box;
+			}
+
+			var overwriteSongs = Task(L.T("Overwrite songs with the same name"), L.T("Names are compared by their letters only: case, spaces, digits and punctuation don't count. Unchecked, those songs are kept as they are."));
+			var importSetlists = Task(L.T("Import the sets as setlists"));
+			var replaceSetlists = Task(L.T("Replace the songs of setlists with the same name"), L.T("Unchecked, a set with the name of an existing setlist is left out."));
+			var commentsAsHeadings = Task(L.T("Comments such as {c: Verse 1} become headings (## Verse 1)"));
+			var headingChords = Task(L.T("A chord first in a heading is capitalised and put on its text (# [d] Intro becomes # [D]Intro)"));
+			var artistTags = Task(L.T("Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist"));
+			var checkTags = Task(L.T("A ✓ in a name or the lyrics becomes the tag ✓"));
+			// Replacing setlists only matters when the sets come along.
+			replaceSetlists.Margin = new Thickness(24, 0, 0, 0);
+			importSetlists.IsCheckedChanged += (_, _) => replaceSetlists.IsEnabled = importSetlists.IsChecked == true;
+
+			static TextBlock Heading(string text) => new() { Text = text, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 6, 0, 0) };
+			var checklist = new StackPanel
+			{
+				Spacing = 2,
+				Children =
+				{
+					Heading(L.T("Songs")),
+					new TextBlock { Text = L.T("New songs are added to the songbook. PDF songs are left out."), TextWrapping = TextWrapping.Wrap, Opacity = 0.7, FontSize = 13 },
+					overwriteSongs,
+					Heading(L.T("Setlists")),
+					importSetlists,
+					replaceSetlists,
+					Heading(L.T("Convert to Lyrious format")),
+					commentsAsHeadings,
+					headingChords,
+					artistTags,
+					checkTags,
+				},
+			};
+
+			var button = new Button { Content = L.T("Import SongbookPro backup…"), Classes = { "accent" } };
+			var status = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Opacity = 0.85 };
+			button.Click += async (_, _) =>
+			{
+				var options = new SongbookProImportOptions(
+					OverwriteSongs: overwriteSongs.IsChecked == true,
+					ImportSetlists: importSetlists.IsChecked == true,
+					ReplaceSetlists: replaceSetlists.IsChecked == true,
+					CommentsAsHeadings: commentsAsHeadings.IsChecked == true,
+					HeadingChords: headingChords.IsChecked == true,
+					ArtistTags: artistTags.IsChecked == true,
+					CheckTags: checkTags.IsChecked == true);
 				button.IsEnabled = false;
 				status.IsVisible = true;
 				status.Text = L.T("Importing…");
 				try
 				{
-					var result = await import(button, convert);
+					var result = await import(button, options);
 					status.Text = result ?? "";
 					status.IsVisible = result != null;
 				}
@@ -251,42 +301,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					button.IsEnabled = true;
 				}
-			}
-
-			var convertButton = new Button { Content = L.T("Convert"), Classes = { "accent" } };
-			var keepButton = new Button { Content = L.T("Keep as is") };
-			var cancelButton = new Button { Content = L.T("Cancel") };
-			var question = new Flyout
-			{
-				Content = new StackPanel
-				{
-					Spacing = 12,
-					MaxWidth = 340,
-					Children =
-					{
-						new TextBlock { Text = L.T("Convert the songs to Lyrious format?"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
-						new TextBlock
-						{
-							Text = L.T("Comments such as {c: Verse 1} then become headings (\"## Verse 1\"), and a heading like \"# [d] Intro\" becomes \"# [D]Intro\". Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist, and a ✓ in a name or the lyrics becomes the tag ✓."),
-							TextWrapping = TextWrapping.Wrap,
-							Opacity = 0.8,
-						},
-						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { convertButton, keepButton, cancelButton } },
-					},
-				},
 			};
-			convertButton.Click += (_, _) =>
-			{
-				question.Hide();
-				_ = ImportAsync(convert: true);
-			};
-			keepButton.Click += (_, _) =>
-			{
-				question.Hide();
-				_ = ImportAsync(convert: false);
-			};
-			cancelButton.Click += (_, _) => question.Hide();
-			button.Flyout = question;
 
 			return new StackPanel
 			{
@@ -295,10 +310,11 @@ namespace Lyrious.UILib.Setlists
 				{
 					new TextBlock
 					{
-						Text = L.T("Adds the songs and sets of a SongbookPro backup (\"SongbookPro Backup.zip\" or .sbpbackup) to your band's songbook and setlists. PDF songs are left out."),
+						Text = L.T("Adds the songs and sets of a SongbookPro backup (\"SongbookPro Backup.zip\" or .sbpbackup) to your band's songbook and setlists, doing what's checked:"),
 						TextWrapping = TextWrapping.Wrap,
 						Opacity = 0.7,
 					},
+					checklist,
 					button,
 					status,
 				},
