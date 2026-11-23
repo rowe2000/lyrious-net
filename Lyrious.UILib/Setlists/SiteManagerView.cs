@@ -379,7 +379,8 @@ namespace Lyrious.UILib.Setlists
 					}
 
 					ShowDisabled();
-					Show(message, on ? L.T("{0} is disabled.", member.Name) : L.T("{0} is enabled again.", member.Name), error: false);
+					// Disabled in red (as a warning, though it went well); enabled again in green.
+					Show(message, on ? L.T("{0} is disabled.", member.Name) : L.T("{0} is enabled again.", member.Name), error: on);
 				}
 				catch (Exception ex)
 				{

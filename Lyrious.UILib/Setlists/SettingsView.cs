@@ -626,7 +626,6 @@ namespace Lyrious.UILib.Setlists
 
 			Show();
 			var row = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 16, Margin = new Thickness(0, 0, 0, 12) };
-			row.Children.Add(new TextBlock { Text = L.T("Show:"), Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center });
 			foreach (var (_, box) in boxes)
 			{
 				row.Children.Add(box);

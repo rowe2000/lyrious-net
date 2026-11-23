@@ -3226,7 +3226,13 @@ namespace Lyrious.UILib.Setlists
 			var artistSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 12, 5) };
 			void ShowArtistText()
 			{
+				// Taken without spaces at the ends (also when left by clicking elsewhere).
 				var text = artist.Text?.Trim() ?? "";
+				if (artist.Text != text)
+				{
+					artist.Text = text;
+				}
+
 				var shown = new TextBlock
 				{
 					Text = text.Length == 0 ? L.T("Add artist") : L.T("by {0}", text),
@@ -3244,8 +3250,14 @@ namespace Lyrious.UILib.Setlists
 				artistSlot.Content = shown;
 			}
 
+			// The artist as it was when its box opened (for its ✓, shown once it's changed).
+			var artistWhenOpened = artist.Text ?? "";
+			// Hides the ✓ as the box opens (nothing's changed yet); set once the ✓ is made, below.
+			Action hideArtistOk = () => { };
 			void ShowArtistBox()
 			{
+				artistWhenOpened = artist.Text ?? "";
+				hideArtistOk();
 				artistSlot.Content = artist;
 				Dispatcher.UIThread.Post(() =>
 				{
@@ -3255,6 +3267,13 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			artist.LostFocus += (_, _) => ShowArtistText();
+			// A ✓ in the box once the artist is changed: it takes it, as Enter does (the lyrics get the
+			// focus). It doesn't take the focus itself, so pressing it doesn't first leave the box.
+			var artistOk = PageLayout.OkButton(L.T("Take the artist"));
+			artistOk.Focusable = false;
+			PageLayout.OkInBox(artist, artistOk, () => (artist.Text ?? "") != artistWhenOpened);
+			artistOk.Click += (_, _) => editor.Focus();
+			hideArtistOk = () => artistOk.IsVisible = false;
 			artist.KeyDown += (_, e) =>
 			{
 				if (e.Key == Avalonia.Input.Key.Enter)
@@ -3265,7 +3284,8 @@ namespace Lyrious.UILib.Setlists
 			};
 			ShowArtistText();
 
-			var tagsSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(12, 0, 0, 3) };
+			// 12px after it, as after the name and the artist (the details come next).
+			var tagsSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 12, 3) };
 
 			// Below the box, the songbook's tags that the song doesn't have yet, narrowed to the ones
 			// containing what's typed after the last space; clicking one puts it in the box.
@@ -3368,6 +3388,16 @@ namespace Lyrious.UILib.Setlists
 			void ShowTagsText()
 			{
 				usedTagsPopup.IsOpen = false;
+				// Taken tidied: each tag without spaces round it, once, one space between them, and written
+				// as the songbook already has it ("rock" typed for its "Rock" is "Rock").
+				var known = usedTags ?? [];
+				var tidied = SongTags.Join(SongTags.Parse(tagsBox.Text)
+					.Select(tag => known.FirstOrDefault(existing => existing.Equals(tag, StringComparison.CurrentCultureIgnoreCase)) ?? tag));
+				if ((tagsBox.Text ?? "") != tidied)
+				{
+					tagsBox.Text = tidied;
+				}
+
 				var tags = SongTags.Sorted(tagsBox.Text); // As they'll be saved.
 				Control shown = tags.Count == 0
 					? new TextBlock { Text = L.T("Add tags"), Opacity = 0.7, FontStyle = FontStyle.Italic, Margin = new Thickness(0, 0, 0, 2) }
@@ -3382,8 +3412,14 @@ namespace Lyrious.UILib.Setlists
 				tagsSlot.Content = holder;
 			}
 
+			// The tags as they were when the box opened (for its ✓, shown once they're changed).
+			var tagsWhenOpened = tagsBox.Text ?? "";
+			// Hides the ✓ as the box opens (nothing's changed yet); set once the ✓ is made, below.
+			Action hideTagsOk = () => { };
 			void ShowTagsBox()
 			{
+				tagsWhenOpened = tagsBox.Text ?? "";
+				hideTagsOk();
 				tagsSlot.Content = tagsEditor;
 				Dispatcher.UIThread.Post(() =>
 				{
@@ -3400,6 +3436,12 @@ namespace Lyrious.UILib.Setlists
 					ShowTagsText();
 				}
 			});
+			// A ✓ in the box once the tags are changed: it takes them, as Enter does.
+			var tagsOk = PageLayout.OkButton(L.T("Take the tags"));
+			tagsOk.Focusable = false;
+			PageLayout.OkInBox(tagsBox, tagsOk, () => (tagsBox.Text ?? "") != tagsWhenOpened);
+			tagsOk.Click += (_, _) => editor.Focus();
+			hideTagsOk = () => tagsOk.IsVisible = false;
 			tagsBox.KeyDown += (_, e) =>
 			{
 				if (e.Key == Avalonia.Input.Key.Enter)
@@ -3513,8 +3555,21 @@ namespace Lyrious.UILib.Setlists
 				try
 				{
 					var before = song.MediaLink;
+					var keyBefore = song.PlayingKey;
 					song = await saveSong(edited);
 					UploadNewSound(before, song);
+
+					// The playing key changed while the member's capo or transpose is on: their transpose
+					// moves the other way, so the key they play (and their chords) stay as they were.
+					if (mySetting is { Transpose: not 0, TransposeOff: false } && SaveMySetting is { } saveTranspose
+					    && Transpose.Semitones(keyBefore, song.PlayingKey) is var moved and not 0)
+					{
+						var kept = mySetting.Transpose - moved;
+						kept = kept > MySongSetting.MaxTranspose ? kept - 12 : kept < MySongSetting.MinTranspose ? kept + 12 : kept;
+						var changed = mySetting with { Transpose = kept };
+						await saveTranspose(changed);
+						mySetting = changed;
+					}
 
 					// Their own lyrics: stored if changed (a copy of the band's left as it was isn't a version of their own).
 					if (myText != null && SaveMySetting is { } saveMine)

@@ -29,7 +29,8 @@ namespace Lyrious.UILib.Setlists
 	{
 		// ↕: a line with an arrow head at each end.
 		private const string GripIcon = "M12,4 V20 M8,8 L12,4 L16,8 M8,16 L12,20 L16,16";
-		private const double Spacing = 4;
+		// As in the setlist (see SongsView.SongListSpacing).
+		private const double Spacing = SongsView.SongListSpacing;
 		// How near the top or bottom of the view a dragged song makes the list scroll, and how far per tick.
 		private const double ScrollEdge = 48;
 		private const double ScrollStep = 14;
@@ -163,13 +164,18 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		/// <summary>The finger (or mouse button) still held down after a longclick, and where it is in the window.</summary>
+		public sealed record HeldPointer(IPointer Pointer, Point InWindow);
+
 		/// <summary>
 		/// Calls <paramref name="longClick"/> when the control is pressed and held for a second (mouse or
-		/// touch; moving more than 5 px first doesn't count, that's scrolling), or right-clicked. On a list
-		/// row's content it's the row's button that's listened to (once it's in the list): the button
-		/// takes the whole row's presses, also where the content has nothing to hit, and every release.
+		/// touch; moving more than a little first doesn't count, that's scrolling), with the pointer still
+		/// held (so a drag can go on from there, see <see cref="ContinueDrag"/>), or right-clicked (no
+		/// pointer held). On a list row's content it's the row's button that's listened to (once it's in
+		/// the list): the button takes the whole row's presses, also where the content has nothing to
+		/// hit, and every release.
 		/// </summary>
-		public static void OnLongClick(Control control, Action longClick)
+		public static void OnLongClick(Control control, Action<HeldPointer?> longClick)
 		{
 			var hooked = false;
 			control.AttachedToVisualTree += (_, _) =>
@@ -182,14 +188,18 @@ namespace Lyrious.UILib.Setlists
 			};
 		}
 
-		private static void ListenForLongClick(Control control, Action longClick)
+		private static void ListenForLongClick(Control control, Action<HeldPointer?> longClick)
 		{
 			var timer = new DispatcherTimer { Interval = LongClickToggleButton.Duration };
 			Point start = default;
+			IPointer? pointer = null;
+			Point inWindow = default;
+			// A finger wobbles a little while held still: more room for it than for a mouse.
+			double slack = 5;
 			timer.Tick += (_, _) =>
 			{
 				timer.Stop();
-				longClick();
+				longClick(pointer == null ? null : new HeldPointer(pointer, inWindow));
 			};
 			control.AddHandler(PointerPressedEvent, (_, e) =>
 			{
@@ -197,11 +207,14 @@ namespace Lyrious.UILib.Setlists
 				if (point.Properties.IsRightButtonPressed)
 				{
 					e.Handled = true;
-					longClick();
+					longClick(null);
 				}
 				else if (point.Properties.IsLeftButtonPressed)
 				{
 					start = point.Position;
+					pointer = e.Pointer;
+					slack = e.Pointer.Type == PointerType.Touch ? 10 : 5;
+					inWindow = TopLevel.GetTopLevel(control) is { } window ? e.GetPosition(window) : default;
 					timer.Start();
 				}
 			}, RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -210,15 +223,44 @@ namespace Lyrious.UILib.Setlists
 				if (timer.IsEnabled)
 				{
 					var at = e.GetPosition(control);
-					if (Math.Abs(at.X - start.X) > 5 || Math.Abs(at.Y - start.Y) > 5)
+					if (Math.Abs(at.X - start.X) > slack || Math.Abs(at.Y - start.Y) > slack)
 					{
 						timer.Stop();
+					}
+					else if (TopLevel.GetTopLevel(control) is { } window)
+					{
+						inWindow = e.GetPosition(window);
 					}
 				}
 			}, RoutingStrategies.Tunnel, handledEventsToo: true);
 			control.AddHandler(PointerReleasedEvent, (_, _) => timer.Stop(), RoutingStrategies.Tunnel, handledEventsToo: true);
 			control.AddHandler(PointerCaptureLostEvent, (_, _) => timer.Stop(), RoutingStrategies.Bubble, handledEventsToo: true);
 			control.DetachedFromVisualTree += (_, _) => timer.Stop();
+		}
+
+		/// <summary>
+		/// Goes on with the longclick that opened move mode as a drag of that song, while the finger (or
+		/// mouse button) is still held: lift it to drop the song. Called once the list is shown in its
+		/// place (it's laid out here). Nothing when the song can't be moved (others are checked).
+		/// </summary>
+		public void ContinueDrag(HeldPointer held, Guid entryId)
+		{
+			UpdateLayout();
+			if (TopLevel.GetTopLevel(this) is not { } window
+			    || rows.Children.FirstOrDefault(row => row.Tag is Guid id && id == entryId) is not Control card
+			    || order.FirstOrDefault(entry => entry.Id == entryId) is not { } entry
+			    || (order.Any(other => SongsView.IsEntryChecked(other.Id)) && !SongsView.IsEntryChecked(entry.Id))
+			    || window.TranslatePoint(held.InWindow, rows) is not { } inRows)
+			{
+				return;
+			}
+
+			held.Pointer.Capture(card);
+			StartDrag(card, inRows.Y);
+			if (scrollView != null && window.TranslatePoint(held.InWindow, scrollView) is { } inView)
+			{
+				UpdatePointer(inView);
+			}
 		}
 
 		private void ShowRows()

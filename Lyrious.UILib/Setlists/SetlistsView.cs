@@ -36,9 +36,6 @@ namespace Lyrious.UILib.Setlists
 		// A play triangle, for Play (making the setlist the current one).
 		private const string PlayIcon = "M7,4.5 L19,12 L7,19.5 Z";
 
-		// Marks the setlist's "Uncheck all songs" tool among its tools.
-		private const string UncheckAllTag = "uncheck-all";
-
 		// What a selected song's toolbar does (as in the songbook); none, no toolbar.
 		private readonly SongsView.SongToolActions? songTools;
 
@@ -141,8 +138,8 @@ namespace Lyrious.UILib.Setlists
 		private Control Details(SetlistSummary setlist)
 		{
 			var isCurrent = setlist.Id == CurrentSetlistId;
-			// "47 songs", and "· 2 checked" while any are (once the songs are read, see LoadSongsAsync).
-			var songCount = new TextBlock { Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
+			// How to move the songs, while they're moved (the song count is beside "Check all", see LoadSongsAsync).
+			var songCount = new TextBlock { Opacity = 0.7, TextWrapping = TextWrapping.Wrap, IsVisible = false };
 
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
 			if (!isCurrent)
@@ -248,7 +245,7 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			status.Text = SongsView.CountText(entries.Count, SongsView.CheckedEntries(entries.Select(entry => entry.Id)));
+			status.IsVisible = false;
 			if (entries.Count == 0)
 			{
 				songs.Content = new TextBlock { Text = L.T("There are no songs in this setlist yet. Add some with +."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
@@ -259,7 +256,7 @@ namespace Lyrious.UILib.Setlists
 			// shows its toolbar under it, a double click opens it, a longclick moves them (see
 			// SetlistMoveList). The band's current song is highlighted in the current setlist.
 			var current = isCurrent ? currentEntryId : null;
-			void StartMoving(SetlistEntry pressed)
+			void StartMoving(SetlistEntry pressed, SetlistMoveList.HeldPointer? held)
 			{
 				// Every song is moved: the search ends.
 				search.Show(false);
@@ -288,33 +285,35 @@ namespace Lyrious.UILib.Setlists
 				actions.Children.Add(done);
 				// How to move them, in place of "Current setlist · 45 songs" (put back when the songs show again).
 				status.Text = moving.Hint;
+				status.IsVisible = true;
 				songs.Content = moving;
+				// Still held (a finger or the mouse): the song goes on being dragged from there.
+				if (held != null)
+				{
+					moving.ContinueDrag(held, pressed.Id);
+				}
 			}
 
 			var boxes = new List<CheckBox>();
 			var ids = entries.Select(entry => entry.Id).ToArray();
 			SelectableList<SetlistEntry>? list = null;
 
-			// "Uncheck all songs" after the search among the setlist's tools, while songs are checked (one, also when the songs are shown again).
-			foreach (var old in actions.Children.Where(tool => UncheckAllTag.Equals(tool.Tag)).ToList())
-			{
-				actions.Children.Remove(old);
-			}
-
-			Button? uncheckAll = null;
-			uncheckAll = SongsView.UncheckAllButton(() => boxes, Dim);
-			uncheckAll.Tag = UncheckAllTag;
-			actions.Children.Insert(actions.Children.IndexOf(search.Tool) + 1, uncheckAll);
+			// The check tool just above the songs, with "47 songs · 2 checked" at the right of its line
+			// (made anew with the songs; moving songs hides them with them).
+			var count = new TextBlock { FontSize = 13, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center };
+			SongsView.CheckAllTool? checkAll = null;
+			checkAll = new SongsView.CheckAllTool(() => boxes, Dim);
+			DockPanel.SetDock(count, Dock.Right);
+			var checkRow = new DockPanel { Children = { count, checkAll.Button } };
+			DockPanel.SetDock(checkRow, Dock.Top);
 
 			// Checked songs hide the selected song's toolbar, as in the songbook.
 			void Dim()
 			{
 				SongsView.DimCheckBoxes(boxes, SongsView.AnyEntryChecked(ids));
-				status.Text = SongsView.CountText(ids.Length, SongsView.CheckedEntries(ids), list?.ShownCount);
-				if (uncheckAll != null)
-				{
-					uncheckAll.IsVisible = SongsView.AnyEntryChecked(ids);
-				}
+				count.Text = SongsView.CountText(ids.Length, SongsView.CheckedEntries(ids), list?.ShownCount);
+				// None, some or all checked.
+				checkAll?.Refresh();
 
 				if (list != null)
 				{
@@ -322,12 +321,12 @@ namespace Lyrious.UILib.Setlists
 				}
 			}
 
-			songs.Content = list = new SelectableList<SetlistEntry>(
+			list = new SelectableList<SetlistEntry>(
 				entries,
 				entry =>
 				{
 					var row = SongsView.CheckableRow(entry.Song, SongsView.SongRow(entry.Song, null, entry.Id == current, SongsView.SongListExtraHeight), boxes, Dim, entry.Id);
-					SetlistMoveList.OnLongClick(row, () => StartMoving(entry));
+					SetlistMoveList.OnLongClick(row, held => StartMoving(entry, held));
 					return row;
 				},
 				entry => entry.Id == current,
@@ -335,7 +334,10 @@ namespace Lyrious.UILib.Setlists
 				entry => SongSelected?.Invoke(setlist, entry),
 				L.T("There are no songs in this setlist yet. Add some with +."),
 				rowPadding: SongsView.SongListRowPadding,
+				spacing: SongsView.SongListSpacing,
 				toolsBelow: true);
+			// The check tool, then the songs.
+			songs.Content = new DockPanel { Children = { checkRow, list } };
 			// The count follows the search: "12 of 47 songs" while it leaves some out.
 			search.Filtered = Dim;
 			search.Use(list, entries);

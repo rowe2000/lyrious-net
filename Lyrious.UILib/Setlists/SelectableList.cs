@@ -58,6 +58,7 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="activateOnClick">A click makes the item current at once (no selecting first), e.g. a setlist's songs.</param>
 		/// <param name="rowPadding">The room around a row's content; else <see cref="RowPadding"/>.</param>
 		/// <param name="toolsBelow">The selected row's toolbar under it (the row keeps the whole width), not beside it.</param>
+		/// <param name="spacing">The room between the rows.</param>
 		public SelectableList(
 			IReadOnlyList<T> items,
 			Func<T, Control> content,
@@ -67,7 +68,8 @@ namespace Lyrious.UILib.Setlists
 			string emptyText,
 			bool activateOnClick = false,
 			Thickness? rowPadding = null,
-			bool toolsBelow = false)
+			bool toolsBelow = false,
+			double spacing = 4)
 		{
 			this.activateOnClick = activateOnClick;
 			this.rowPadding = rowPadding ?? RowPadding;
@@ -78,7 +80,7 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			var list = new StackPanel { Spacing = 4 };
+			var list = new StackPanel { Spacing = spacing };
 			Control? currentRow = null;
 			foreach (var item in items)
 			{
