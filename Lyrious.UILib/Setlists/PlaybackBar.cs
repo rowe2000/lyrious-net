@@ -122,16 +122,27 @@ namespace Lyrious.UILib.Setlists
 			// As tall as the icon buttons (24-pixel icon plus 8 padding above and below).
 			next = new Button
 			{
-				// The next song as in the right drawer (see SetNextSong), smaller.
-				Content = nextCard,
+				// "NEXT" standing up at the left in the highlight colour, then the next song as in the right
+				// drawer (see SetNextSong), smaller.
+				Content = new DockPanel { Children = { NextLabel(nextCard), nextCard } },
 				MinHeight = 40,
-				Padding = new Thickness(8, 0),
+				// No room at the left: the NEXT label starts at the edge.
+				Padding = new Thickness(0, 0, 8, 0),
 				HorizontalAlignment = HorizontalAlignment.Left,
 				HorizontalContentAlignment = HorizontalAlignment.Left,
 				VerticalContentAlignment = VerticalAlignment.Center,
 				Background = Brushes.Transparent,
 				BorderThickness = new Thickness(0),
 			};
+			// Pointed at (and pressed): black in the dark theme, white in the light one.
+			foreach (var (theme, colour) in new[] { (Avalonia.Styling.ThemeVariant.Dark, Colors.Black), (Avalonia.Styling.ThemeVariant.Light, Colors.White) })
+			{
+				next.Resources.ThemeDictionaries[theme] = new ResourceDictionary
+				{
+					["ButtonBackgroundPointerOver"] = new SolidColorBrush(colour),
+					["ButtonBackgroundPressed"] = new SolidColorBrush(colour),
+				};
+			}
 
 			restart.Click += (_, _) => RestartRequested?.Invoke();
 			next.Click += (_, _) => NextRequested?.Invoke();
@@ -524,6 +535,45 @@ namespace Lyrious.UILib.Setlists
 			var description = playing ? L.T("Stop scrolling") : L.T("Scroll the lyrics");
 			ToolTip.SetTip(playPause, description);
 			Avalonia.Automation.AutomationProperties.SetName(playPause, description);
+		}
+
+		/// <summary>
+		/// "NEXT", read from the bottom up, bold in the details colour (the text colour, dimmed) on the
+		/// highlight colour: what the button is. As tall as the song beside it (both its lines), the
+		/// text scaled to fill that height.
+		/// </summary>
+		private static Control NextLabel(Control song)
+		{
+			var text = new TextBlock
+			{
+				Text = L.T("Next").ToUpper(System.Globalization.CultureInfo.CurrentCulture),
+				FontWeight = FontWeight.Bold,
+				Opacity = 0.7,
+			};
+			text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(LyriousTheme.ForegroundBrush));
+			var label = new Border
+			{
+				Padding = new Thickness(2, 3),
+				CornerRadius = new CornerRadius(3),
+				Child = new Viewbox
+				{
+					Stretch = Stretch.Uniform,
+					Child = new LayoutTransformControl { LayoutTransform = new RotateTransform(-90), Child = text },
+				},
+				VerticalAlignment = VerticalAlignment.Center,
+				Margin = new Thickness(0, 0, 6, 0),
+			};
+			label.Bind(Border.BackgroundProperty, label.GetResourceObservable("AccentButtonBackground"));
+			// The song's height (it's laid out first, as the panel's last child fills the rest).
+			song.SizeChanged += (_, e) =>
+			{
+				if (e.HeightChanged && e.NewSize.Height > 0)
+				{
+					label.Height = e.NewSize.Height;
+				}
+			};
+			DockPanel.SetDock(label, Dock.Left);
+			return label;
 		}
 
 		/// <summary>Greys out the next song while playing: the song can't be changed then.</summary>

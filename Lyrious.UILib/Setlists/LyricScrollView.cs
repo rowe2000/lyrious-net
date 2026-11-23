@@ -265,6 +265,11 @@ namespace Lyrious.UILib.Setlists
 					ShowSongHeader();
 					ShowLyrics();
 				}
+				else
+				{
+					// The editor's key follows the transpose (changed on another device).
+					showEditorDetails?.Invoke();
+				}
 			}
 		}
 
@@ -608,14 +613,19 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>Shows the lyrics with the member's changed settings, and stores them.</summary>
+		// Shows the editor's song details again (the key with the member's transpose); set by the editor.
+		private Action? showEditorDetails;
+
 		private async void ApplyMySetting(MySongSetting changed)
 		{
 			mySetting = changed;
 			ShowSongHeader();
-			// While editing (the capo is there too): only its button; the lyrics are shown again after.
+			// While editing (the capo is there too): its button and the key in the song's details; the
+			// lyrics are shown again after.
 			if (IsEditing)
 			{
 				ShowMySettingButtons(shownWithChords);
+				showEditorDetails?.Invoke();
 			}
 			else
 			{
@@ -3176,14 +3186,23 @@ namespace Lyrious.UILib.Setlists
 				return false;
 			}
 
+			// The details as edited so far, the key moved by the member's own transpose (with its value):
+			// also when that changes while editing (the capo is there too, see ApplyMySetting).
+			void ShowDetailsText()
+			{
+				var details = WithDetails();
+				var edited = PageLayout.SongInfo(details, mySetting.ActiveTranspose);
+				PageLayout.SetDetailsText(detailsText, string.IsNullOrEmpty(edited) ? L.T("Set tempo, beat and keys") : edited, PageLayout.MovedKey(details.PlayingKey, mySetting.ActiveTranspose));
+			}
+
+			showEditorDetails = ShowDetailsText;
+
 			// Checked a moment after the focus left one of them: by then it is where it went.
 			void CheckDetailsFocus() => Dispatcher.UIThread.Post(() =>
 			{
 				if (detailsSlot.Content == detailsInputs && !FocusInDetails())
 				{
-					var details = WithDetails();
-					var edited = PageLayout.SongInfo(details, mySetting.ActiveTranspose);
-					PageLayout.SetDetailsText(detailsText, string.IsNullOrEmpty(edited) ? L.T("Set tempo, beat and keys") : edited, PageLayout.MovedKey(details.PlayingKey, mySetting.ActiveTranspose));
+					ShowDetailsText();
 					detailsSlot.Content = detailsText;
 				}
 			});
