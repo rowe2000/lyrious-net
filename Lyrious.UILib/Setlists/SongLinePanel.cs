@@ -8,9 +8,9 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>
 	/// A song's line in a list: its name (the first child) at the left, filling the room, and the rest
 	/// of the children (e.g. its tags, media icons, key and tempo) after it at the right, in order. When
-	/// the name wouldn't fit beside them on one line, they go on two lines (right-aligned, split where
-	/// they take the least width), so the name gets that room; a name too long even then is trimmed
-	/// (by its own <see cref="TextBlock.TextTrimming"/>).
+	/// the name wouldn't fit beside them on one line (or always, see <see cref="AlwaysTwoLines"/>), they
+	/// go on two lines (right-aligned, split where they take the least width), so the name gets that
+	/// room; a name too long even then is trimmed (by its own <see cref="TextBlock.TextTrimming"/>).
 	/// </summary>
 	public sealed class SongLinePanel : Panel
 	{
@@ -20,6 +20,12 @@ namespace Lyrious.UILib.Setlists
 		/// two lines take just the room they need. 0 for none.
 		/// </summary>
 		public double OneLineExtraHeight { get; init; }
+
+		/// <summary>
+		/// The items after the name always on two lines (when there are two or more), the same in every
+		/// row: the last one (e.g. tempo, beat and key) on the second line, the others (tags, media) above it.
+		/// </summary>
+		public bool AlwaysTwoLines { get; init; }
 
 		// How the items after the name were laid out at the last measure: on one line, or split before
 		// the item at this index (0 for one line).
@@ -46,9 +52,18 @@ namespace Lyrious.UILib.Setlists
 			var blockWidth = oneLine;
 			var blockHeight = items.Count == 0 ? 0 : items.Max(item => item.DesiredSize.Height);
 
-			// The name doesn't fit beside them: on two lines, where they're narrowest, if that's narrower.
-			if (!double.IsInfinity(availableSize.Width) && nameWidth + oneLine > availableSize.Width && items.Count > 1)
+			if (AlwaysTwoLines && items.Count > 1)
 			{
+				// The last item on the second line, the others above it.
+				split = items.Count - 1;
+				var first = items.Take(split).ToList();
+				blockWidth = Math.Max(first.Sum(item => item.DesiredSize.Width), items[^1].DesiredSize.Width);
+				blockHeight = first.Max(item => item.DesiredSize.Height) + items[^1].DesiredSize.Height;
+			}
+			// The name doesn't fit beside them: on two lines, where they're narrowest, if that's narrower.
+			else if (!double.IsInfinity(availableSize.Width) && nameWidth + oneLine > availableSize.Width && items.Count > 1)
+			{
+
 				for (var k = 1; k < items.Count; k++)
 				{
 					var first = items.Take(k).ToList();

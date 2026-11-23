@@ -11,9 +11,9 @@ namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
 	/// The band's members as small circles with their initials (the name and status as the tip), coloured
-	/// by status: playing with the band now (joined it and connected), online but not in the band right
-	/// now, or offline (dimmed). Those playing first, then those online, then the rest; more than fit end
-	/// with "+N", which names the rest.
+	/// by status: green while connected, in the text colour when joined to the band but not connected,
+	/// else gray. Those connected first, then those joined, then the rest; more than fit end with "+N",
+	/// which names the rest.
 	/// </summary>
 	public sealed class MemberBadges : StackPanel
 	{
@@ -51,15 +51,12 @@ namespace Lyrious.UILib.Setlists
 			Avalonia.Automation.AutomationProperties.SetName(this, string.Join(", ", ordered.Select(Tip)));
 		}
 
-		// 0: playing with the band now; 1: online, not in the band; 2: offline.
-		private static int Rank(GroupMember member) => member.Connected ? member.Joined ? 0 : 1 : 2;
+		// 0: connected (green); 1: joined to the band, not connected (text colour); 2: the rest (gray).
+		private static int Rank(GroupMember member) => member.Connected ? 0 : member.Joined ? 1 : 2;
 
-		private static string Tip(GroupMember member) => Rank(member) switch
-		{
-			0 => L.T("{0}: playing with the band now", member.Name),
-			1 => L.T("{0}: online, not with the band right now", member.Name),
-			_ => L.T("{0}: offline", member.Name),
-		};
+		private static string Tip(GroupMember member) => member.Connected
+			? member.Joined ? L.T("{0}: playing with the band now", member.Name) : L.T("{0}: online, not with the band right now", member.Name)
+			: member.Joined ? L.T("{0}: with the band, offline", member.Name) : L.T("{0}: offline", member.Name);
 
 		private static Control Badge(string text, string tip, int rank)
 		{
@@ -74,7 +71,8 @@ namespace Lyrious.UILib.Setlists
 				Opacity = rank == 2 ? 0.45 : 1,
 				Child = label,
 			};
-			var brush = rank switch { 0 => LyriousTheme.SuccessBrush, 1 => LyriousTheme.WarningBrush, _ => LyriousTheme.ForegroundBrush };
+			// Gray is the text colour dimmed (above), so it works in both themes.
+			var brush = rank == 0 ? LyriousTheme.SuccessBrush : LyriousTheme.ForegroundBrush;
 			badge.Bind(Border.BorderBrushProperty, badge.GetResourceObservable(brush));
 			label.Bind(TextBlock.ForegroundProperty, label.GetResourceObservable(brush));
 			ToolTip.SetTip(badge, tip);

@@ -518,6 +518,35 @@ globalThis.lyriousSounds = (() => {
 // app's files, so it starts without a connection. Service workers need a secure context (https,
 // or http://localhost); elsewhere the app simply isn't installable.
 // "?nosw" in the address leaves it out (and removes one installed before), e.g. while developing.
+// The Lyrious app, when it's installed here: tried once per browser tab session as the web app
+// starts, through its lyrious:// link (registered by the desktop, Android and iOS apps). Where
+// it's installed the browser opens it (often asking first); where it isn't, nothing shows and the
+// web app just goes on. Not tried in the installed web app (PWA), nor with ?web in the address.
+// iOS isn't tried: Safari shows an error for a link no app takes, and there's no way to ask first.
+(function openInstalledApp() {
+    const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    let tried = false;
+    try { tried = sessionStorage.getItem("lyrious-app-tried") === "1"; sessionStorage.setItem("lyrious-app-tried", "1"); } catch { /* no storage: try anyway */ }
+    if (standalone || ios || tried || new URLSearchParams(location.search).has("web")) return;
+
+    if (/Android/.test(navigator.userAgent)) {
+        // Chrome on Android opens the app, or, without it, this page again with ?web (no retry).
+        const back = new URL(location.href);
+        back.searchParams.set("web", "");
+        location.href = "intent://open#Intent;scheme=lyrious;package=com.lyrious.app;S.browser_fallback_url="
+            + encodeURIComponent(back.href) + ";end";
+        return;
+    }
+
+    // In a hidden frame, so a browser without the app (e.g. Firefox) shows no error page instead of the web app.
+    const frame = document.createElement("iframe");
+    frame.style.display = "none";
+    frame.src = "lyrious://open";
+    document.body.appendChild(frame);
+    setTimeout(() => frame.remove(), 3000);
+})();
+
 const noServiceWorker = new URLSearchParams(location.search).has("nosw");
 if (noServiceWorker && "serviceWorker" in navigator) {
     for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();

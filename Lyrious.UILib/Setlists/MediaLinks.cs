@@ -26,7 +26,8 @@ namespace Lyrious.UILib.Setlists
 		private const string SpotifyIcon = "M12,2 A10,10 0 1 1 11.99,2 Z M6.8,9.4 Q12,7.8 17.4,10.4 M7.4,12.7 Q12,11.5 16.4,13.6 M8,15.9 Q11.6,15 15,16.6";
 		private const string YouTubeIcon = "M5,5.5 H19 Q21.5,5.5 21.5,8 V16 Q21.5,18.5 19,18.5 H5 Q2.5,18.5 2.5,16 V8 Q2.5,5.5 5,5.5 Z M10,9 L15,12 L10,15 Z";
 
-		private const string SpeakerIcon = "M4,9 H8 L13,5 V19 L8,15 H4 Z M16.5,8.5 A5,5 0 0 1 16.5,15.5 M19,6 A8.5,8.5 0 0 1 19,18";
+		// A sound file: the waveform of the Sound files page.
+		private const string WaveformIcon = AppIcons.SoundFiles;
 		private const string StopIcon = "M7,7 H17 V17 H7 Z";
 
 		// "sound:<id>/<file name>": a sound file kept on the device, by its id there.
@@ -282,7 +283,7 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// The icon for a link on the site: Spotify's and YouTube's in their own colours, a speaker for
+		/// The icon for a link on the site: Spotify's and YouTube's in their own colours, a waveform for
 		/// a sound file (a stop sign while it plays), else a note in the theme's text colour.
 		/// </summary>
 		public static Control Icon(MediaSite site, bool playing = false)
@@ -293,7 +294,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					MediaSite.Spotify => SpotifyIcon,
 					MediaSite.YouTube => YouTubeIcon,
-					MediaSite.Sound => playing ? StopIcon : SpeakerIcon,
+					MediaSite.Sound => playing ? StopIcon : WaveformIcon,
 					_ => NoteIcon,
 				}),
 				StrokeThickness = 2,

@@ -506,7 +506,8 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>
 		/// Where the member stands: invited (not accepted yet), accepted (in the band, but working in
 		/// another one), or joined (this is their current band); connected (in green) while their app
-		/// is open and online (then "joined" or "accepted" isn't shown); then their last login.
+		/// is open and online (then "joined" or "accepted" isn't shown); then their last login. Joined
+		/// but not connected is in the text colour, the rest gray, as the member badges.
 		/// </summary>
 		private static Control StatusLine(GroupMember member)
 		{
@@ -516,7 +517,14 @@ namespace Lyrious.UILib.Setlists
 			if (showStatus)
 			{
 				var status = !member.Approved ? L.T("Invited") : member.Joined ? L.T("Joined") : L.T("Accepted");
-				line.Inlines!.Add(new Avalonia.Controls.Documents.Run(status) { FontWeight = FontWeight.SemiBold });
+				// Full text colour when joined, else gray: the theme's dimmed text colour.
+				var statusRun = new Avalonia.Controls.Documents.Run(status) { FontWeight = FontWeight.SemiBold };
+				if (!(member.Approved && member.Joined))
+				{
+					statusRun.Bind(Avalonia.Controls.Documents.TextElement.ForegroundProperty, line.GetResourceObservable("SystemControlForegroundBaseMediumBrush"));
+				}
+
+				line.Inlines!.Add(statusRun);
 			}
 
 			if (member.Connected)

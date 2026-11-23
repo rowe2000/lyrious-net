@@ -1366,6 +1366,24 @@ public sealed class HttpSetlistService : ISetlistService
         Queued(current);
     }
 
+    public async Task MoveSongsAsync(Guid setlistId, IReadOnlyList<Guid> entryIds, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        var items = Live(current, "setlistitem", ClientJsonContext.Default.SetlistItemDto)
+            .Where(item => item.SetlistId == setlistId)
+            .ToDictionary(item => item.Id);
+        // Only the entries whose place changed are sent.
+        for (var i = 0; i < entryIds.Count; i++)
+        {
+            if (items.TryGetValue(entryIds[i], out var item) && item.Position != i)
+            {
+                current.Update("setlistitem", item.Id, new JsonObject { ["position"] = i });
+            }
+        }
+
+        Queued(current);
+    }
+
     public Task SelectSetlistAsync(Guid groupId, Guid setlistId, CancellationToken cancellationToken = default)
         => SelectAsync(groupId, setlistId, null);
 

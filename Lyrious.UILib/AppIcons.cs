@@ -17,7 +17,8 @@ namespace Lyrious.UILib
 		public const string FindOnline = "M12,3 A9,9 0 1 0 12,21 A9,9 0 1 0 12,3 M3,12 H21 M12,3 C15.5,6 15.5,18 12,21 C8.5,18 8.5,6 12,3";
 		public const string Playlog = "M12,7 V12 L15,14 M12,3 A9,9 0 1 0 12,21 A9,9 0 1 0 12,3";
 		public const string Settings = "M4,6 H13 M17,6 H20 M15,4 V8 M4,12 H7 M11,12 H20 M9,10 V14 M4,18 H14 M18,18 H20 M16,16 V20";
-		public const string SoundFiles = "M4,9 H8 L13,5 V19 L8,15 H4 Z M16.5,8.5 A5,5 0 0 1 16.5,15.5";
+		// A waveform: bars of different heights, as a sound looks.
+		public const string SoundFiles = "M3,11 V13 M6,8 V16 M9,4 V20 M12,7 V17 M15,10 V14 M18,6 V18 M21,10 V14";
 		public const string Sync = "M20,12 A8,8 0 0 1 6,17.3 M4,12 A8,8 0 0 1 18,6.7 M18,3 V7 H14 M6,21 V17 H10";
 		public const string About = "M12,3 A9,9 0 1 0 12,21 A9,9 0 1 0 12,3 M12,11 V16 M12,8 H12.01";
 		public const string Profile = "M12,12 A4,4 0 1 0 12,4 A4,4 0 1 0 12,12 M4,21 C4,17 7.6,14.5 12,14.5 C16.4,14.5 20,17 20,21";

@@ -26,6 +26,8 @@ namespace Lyrious.UILib.Setlists
 		private static string savedSearch = "";
 		private static readonly HashSet<string> savedTags = new(StringComparer.CurrentCultureIgnoreCase);
 		private static readonly HashSet<string> savedWithoutTags = new(StringComparer.CurrentCultureIgnoreCase);
+		private static readonly HashSet<MediaSite> savedMedia = [];
+		private static readonly HashSet<MediaSite> savedWithoutMedia = [];
 
 		/// <summary>Raised when the user opens a song (double click, or the open button).</summary>
 		public event Action<SongDetails>? SongSelected;
@@ -60,7 +62,7 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		public event Action<IReadOnlyList<SongDetails>>? ShowAsSetlistRequested;
 
-		/// <summary>Raised when the user confirms deleting several songs at once (the checked ones, or the selected one).</summary>
+		/// <summary>Raised when the user confirms deleting the checked songs at once.</summary>
 		public event Action<IReadOnlyList<SongDetails>>? SongsDeleteRequested;
 
 		/// <summary>Raised with a name and the songs (in order) when the user saves them as a new setlist.</summary>
@@ -69,6 +71,21 @@ namespace Lyrious.UILib.Setlists
 		// The songs checked (for the setlist tool): kept while the list is searched and filtered, and
 		// from one showing of the page to the next while the app runs (as the search and tags are).
 		private static readonly HashSet<Guid> checkedSongs = [];
+
+		// The setlist entries checked (by entry, so a song that's twice in a setlist is checked, and
+		// moved, as each one), with their songs; their songs are checked in the songbook too.
+		private static readonly Dictionary<Guid, Guid> checkedEntries = [];
+
+		/// <summary>Unchecks the songs, in the songbook and in every setlist (e.g. after the setlist tool used them).</summary>
+		private static void UncheckSongs(IEnumerable<Guid> songIds)
+		{
+			var songs = songIds.ToHashSet();
+			checkedSongs.ExceptWith(songs);
+			foreach (var entry in checkedEntries.Where(pair => songs.Contains(pair.Value)).Select(pair => pair.Key).ToList())
+			{
+				checkedEntries.Remove(entry);
+			}
+		}
 
 		// The check boxes of the songs listed now.
 		private readonly List<CheckBox> checkBoxes = [];
@@ -123,6 +140,10 @@ namespace Lyrious.UILib.Setlists
 			var allTags = SongTags.AllOf(songs);
 			var chosenTags = new HashSet<string>(allTags.Where(savedTags.Contains), StringComparer.CurrentCultureIgnoreCase);
 			var withoutTags = new HashSet<string>(allTags.Where(savedWithoutTags.Contains), StringComparer.CurrentCultureIgnoreCase);
+			// The media kinds the songs have (filter buttons after the tags), and those chosen.
+			var allMedia = songs.SelectMany(song => MediaOf(song).Select(link => link.Site)).Distinct().OrderBy(site => site).ToList();
+			var chosenMedia = allMedia.Where(savedMedia.Contains).ToHashSet();
+			var withoutMedia = allMedia.Where(savedWithoutMedia.Contains).ToHashSet();
 			// The songs the list shows now, for the setlist tool.
 			IReadOnlyList<SongDetails> shownSongs = songs;
 			// How many songs there are, above the list: "142 songs", or "12 of 142 songs" while searching or filtering by tags.
@@ -135,19 +156,20 @@ namespace Lyrious.UILib.Setlists
 				var shown = (IReadOnlyList<SongDetails>)songs
 					.Where(song => text.Length == 0 || Matches(song, text))
 					.Where(song => chosenTags.All(tag => SongTags.Has(song, tag)) && !withoutTags.Any(tag => SongTags.Has(song, tag)))
+					.Where(song => HasMedia(song, chosenMedia, withoutMedia))
 					.ToArray();
 				string emptyText;
 				if (songs.Count == 0)
 				{
 					emptyText = L.T("There are no songs in the songbook yet. Add one with +.");
 				}
-				else if (chosenTags.Count == 0 && withoutTags.Count == 0)
+				else if (chosenTags.Count == 0 && withoutTags.Count == 0 && chosenMedia.Count == 0 && withoutMedia.Count == 0)
 				{
 					emptyText = L.T("No songs match \"{0}\".", text);
 				}
 				else
 				{
-					var filter = string.Join(", ", chosenTags.Concat(withoutTags.Select(tag => $"not {tag}")));
+					var filter = string.Join(", ", chosenTags.Concat(withoutTags.Select(tag => $"not {tag}")).Concat(chosenMedia.Select(MediaName)).Concat(withoutMedia.Select(site => $"not {MediaName(site)}")));
 					emptyText = text.Length == 0
 						? L.T("No songs fit these tags: {0}.", filter)
 						: L.T("No songs with the tags {0} match \"{1}\".", filter, text);
@@ -167,9 +189,13 @@ namespace Lyrious.UILib.Setlists
 				savedTags.UnionWith(chosenTags);
 				savedWithoutTags.ExceptWith(allTags);
 				savedWithoutTags.UnionWith(withoutTags);
+				savedMedia.ExceptWith(allMedia);
+				savedMedia.UnionWith(chosenMedia);
+				savedWithoutMedia.ExceptWith(allMedia);
+				savedWithoutMedia.UnionWith(withoutMedia);
 			}
 
-			var tagFilter = TagFilter(allTags, chosenTags, withoutTags, ShowList);
+			var tagFilter = TagFilter(allTags, chosenTags, withoutTags, ShowList, allMedia, chosenMedia, withoutMedia);
 
 			search.TextChanged += (_, _) => ShowList();
 			// Ctrl/⌘+E edits the selected song (as its pencil does), also while typing in the search box.
@@ -257,7 +283,7 @@ namespace Lyrious.UILib.Setlists
 					popup.Hide();
 					SaveAsSetlistRequested?.Invoke(text, chosen);
 					// Made: the songs in it are checked no more.
-					checkedSongs.ExceptWith(chosen.Select(song => song.Id));
+					UncheckSongs(chosen.Select(song => song.Id));
 					foreach (var box in checkBoxes)
 					{
 						box.IsChecked = false;
@@ -306,7 +332,7 @@ namespace Lyrious.UILib.Setlists
 					clear.Click += (_, _) =>
 					{
 						popup.Hide();
-						checkedSongs.ExceptWith(songIds);
+						UncheckSongs(songIds);
 						foreach (var box in checkBoxes)
 						{
 							box.IsChecked = false;
@@ -318,12 +344,11 @@ namespace Lyrious.UILib.Setlists
 					panel.Children.Add(clear);
 				}
 
-				// Deleting: the checked songs, else the selected one (never all the listed ones, so a
-				// slip can't empty the songbook). Asked again first, in the popup.
-				var selected = (list.Content as SelectableList<SongDetails>)?.Selected;
+				// Deleting: only the checked songs, so it's offered only when some are (never all the
+				// listed ones, so a slip can't empty the songbook). Asked again first, in the popup.
 				IReadOnlyList<SongDetails> toDelete = AnyChecked()
 					? songs.Where(song => checkedSongs.Contains(song.Id)).ToArray()
-					: selected != null ? [selected] : [];
+					: [];
 				if (toDelete.Count > 0)
 				{
 					var what = toDelete.Count == 1 ? $"'{toDelete[0].Name}'" : L.T("the {0} checked songs", toDelete.Count);
@@ -345,7 +370,7 @@ namespace Lyrious.UILib.Setlists
 					confirm.Click += (_, _) =>
 					{
 						popup.Hide();
-						checkedSongs.ExceptWith(toDelete.Select(song => song.Id));
+						UncheckSongs(toDelete.Select(song => song.Id));
 						SongsDeleteRequested?.Invoke(toDelete);
 					};
 					panel.Children.Add(new Separator());
@@ -417,10 +442,12 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 
+			uncheckAll = UncheckAllButton(() => checkBoxes, DimCheckBoxes);
+			uncheckAll.IsVisible = AnyChecked();
 			Content = PageLayout.Page(
 				L.T("Songbook"),
 				new DockPanel { Children = { SongbookChooser(group, songbooks ?? [], playingSongbookId), nameRow, status, search, tagFilter, count, list } },
-				titleAction: new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Children = { asSetlistButton, addButton, moreButton } },
+				titleAction: new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Children = { uncheckAll, asSetlistButton, addButton, moreButton } },
 				closable: true,
 				icon: AppIcons.Songbook);
 		}
@@ -473,11 +500,12 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// The songbook's tags as small buttons below the search box (see <see cref="TagFilterButton"/>):
-		/// clicked, a tag narrows the list to the songs that have it; longclicked, to those that don't.
-		/// Hidden when no song has tags.
+		/// The songbook's tags and media kinds as small buttons below the search box: a tag (see
+		/// <see cref="TagFilterButton"/>) clicked narrows the list to the songs that have it, longclicked to
+		/// those that don't; a media kind's icon likewise, to the songs that have (or don't have) such a
+		/// link (see <see cref="MediaFilterButton"/>). Hidden when no song has tags or media links.
 		/// </summary>
-		private static Control TagFilter(IReadOnlyList<string> tags, HashSet<string> chosen, HashSet<string> without, Action changed)
+		private static Control TagFilter(IReadOnlyList<string> tags, HashSet<string> chosen, HashSet<string> without, Action changed, IReadOnlyList<MediaSite> media, HashSet<MediaSite> chosenMedia, HashSet<MediaSite> withoutMedia)
 		{
 			var filter = new WrapPanel
 			{
@@ -485,7 +513,7 @@ namespace Lyrious.UILib.Setlists
 				ItemSpacing = 6,
 				LineSpacing = 6,
 				Margin = new Avalonia.Thickness(0, -6, 0, 16),
-				IsVisible = tags.Count > 0,
+				IsVisible = tags.Count > 0 || media.Count > 0,
 			};
 			foreach (var tag in tags)
 			{
@@ -507,6 +535,16 @@ namespace Lyrious.UILib.Setlists
 				}));
 			}
 
+			// The media kinds after the tags.
+			foreach (var site in media)
+			{
+				filter.Children.Add(MediaFilterButton(site, StateOf(site, chosenMedia, withoutMedia), next =>
+				{
+					SetState(site, next, chosenMedia, withoutMedia);
+					changed();
+				}));
+			}
+
 			DockPanel.SetDock(filter, Dock.Top);
 			return filter;
 		}
@@ -514,15 +552,15 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>
 		/// A song's row as the songbook shows it: its name, and at the right its tags, then its key, tempo
 		/// and beat at the right, after <paramref name="note"/> (e.g. "in setlist") when there is one;
-		/// the current song has a check at the very right. When the name wouldn't fit, the tags, media
-		/// and details go on two lines to give it room (see <see cref="SongLinePanel"/>).
+		/// the current song has a check at the very right. The tags, media and details always go on two
+		/// lines (see <see cref="SongLinePanel"/>), so the name has room and the rows look alike.
 		/// </summary>
 		/// <param name="oneLineExtraHeight">Added to the row's height on one line, as its least height (see <see cref="SongLinePanel.OneLineExtraHeight"/>).</param>
 		internal static Control SongRow(SongDetails song, string? note, bool isCurrent = false, double oneLineExtraHeight = 0)
 		{
 			// The name, then at the right the tags, the media icons, and the key, tempo and beat; the name
 			// is trimmed with "…" when it doesn't fit even with those on two lines.
-			var line = new SongLinePanel { OneLineExtraHeight = oneLineExtraHeight };
+			var line = new SongLinePanel { OneLineExtraHeight = oneLineExtraHeight, AlwaysTwoLines = true };
 			line.Children.Add(new TextBlock { Text = song.Name, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
 
 			var tags = SongTags.Sorted(song.Tags);
@@ -541,7 +579,8 @@ namespace Lyrious.UILib.Setlists
 				line.Children.Add(media);
 			}
 
-			var info = PageLayout.SongInfoText(song, note);
+			// The key moved by the member's own transpose, with its value beside it.
+			var info = new SongInfoLine(song, note);
 			info.Margin = new Avalonia.Thickness(12, 0, 0, 0);
 			line.Children.Add(info);
 
@@ -568,23 +607,11 @@ namespace Lyrious.UILib.Setlists
 				return null;
 			}
 
-			var kinds = links
-				.Select(link => (Link: link, Sound: MediaLinks.SoundOf(link)))
-				.Select(l => (l.Link, l.Sound, Site: l.Sound != null ? MediaSite.Sound : MediaLinks.SiteOf(MediaLinks.Parse(l.Link))))
-				.ToList();
+			var kinds = MediaOf(song);
 			var icons = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Background = Brushes.Transparent };
 			foreach (var site in kinds.Select(k => k.Site).Distinct().OrderBy(site => site))
 			{
-				var icon = MediaLinks.Icon(site);
-				icon.Width = 16;
-				icon.Height = 16;
-				if (icon is Avalonia.Controls.Shapes.Shape shape)
-				{
-					shape.StrokeThickness = 1.75;
-				}
-
-				icon.Opacity = site is MediaSite.Spotify or MediaSite.YouTube ? 1 : 0.75;
-				icons.Children.Add(icon);
+				icons.Children.Add(SmallMediaIcon(site));
 			}
 
 			var described = kinds.Select(k => k.Site switch
@@ -598,6 +625,140 @@ namespace Lyrious.UILib.Setlists
 			return icons;
 		}
 
+		// The red of a filter that leaves songs out (as a tag's, see TagFilterButton).
+		private static readonly IBrush WithoutMediaBrush = new SolidColorBrush(Color.Parse("#E5484D"));
+
+		/// <summary>
+		/// A media kind as a filter button, as a tag's (see <see cref="TagFilterButton"/>) but just its
+		/// icon, as in a song's row (no chip): clicked, only the songs with such a link are listed (it's
+		/// highlighted); longclicked, only those without one (a red ✕ over the icon); clicked
+		/// again, every song.
+		/// </summary>
+		/// <param name="changed">Called with its new state when it's clicked or longclicked.</param>
+		internal static Control MediaFilterButton(MediaSite site, TagFilterState state, Action<TagFilterState> changed)
+		{
+			var icon = SmallMediaIcon(site);
+			// A red ✕ over it while it leaves those songs out.
+			var strike = new Avalonia.Controls.Shapes.Path
+			{
+				Data = Geometry.Parse("M2,2 L14,14 M14,2 L2,14"),
+				Stroke = WithoutMediaBrush,
+				StrokeThickness = 2,
+				StrokeLineCap = PenLineCap.Round,
+				Width = 16,
+				Height = 16,
+				IsVisible = false,
+			};
+			var button = new LongClickButton
+			{
+				Content = new Grid { Children = { icon, strike } },
+				Padding = new Avalonia.Thickness(5, 3),
+				MinHeight = 0,
+				BorderThickness = new Avalonia.Thickness(0),
+				CornerRadius = new Avalonia.CornerRadius(6),
+				VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+			};
+			var name = MediaName(site);
+
+			void Show()
+			{
+				// Highlighted (the accent background) only while chosen; else no background, just the icon.
+				button.Classes.Set("accent", state == TagFilterState.With);
+				if (state == TagFilterState.With)
+				{
+					button.ClearValue(BackgroundProperty);
+				}
+				else
+				{
+					button.Background = Brushes.Transparent;
+				}
+
+				strike.IsVisible = state == TagFilterState.Without;
+				var description = state switch
+				{
+					TagFilterState.With => L.T("Only songs with {0}: click to stop", name),
+					TagFilterState.Without => L.T("Only songs without {0}: click to stop", name),
+					_ => L.T("Click: only songs with {0}. Hold: only songs without it", name),
+				};
+				ToolTip.SetTip(button, description);
+				Avalonia.Automation.AutomationProperties.SetName(button, description);
+			}
+
+			void Set(TagFilterState next)
+			{
+				state = next;
+				Show();
+				changed(state);
+			}
+
+			button.Click += (_, _) => Set(state == TagFilterState.Off ? TagFilterState.With : TagFilterState.Off);
+			button.LongClick += () => Set(state == TagFilterState.Without ? TagFilterState.Off : TagFilterState.Without);
+			Show();
+			return button;
+		}
+
+		/// <summary>A media kind's filter state, from the kinds chosen and those left out.</summary>
+		internal static TagFilterState StateOf(MediaSite site, IReadOnlySet<MediaSite> with, IReadOnlySet<MediaSite> without)
+			=> without.Contains(site) ? TagFilterState.Without : with.Contains(site) ? TagFilterState.With : TagFilterState.Off;
+
+		/// <summary>Keeps a media kind's new filter state in the kinds chosen and those left out.</summary>
+		internal static void SetState(MediaSite site, TagFilterState state, HashSet<MediaSite> with, HashSet<MediaSite> without)
+		{
+			with.Remove(site);
+			without.Remove(site);
+			if (state == TagFilterState.With)
+			{
+				with.Add(site);
+			}
+			else if (state == TagFilterState.Without)
+			{
+				without.Add(site);
+			}
+		}
+
+		/// <summary>Whether the song has a link of every media kind in <paramref name="with"/> and none in <paramref name="without"/>.</summary>
+		internal static bool HasMedia(SongDetails song, IReadOnlyCollection<MediaSite> with, IReadOnlyCollection<MediaSite> without)
+		{
+			if (with.Count == 0 && without.Count == 0)
+			{
+				return true;
+			}
+
+			var sites = MediaOf(song).Select(link => link.Site).ToHashSet();
+			return with.All(sites.Contains) && !without.Any(sites.Contains);
+		}
+
+		/// <summary>A media kind's name, e.g. for "No songs fit these tags: YouTube, ballad."</summary>
+		private static string MediaName(MediaSite site) => site switch
+		{
+			MediaSite.Spotify => "Spotify",
+			MediaSite.YouTube => "YouTube",
+			MediaSite.Sound => L.T("sound file"),
+			_ => L.T("other link"),
+		};
+
+		/// <summary>A song's media links: each link, its sound file (when it's one), and which kind it is.</summary>
+		internal static List<(string Link, SoundFile? Sound, MediaSite Site)> MediaOf(SongDetails song)
+			=> MediaLinks.Split(song.MediaLink)
+				.Select(link => (Link: link, Sound: MediaLinks.SoundOf(link)))
+				.Select(l => (l.Link, l.Sound, Site: l.Sound != null ? MediaSite.Sound : MediaLinks.SiteOf(MediaLinks.Parse(l.Link))))
+				.ToList();
+
+		/// <summary>A media kind's icon as small as in a song's row (Spotify's and YouTube's in their colours, the others a little dimmed).</summary>
+		internal static Control SmallMediaIcon(MediaSite site)
+		{
+			var icon = MediaLinks.Icon(site);
+			icon.Width = 16;
+			icon.Height = 16;
+			if (icon is Avalonia.Controls.Shapes.Shape shape)
+			{
+				shape.StrokeThickness = 1.75;
+			}
+
+			icon.Opacity = site is MediaSite.Spotify or MediaSite.YouTube ? 1 : 0.75;
+			return icon;
+		}
+
 		/// <summary>
 		/// The songs as a selectable list: a click selects (toolbar: make current, add to a setlist,
 		/// edit, delete), a double click opens. The current song has a check in its row instead of the
@@ -608,7 +769,7 @@ namespace Lyrious.UILib.Setlists
 			checkBoxes.Clear();
 			var list = new SelectableList<SongDetails>(
 				songs,
-				song => CheckableRow(song, SongRow(song, null, song.Id == currentSongId, SongListExtraHeight)),
+				song => CheckableRow(song, SongRow(song, null, song.Id == currentSongId, SongListExtraHeight), checkBoxes, DimCheckBoxes),
 				song => song.Id == currentSongId,
 				song => SongTools(song, song.Id == currentSongId),
 				song => SongSelected?.Invoke(song),
@@ -616,6 +777,7 @@ namespace Lyrious.UILib.Setlists
 				rowPadding: SongListRowPadding,
 				// The selected song's tools under it, so the songs keep the whole width.
 				toolsBelow: true);
+			songList = list;
 			DimCheckBoxes();
 			return list;
 		}
@@ -630,12 +792,19 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>What a song row on one line adds for the room the song lists leave out (see <see cref="SongListRowPadding"/>).</summary>
 		internal static readonly double SongListExtraHeight = SelectableList<SongDetails>.RowPadding.Top + SelectableList<SongDetails>.RowPadding.Bottom - SongListRowPadding.Top - SongListRowPadding.Bottom;
 
-		/// <summary>A song's row with a check box at its left, to choose several songs for the setlist tool.</summary>
-		private Control CheckableRow(SongDetails song, Control row)
+		/// <summary>
+		/// A song's row with a check box at its left, to choose several songs for the setlist tool. The
+		/// checks are shared by every song list (the songbook and the setlists), so a song checked in a
+		/// setlist is checked in the songbook too.
+		/// </summary>
+		/// <param name="boxes">The list's check boxes, which this one joins.</param>
+		/// <param name="changed">Called when the box is checked or unchecked (e.g. to dim the boxes, see <see cref="DimCheckBoxes(IEnumerable{CheckBox}, bool)"/>).</param>
+		/// <param name="entryId">In a setlist: the song's entry there, which is checked by itself (another entry of the same song isn't).</param>
+		internal static Control CheckableRow(SongDetails song, Control row, List<CheckBox> boxes, Action changed, Guid? entryId = null)
 		{
 			var box = new CheckBox
 			{
-				IsChecked = checkedSongs.Contains(song.Id),
+				IsChecked = entryId is { } entry ? checkedEntries.ContainsKey(entry) : checkedSongs.Contains(song.Id),
 				MinWidth = 0,
 				Padding = new Avalonia.Thickness(0),
 				// 6px into the row's left padding, so the check box sits nearer the edge.
@@ -648,51 +817,132 @@ namespace Lyrious.UILib.Setlists
 				if (box.IsChecked == true)
 				{
 					checkedSongs.Add(song.Id);
+					if (entryId is { } entry)
+					{
+						checkedEntries[entry] = song.Id;
+					}
+				}
+				else if (entryId is { } entry)
+				{
+					// The song stays checked in the songbook while another of its entries is.
+					checkedEntries.Remove(entry);
+					if (!checkedEntries.ContainsValue(song.Id))
+					{
+						checkedSongs.Remove(song.Id);
+					}
 				}
 				else
 				{
-					checkedSongs.Remove(song.Id);
+					UncheckSongs([song.Id]);
 				}
 
-				DimCheckBoxes();
+				changed();
 			};
-			checkBoxes.Add(box);
+			boxes.Add(box);
 			DockPanel.SetDock(box, Dock.Left);
 			return new DockPanel { Children = { box, row } };
 		}
 
-		/// <summary>The check boxes dim grey while none is checked, so they don't take the eye; clear once one is.</summary>
+		/// <summary>
+		/// The check boxes dim grey while none is checked, so they don't take the eye; clear once one is.
+		/// The selected song's toolbar is hidden while songs are checked (the setlist tool is for them then).
+		/// </summary>
 		private void DimCheckBoxes()
 		{
-			var anyChecked = AnyChecked();
-			foreach (var box in checkBoxes)
+			DimCheckBoxes(checkBoxes, AnyChecked());
+			if (uncheckAll != null)
+			{
+				uncheckAll.IsVisible = AnyChecked();
+			}
+
+			if (songList != null)
+			{
+				songList.ToolsHidden = AnyChecked();
+			}
+		}
+
+		// The songs listed now (see SongList).
+		private SelectableList<SongDetails>? songList;
+
+		/// <summary>A list's check boxes dimmed grey while none of its songs is checked (<paramref name="anyChecked"/>), clear once one is.</summary>
+		internal static void DimCheckBoxes(IEnumerable<CheckBox> boxes, bool anyChecked)
+		{
+			foreach (var box in boxes)
 			{
 				box.Opacity = anyChecked ? 1 : 0.35;
 			}
 		}
 
-		private IEnumerable<Control> SongTools(SongDetails song, bool isCurrent)
+		/// <summary>Whether this entry of a setlist is checked (by itself, see <see cref="CheckableRow"/>).</summary>
+		internal static bool IsEntryChecked(Guid entryId) => checkedEntries.ContainsKey(entryId);
+
+		/// <summary>
+		/// A list's song count, with how many are listed while a search or filter leaves some out, and
+		/// how many are checked when any are: "47 songs", "12 of 47 songs", "47 songs · 2 checked".
+		/// </summary>
+		/// <param name="shown">How many are listed; all of them when not given.</param>
+		internal static string CountText(int songs, int checkedCount, int? shown = null)
+		{
+			var count = shown is { } listed && listed != songs
+				? L.Plural(songs, "{1} of {0} song", "{1} of {0} songs", listed)
+				: L.Plural(songs, "{0} song", "{0} songs");
+			return checkedCount > 0 ? L.T("{0} · {1} checked", count, checkedCount) : count;
+		}
+
+		/// <summary>How many of these setlist entries are checked.</summary>
+		internal static int CheckedEntries(IEnumerable<Guid> entryIds) => entryIds.Count(checkedEntries.ContainsKey);
+
+		/// <summary>Whether any of these setlist entries is checked.</summary>
+		internal static bool AnyEntryChecked(IEnumerable<Guid> entryIds) => entryIds.Any(checkedEntries.ContainsKey);
+
+		/// <summary>Whether any of these songs is checked (see <see cref="CheckableRow"/>).</summary>
+		internal static bool AnyChecked(IEnumerable<Guid> songIds) => checkedSongs.Overlaps(songIds);
+
+		private IEnumerable<Control> SongTools(SongDetails song, bool isCurrent) => ToolButtons(
+			song,
+			isCurrent,
+			() => SongSelected?.Invoke(song),
+			new SongToolActions(
+				edit => SongEditRequested?.Invoke(edit),
+				delete => SongDeleteRequested?.Invoke(delete),
+				LoadSetlists,
+				(add, setlist) => SongAddToSetlistRequested?.Invoke(add, setlist),
+				ShowStatus));
+
+		/// <summary>What the songbook's song toolbar does (it's on the setlist pages too): edit, delete, add to a setlist, and where a problem is told.</summary>
+		public sealed record SongToolActions(
+			Action<SongDetails> Edit,
+			Action<SongDetails> Delete,
+			Func<Task<IReadOnlyList<SetlistSummary>>>? LoadSetlists,
+			Action<SongDetails, SetlistSummary> AddToSetlist,
+			Action<string> ShowStatus);
+
+		/// <summary>
+		/// The toolbar of a song selected in a song list (the songbook, the setlists): open it (not for
+		/// the current song, it's open), add it to a setlist, edit it, delete it.
+		/// </summary>
+		internal static IEnumerable<Control> ToolButtons(SongDetails song, bool isCurrent, Action open, SongToolActions actions)
 		{
 			if (!isCurrent)
 			{
-				yield return PageLayout.OpenButton(L.T("Open {0}", song.Name), () => SongSelected?.Invoke(song));
+				yield return PageLayout.OpenButton(L.T("Open {0}", song.Name), open);
 			}
 
-			yield return AddToSetlistButton(song);
-			yield return PageLayout.EditButton(L.T("Edit {0}", song.Name), () => SongEditRequested?.Invoke(song));
-			yield return PageLayout.DeleteButton($"Delete '{song.Name}'", L.T("Delete '{0}'? It's also removed from every setlist it's in.", song.Name), () => SongDeleteRequested?.Invoke(song));
+			yield return AddToSetlistButton(song, actions);
+			yield return PageLayout.EditButton(L.T("Edit {0}", song.Name), () => actions.Edit(song));
+			yield return PageLayout.DeleteButton($"Delete '{song.Name}'", L.T("Delete '{0}'? It's also removed from every setlist it's in.", song.Name), () => actions.Delete(song));
 		}
 
 		/// <summary>
 		/// A toolbar button that adds the song to a setlist: it opens a menu of the band's setlists
 		/// (loaded when it's clicked, so they're the ones there are now) to choose the one.
 		/// </summary>
-		private Button AddToSetlistButton(SongDetails song)
+		private static Button AddToSetlistButton(SongDetails song, SongToolActions actions)
 		{
 			var button = HomeView.IconButton(AddToSetlistIcon, L.T("Add {0} to a setlist", song.Name));
 			button.Click += async (_, _) =>
 			{
-				if (LoadSetlists is not { } load)
+				if (actions.LoadSetlists is not { } load)
 				{
 					return;
 				}
@@ -705,7 +955,7 @@ namespace Lyrious.UILib.Setlists
 				}
 				catch (Exception ex)
 				{
-					ShowStatus(L.T("Couldn't get the setlists. {0}", ex.Message));
+					actions.ShowStatus(L.T("Couldn't get the setlists. {0}", ex.Message));
 					return;
 				}
 				finally
@@ -722,7 +972,7 @@ namespace Lyrious.UILib.Setlists
 				foreach (var setlist in setlists)
 				{
 					var item = new MenuItem { Header = setlist.Name };
-					item.Click += (_, _) => SongAddToSetlistRequested?.Invoke(song, setlist);
+					item.Click += (_, _) => actions.AddToSetlist(song, setlist);
 					menu.Items.Add(item);
 				}
 
@@ -798,6 +1048,35 @@ namespace Lyrious.UILib.Setlists
 		private const string TrashIcon = "M5,7 H19 M10,7 V5 H14 V7 M7,7 L8,20 H16 L17,7 M10,11 V16 M14,11 V16";
 		// An empty check box (a rounded square), for clearing the checks.
 		private const string UncheckedIcon = "M7,4 H17 A3,3 0 0 1 20,7 V17 A3,3 0 0 1 17,20 H7 A3,3 0 0 1 4,17 V7 A3,3 0 0 1 7,4 Z";
+
+		// A checked box: the box with a check in it.
+		private const string CheckedIcon = UncheckedIcon + " M8,12 L11,15 L16,9";
+
+		/// <summary>
+		/// A header tool (a checked box) that unchecks all the songs, in the songbook and every setlist.
+		/// The list shows it only while some of its songs are checked (see its <paramref name="changed"/>).
+		/// </summary>
+		/// <param name="boxes">The list's check boxes now.</param>
+		/// <param name="changed">Called after, to show the list so (e.g. to dim its boxes and hide this tool).</param>
+		internal static Button UncheckAllButton(Func<IEnumerable<CheckBox>> boxes, Action changed)
+		{
+			var button = HomeView.IconButton(CheckedIcon, L.T("Uncheck all songs"));
+			button.Click += (_, _) =>
+			{
+				foreach (var box in boxes().ToList())
+				{
+					box.IsChecked = false;
+				}
+
+				checkedSongs.Clear();
+				checkedEntries.Clear();
+				changed();
+			};
+			return button;
+		}
+
+		// The songbook's "Uncheck all songs" tool, shown while songs are checked (see DimCheckBoxes).
+		private Button? uncheckAll;
 		internal const string SearchIcon = "M4,10.5 A6.5,6.5 0 1 0 17,10.5 A6.5,6.5 0 1 0 4,10.5 M15.2,15.2 L20,20";
 
 		private void ShowStatus(string text)

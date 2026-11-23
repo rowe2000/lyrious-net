@@ -11,10 +11,11 @@ namespace Lyrious.UILib.Setlists
 	/// scrolls, zooms and transposes with them, like the lyrics' own first lines.
 	/// <para>
 	/// Placeholders (any case): $songname, $artist, $key, $tempo, $beat and $tags (the song's tags,
-	/// separated by spaces: "ballad christmas Rock"). $key is the key the
-	/// lyrics are written in, so in brackets ("[$key]") it's a chord that's transposed with the
-	/// lyrics' chords and shows the key that's played. A line whose placeholders were all empty (e.g.
-	/// "## $artist" for a song without an artist) is left out.
+	/// separated by spaces: "ballad christmas Rock"). $key is the key that's played, moved by the
+	/// member's own transpose. In brackets ("[$key]") it's a chord (written in the lyrics' key and
+	/// transposed with their chords, so it shows the key that's played). $capo is the member's own
+	/// transpose as they count it ("+2"; empty for none); not offered in the settings yet. A line whose
+	/// placeholders were all empty (e.g. "## $artist" for a song without an artist) is left out.
 	/// </para>
 	/// </summary>
 	public static partial class LyricsHeader
@@ -59,19 +60,23 @@ namespace Lyrious.UILib.Setlists
 		/// The header for <paramref name="song"/> as ChordPro: <paramref name="definition"/> with its
 		/// placeholders filled in; empty when there's no header.
 		/// </summary>
-		/// <param name="key">The key the song's lyrics are written in (the placeholder $key).</param>
-		public static string Expand(string definition, SongDetails song, string key)
+		/// <param name="key">The key the song's lyrics are written in (the chord [$key]).</param>
+		/// <param name="transpose">The member's own transpose of the song: the key is moved by it, and it's $capo.</param>
+		public static string Expand(string definition, SongDetails song, string key, int transpose = 0)
 		{
 			if (string.IsNullOrWhiteSpace(definition))
 			{
 				return "";
 			}
 
+			// [$key]: the chord in the lyrics' key (it's moved with their chords).
+			definition = KeyChord().Replace(definition, _ => "[" + key.Trim() + "]");
 			var values = new (string Name, string Value)[]
 			{
 				("songname", song.Name.Trim()),
 				("artist", song.Artist.Trim()),
-				("key", key.Trim()),
+				("key", PageLayout.MovedKey(song.PlayingKey, transpose)),
+				("capo", PageLayout.TransposeValue(transpose)),
 				("tempo", song.Tempo > 0 ? song.Tempo.ToString("0.##", CultureInfo.InvariantCulture) : ""),
 				("beat", song.Beat.Trim()),
 				// The song's tags in the order they're shown elsewhere, separated by spaces: "ballad christmas Rock".
@@ -108,8 +113,13 @@ namespace Lyrious.UILib.Setlists
 		/// The lyrics with the header in front: the header, an empty line, then the lyrics. Just the
 		/// lyrics when there's no header.
 		/// </summary>
-		public static string Prepend(string definition, SongDetails song, string key, string lyrics)
-			=> Expand(definition, song, key) is { Length: > 0 } header ? header + "\n\n" + lyrics : lyrics;
+		/// <param name="transpose">The member's own transpose of the song: the key is moved by it, and it's $capo.</param>
+		public static string Prepend(string definition, SongDetails song, string key, string lyrics, int transpose = 0)
+			=> Expand(definition, song, key, transpose) is { Length: > 0 } header ? header + "\n\n" + lyrics : lyrics;
+
+		// "[$key]" in any case: the key as a chord.
+		[GeneratedRegex(@"\[\$key\]", RegexOptions.IgnoreCase)]
+		private static partial Regex KeyChord();
 
 		// "$name": all the letters after the '$', so "$songname" is one name.
 		[GeneratedRegex(@"\$([A-Za-z]+)")]

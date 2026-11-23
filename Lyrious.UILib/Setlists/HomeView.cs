@@ -1117,6 +1117,7 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The member's own settings for a song changed on another of their devices: the lyrics showing it follow.</summary>
 		private void OnMySongSettingChanged(Guid songId) => Dispatcher.UIThread.Post(async () =>
 		{
+			SongInfoLine.TransposeChanged(songId);
 			if (page.Content is LyricScrollView lyrics && lyrics.SongId == songId && !lyrics.IsEditing)
 			{
 				try
@@ -1141,7 +1142,12 @@ namespace Lyrious.UILib.Setlists
 			view.LoadMembersLyrics = () => service.GetMembersLyricsAsync(groupId, songId);
 			view.SaveMemberLyrics = (memberId, lyrics) => service.SaveMemberLyricsAsync(songId, memberId, lyrics);
 
-			view.UseMySetting(() => service.GetMySongSettingAsync(songId), setting => service.SaveMySongSettingAsync(songId, setting));
+			view.UseMySetting(() => service.GetMySongSettingAsync(songId), async setting =>
+			{
+				await service.SaveMySongSettingAsync(songId, setting);
+				// The song lists (and the right drawer) show the key as the member transposes it.
+				SongInfoLine.TransposeChanged(songId);
+			});
 		}
 
 		private int presentMembersLoad;
@@ -2175,10 +2181,10 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// Whether the right drawer's search finds the song: the text in its name, or in one of its
-		/// tags ("#" in front of the text is left out, as tags are written without one).
+		/// Whether the right drawer's search (and a setlist page's) finds the song: the text in its name,
+		/// or in one of its tags ("#" in front of the text is left out, as tags are written without one).
 		/// </summary>
-		private static bool DrawerSongMatches(SongDetails song, string text)
+		internal static bool DrawerSongMatches(SongDetails song, string text)
 		{
 			if (song.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase))
 			{
@@ -2229,23 +2235,7 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>One song in the right drawer: its name, then its tags (at the left) and tempo, beat and key (at the right); the current song is highlighted.</summary>
 		private Button SongRow(GroupSummary group, SetlistSummary setlist, SetlistEntry entry)
 		{
-			var details = PageLayout.SongInfo(entry.Song);
-			// The name and the line under it close together (the second line keeps its own room small too).
-			var content = new StackPanel { Spacing = 0 };
-			content.Children.Add(new TextBlock { Text = entry.Song.Name, FontSize = 18, FontWeight = FontWeight.Bold, TextTrimming = TextTrimming.CharacterEllipsis });
-			var tags = SongTags.Sorted(entry.Song.Tags);
-			if (details.Length > 0 || tags.Count > 0)
-			{
-				// The tags at the left, under the name; tempo, beat and key at the right. When the drawer is
-				// too narrow for all of them, the tags wrap onto more lines.
-				var detailsText = PageLayout.SongInfoText(entry.Song, fontSize: 13);
-				DockPanel.SetDock(detailsText, Dock.Right);
-				var chips = PageLayout.TagChips(tags, 11);
-				chips.Margin = new Thickness(0, 0, details.Length > 0 && tags.Count > 0 ? 8 : 0, 0);
-				chips.VerticalAlignment = VerticalAlignment.Center;
-				chips.HorizontalAlignment = HorizontalAlignment.Left;
-				content.Children.Add(new DockPanel { Children = { detailsText, chips } });
-			}
+			var content = PageLayout.SongCard(entry.Song, 18, 13, 11);
 
 			var row = new Button
 			{
@@ -2841,9 +2831,12 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="selectedSetlistId">The setlist to show; else the current one.</param>
 		private void ShowSetlists(GroupSummary group, IReadOnlyList<SetlistSummary> setlists, bool replace = false, Guid? selectedSetlistId = null)
 		{
-			var view = new SetlistsView(group, setlists, currentSetlist?.Id, setlist => service.GetEntriesAsync(setlist.Id), selectedSetlistId, currentEntryId);
+			SetlistsView? view = null;
+			view = new SetlistsView(group, setlists, currentSetlist?.Id, setlist => service.GetEntriesAsync(setlist.Id), selectedSetlistId, currentEntryId,
+				SongToolActions(group, async () => ShowSetlists(group, await service.GetSetlistsAsync(group.Id), replace: true, selectedSetlistId: view?.SelectedSetlistId)));
 			// A song picked in a setlist opens it (and makes that setlist the current one).
 			view.SongSelected += (setlist, entry) => SelectSong(group, setlist, entry);
+			view.SongsMoved += (setlist, order) => MoveSongs(setlist, order);
 			// "+" on the shown setlist: the same menu as the right drawer's, for that setlist.
 			view.AddSongsRequested += (setlist, button) => AddSongsMenu(() => (group, setlist)).ShowAt(button);
 			// Made the current one: the page shows it so, and the drawer and the band follow.
@@ -2919,14 +2912,64 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			// The current song is highlighted in the current setlist only.
-			var view = new SetlistView(setlist, entries, isCurrent ? currentEntryId : null);
+			var view = new SetlistView(setlist, entries, isCurrent ? currentEntryId : null, SongToolActions(group, () => ShowSetlistAsync(group, setlist)));
 			view.SongSelected += entry => SelectSong(group, setlist, entry);
+			view.SongsMoved += order => MoveSongs(setlist, order);
 			view.AddSongsRequested += () => _ = RunAsync(async () =>
 				ShowAddSongs(group, setlist, await service.GetSongbookSongsAsync(group.Id), entries.Select(entry => entry.Song.Id).ToHashSet()));
 			page.Content = view;
 			if (isCurrent)
 			{
 				RefreshSetlistDrawer(reload: true);
+			}
+		}
+
+		/// <summary>
+		/// What a song's toolbar on a setlist page does, as in the songbook: edit, delete, add to a
+		/// setlist; <paramref name="refresh"/> shows the page again after a song is deleted.
+		/// </summary>
+		private SongsView.SongToolActions SongToolActions(GroupSummary group, Func<Task> refresh) => new(
+			song => ShowSongEditor(group, song),
+			song => _ = RunAsync(async () =>
+			{
+				await service.DeleteSongAsync(song.Id);
+				if (song.Id == currentSongId)
+				{
+					SetCurrentSong(null, null);
+				}
+
+				// The setlist lost the song too.
+				playbackEntries = [];
+				RefreshSetlistDrawer(reload: true);
+				await refresh();
+			}),
+			() => service.GetSetlistsAsync(group.Id),
+			(song, setlist) => _ = AddSongToSetlistAsync(song, setlist),
+			ShowNotice);
+
+		/// <summary>Saves the setlist's songs in their new order (moved on a setlist page); the right drawer follows when it shows that setlist.</summary>
+		private void MoveSongs(SetlistSummary setlist, IReadOnlyList<SetlistEntry> order) => _ = RunAsync(async () =>
+		{
+			await service.MoveSongsAsync(setlist.Id, order.Select(entry => entry.Id).ToList());
+			if (setlist.Id == currentSetlist?.Id || setlist.Id == drawerSetlistId)
+			{
+				RefreshSetlistDrawer(reload: true);
+			}
+		});
+
+		/// <summary>
+		/// The member's own settings on a song's swipe preview (see LyricScrollView.ShowAsPreview); read
+		/// from the offline cache, so normally before the preview is first drawn.
+		/// </summary>
+		private async Task ShowPreviewSettingAsync(LyricScrollView view, Guid songId)
+		{
+			try
+			{
+				view.ShowAsPreview(await service.GetMySongSettingAsync(songId));
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't read the member's own song settings: {ex.Message}");
 			}
 		}
 
@@ -3481,7 +3524,7 @@ namespace Lyrious.UILib.Setlists
 				var index = IndexOfEntry(entries, entryId.Value);
 				var nextSong = index >= 0 && index < entries.Count - 1 ? entries[index + 1].Song : null;
 				var isLast = index >= 0 && index == entries.Count - 1;
-				playbackBar.SetNextSong(nextSong?.Name, nextSong == null ? null : PageLayout.SongInfo(nextSong), lastInSetlist: isLast, key: nextSong?.PlayingKey);
+				playbackBar.SetNextSong(nextSong, lastInSetlist: isLast);
 			}
 			catch (Exception ex)
 			{
@@ -3811,9 +3854,11 @@ namespace Lyrious.UILib.Setlists
 				return false;
 			}
 
-			// The song as it will show (without the member's own settings, read when it's shown).
+			// The song as it will show, with the member's own settings (the transpose button too), so it
+			// doesn't change when it's opened.
 			var view = new LyricScrollView(playbackEntries[target].Song, Task.FromResult);
 			view.SetFocusMode(focusMode);
+			_ = ShowPreviewSettingAsync(view, playbackEntries[target].Song.Id);
 			var preview = new Border { Child = view, IsHitTestVisible = false, Margin = page.Margin };
 			preview.Bind(Border.BackgroundProperty, preview.GetResourceObservable(SlideBackground));
 			slidePreview = preview;

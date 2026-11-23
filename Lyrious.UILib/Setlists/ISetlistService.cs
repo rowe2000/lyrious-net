@@ -268,6 +268,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Makes the setlist's songs exactly these, in this order (its earlier songs are taken out); the setlist itself stays.</summary>
 		Task ReplaceSongsAsync(Guid setlistId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default);
 
+		/// <summary>Puts the setlist's songs in this order (by their entries, which stay the same, so the band's current song does too).</summary>
+		Task MoveSongsAsync(Guid setlistId, IReadOnlyList<Guid> entryIds, CancellationToken cancellationToken = default);
+
 		/// <summary>Makes the setlist the group's current one (and clears the current song).</summary>
 		Task SelectSetlistAsync(Guid groupId, Guid setlistId, CancellationToken cancellationToken = default);
 
@@ -435,6 +438,7 @@ namespace Lyrious.UILib.Setlists
 		public Task<SongDetails> UpdateLyricsAsync(Guid songId, string lyrics, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task AddSongsAsync(Guid setlistId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task ReplaceSongsAsync(Guid setlistId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task MoveSongsAsync(Guid setlistId, IReadOnlyList<Guid> entryIds, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SelectSetlistAsync(Guid groupId, Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SelectSongAsync(Guid groupId, SetlistEntry entry, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task UploadSoundAsync(Guid songId, string soundId, System.IO.Stream content, CancellationToken cancellationToken = default) => throw NotConnected();

@@ -73,6 +73,17 @@ for arch in "${archs[@]}"; do
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Lyrious</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lyrious</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
 PLIST

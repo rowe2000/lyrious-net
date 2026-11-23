@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Lyrious.UILib.Localization;
 
@@ -60,6 +61,38 @@ namespace Lyrious.UILib.Setlists
 		/// from the top). The title shares that row; with a back link, the link does and the title
 		/// comes under it.
 		/// </summary>
+		// Marks a page's title (with its icon), so something can take its place (see ShowInPlaceOfTitle).
+		private const string TitleTag = "page-title";
+
+		/// <summary>
+		/// Shows <paramref name="replacement"/> (e.g. a search box) in the place of a page's title, the
+		/// tools at its right staying (<paramref name="shown"/> true), or the title again (false).
+		/// </summary>
+		public static void ShowInPlaceOfTitle(Control page, Control replacement, bool shown)
+		{
+			var title = System.Linq.Enumerable.FirstOrDefault(System.Linq.Enumerable.OfType<Control>(page.GetLogicalDescendants()), control => TitleTag.Equals(control.Tag));
+			if (title?.Parent is not Panel row)
+			{
+				return;
+			}
+
+			// After the title: in a row of the header it's the last child, so it takes the room left of the tools.
+			if (replacement.Parent == null)
+			{
+				row.Children.Add(replacement);
+			}
+
+			replacement.IsVisible = shown;
+			title.IsVisible = !shown;
+		}
+
+		// Marks a page's subtitle, so it can be found to change it (see Subtitle).
+		private const string SubtitleTag = "page-subtitle";
+
+		/// <summary>The line under a page's title (e.g. "45 songs"), to change it for a while; null if the page has none.</summary>
+		public static TextBlock? Subtitle(Control page)
+			=> System.Linq.Enumerable.FirstOrDefault(System.Linq.Enumerable.OfType<TextBlock>(page.GetLogicalDescendants()), text => SubtitleTag.Equals(text.Tag));
+
 		private static Control Page(string title, Control content, Control? backLink, string? subtitle = null, Control? titleAction = null, string? icon = null)
 		{
 			// The whole width of the app (as the song pages), not a narrow column in the middle.
@@ -80,11 +113,13 @@ namespace Lyrious.UILib.Setlists
 
 			// The page's icon (its left drawer item's) before the title.
 			Control titled = titleText;
+			titleText.Tag = TitleTag;
 			if (icon != null)
 			{
 				var iconPath = AppIcons.Create(icon, 24, 2);
 				iconPath.Margin = new Thickness(0, 0, 12, 0);
-				titled = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { iconPath, titleText } };
+				titled = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { iconPath, titleText }, Tag = TitleTag };
+				titleText.Tag = null;
 			}
 
 			header.Children.Add(firstRow);
@@ -102,7 +137,7 @@ namespace Lyrious.UILib.Setlists
 
 			if (!string.IsNullOrEmpty(subtitle))
 			{
-				header.Children.Add(new TextBlock { Text = subtitle, Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
+				header.Children.Add(new TextBlock { Text = subtitle, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, Tag = SubtitleTag });
 			}
 
 			DockPanel.SetDock(header, Dock.Top);
@@ -832,10 +867,14 @@ namespace Lyrious.UILib.Setlists
 		/// <paramref name="note"/> (e.g. "in setlist") when there is one: the playing key in the full
 		/// text colour, the rest (with the original key, when it differs) dimmed.
 		/// </summary>
-		public static Control SongInfoText(SongDetails song, string? note = null, double fontSize = 14)
+		/// <param name="transpose">The member's own transpose of the song: the key is shown moved by it, with the amount ("A (+2)").</param>
+		/// <param name="transposeBesideKey">The amount right after the key, as large as it and without "capo" or brackets ("A +2"), e.g. in the right drawer.</param>
+		/// <param name="centered">Each part in the middle of the line (e.g. beside a small caption), rather than on one baseline.</param>
+		public static Control SongInfoText(SongDetails song, string? note = null, double fontSize = 14, int transpose = 0, bool transposeBesideKey = false, bool centered = false)
 		{
-			var key = song.PlayingKey?.Trim() ?? "";
-			var original = OriginalKeyNote(song);
+			var key = MovedKey(song.PlayingKey, transpose);
+			var original = transposeBesideKey ? OriginalKeyNote(song) : KeyNotes(song, transpose);
+			var besideKey = transposeBesideKey ? TransposeValue(transpose) : "";
 			var rest = SongInfo(song with { PlayingKey = "", OriginalKey = "" });
 			var line = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
 			// On one baseline: the playing key is larger (see KeyScale), so the parts sit on their bottoms.
@@ -846,17 +885,45 @@ namespace Lyrious.UILib.Setlists
 				if (text.Length > 0)
 				{
 					var size = Math.Round(fontSize * scale);
-					line.Children.Add(new TextBlock { Text = text, FontSize = size, LineHeight = Math.Round(size * 1.15), Opacity = dim ? 0.7 : 1, VerticalAlignment = VerticalAlignment.Bottom });
+					line.Children.Add(new TextBlock { Text = text, FontSize = size, LineHeight = Math.Round(size * 1.15), Opacity = dim ? 0.7 : 1, VerticalAlignment = centered ? VerticalAlignment.Center : VerticalAlignment.Bottom });
 				}
 			}
 
-			// "in setlist · 120 bpm · 4/4 · G (orig. A)", with only the parts there are.
+			// "in setlist · 120 bpm · 4/4 · G (+2, orig. A)", with only the parts there are.
 			var keyPart = key.Length > 0 || original.Length > 0;
 			Add(string.IsNullOrEmpty(note) ? "" : note + (keyPart || rest.Length > 0 ? " · " : ""), true);
 			Add(rest.Length == 0 ? "" : rest + (keyPart ? " · " : ""), true);
 			Add(key, false, KeyScale);
+			Add(besideKey.Length == 0 ? "" : (key.Length > 0 ? " " : "") + besideKey, true, KeyScale);
 			Add(original.Length == 0 ? "" : (key.Length > 0 ? $" ({original})" : original), true);
 			return line;
+		}
+
+		/// <summary>
+		/// A song as the right drawer shows it (also the play toolbar's next song): its name in bold, and
+		/// under it its tags at the left and its tempo, beat and key at the right (the key moved by the
+		/// member's own transpose, with its value beside it, see <see cref="SongInfoLine"/>). When the room
+		/// is too narrow for all of them, the tags wrap onto more lines.
+		/// </summary>
+		public static StackPanel SongCard(SongDetails song, double nameSize, double detailsSize, double tagSize)
+		{
+			// The name and the line under it close together (the second line keeps its own room small too).
+			var card = new StackPanel { Spacing = 0 };
+			card.Children.Add(new TextBlock { Text = song.Name, FontSize = nameSize, FontWeight = FontWeight.Bold, TextTrimming = TextTrimming.CharacterEllipsis });
+			var hasDetails = SongInfo(song).Length > 0;
+			var tags = SongTags.Sorted(song.Tags);
+			if (hasDetails || tags.Count > 0)
+			{
+				var details = new SongInfoLine(song, fontSize: detailsSize);
+				DockPanel.SetDock(details, Dock.Right);
+				var chips = TagChips(tags, tagSize);
+				chips.Margin = new Thickness(0, 0, hasDetails && tags.Count > 0 ? 8 : 0, 0);
+				chips.VerticalAlignment = VerticalAlignment.Center;
+				chips.HorizontalAlignment = HorizontalAlignment.Left;
+				card.Children.Add(new DockPanel { Children = { details, chips } });
+			}
+
+			return card;
 		}
 
 		/// <summary>How much larger the playing key is than the tempo and beat beside it (half as large again), so it stands out.</summary>
@@ -867,6 +934,7 @@ namespace Lyrious.UILib.Setlists
 		/// playing key in it half as large again (see <see cref="KeyScale"/>): where it starts the line or
 		/// follows a " · ". Just the text when there's no key, or it isn't in the line.
 		/// </summary>
+		/// <param name="key">The playing key as it's shown in the text (moved by the member's transpose, see <see cref="MovedKey"/>).</param>
 		public static void SetDetailsText(TextBlock block, string? text, string? key)
 		{
 			block.Inlines?.Clear();
@@ -896,12 +964,43 @@ namespace Lyrious.UILib.Setlists
 			return original.Length > 0 && !original.Equals(song.PlayingKey?.Trim(), StringComparison.Ordinal) ? $"orig. {original}" : "";
 		}
 
+		/// <summary>
+		/// The member's own transpose as they count it: semitones ("+2", "−1"), or with a capo
+		/// ("capo +2", see <see cref="DisplaySettings.CapoMode"/>); empty for none.
+		/// </summary>
+		public static string TransposeAmount(int transpose)
+		{
+			if (transpose == 0)
+			{
+				return "";
+			}
+
+			return DisplaySettings.CapoMode ? L.T("capo {0}", TransposeValue(transpose)) : TransposeValue(transpose);
+		}
+
+		/// <summary>The member's own transpose as just a number as they count it ("+2", "−1"); empty for none.</summary>
+		public static string TransposeValue(int transpose)
+			// A capo counts the other way: chords moved down 2 are played with the capo 2 frets up.
+			=> transpose == 0 ? "" : (DisplaySettings.CapoMode ? -transpose : transpose).ToString("+0;−0");
+
+		/// <summary>The playing key moved by the member's transpose ("G" by +2 is "A"); the key itself when either isn't set.</summary>
+		public static string MovedKey(string? key, int transpose)
+		{
+			var playing = key?.Trim() ?? "";
+			return transpose == 0 || playing.Length == 0 ? playing : Transpose.Chord(playing, transpose, playing) ?? playing;
+		}
+
+		// What goes in brackets after the playing key: the member's transpose and the original key, "+2, orig. A".
+		private static string KeyNotes(SongDetails song, int transpose)
+			=> string.Join(", ", System.Linq.Enumerable.Where(new[] { TransposeAmount(transpose), OriginalKeyNote(song) }, part => part.Length > 0));
+
 		/// <summary>A song's tempo, beat and keys (the order details go in everywhere), e.g. "120 bpm · 4/4 · G# (orig. A)"; empty if none are set.</summary>
-		public static string SongInfo(SongDetails song)
+		/// <param name="transpose">The member's own transpose of the song: the key is shown moved by it, with the amount ("A (+2, orig. A)").</param>
+		public static string SongInfo(SongDetails song, int transpose = 0)
 		{
 			var parts = new System.Collections.Generic.List<string>();
-			var key = song.PlayingKey?.Trim() ?? "";
-			var original = OriginalKeyNote(song);
+			var key = MovedKey(song.PlayingKey, transpose);
+			var original = KeyNotes(song, transpose);
 			var keys = key.Length > 0 || original.Length > 0
 				? key.Length == 0 ? original : original.Length == 0 ? key : $"{key} ({original})"
 				: "";

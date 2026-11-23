@@ -25,6 +25,9 @@ namespace Lyrious.UILib
 	/// <item>When the view with the text box closes while it's being typed in, the text box loses the
 	/// focus first (its LostFocus is raised), so what was typed is handled as when leaving it by hand,
 	/// e.g. taken or saved.</item>
+	/// <item>When the room to type in changes (the text box gets narrower or wider, or a button
+	/// inside it, e.g. a ✓ or ✕, shows or hides) while it's being typed in, the caret is scrolled
+	/// back into sight, so it's never hidden under those buttons.</item>
 	/// </list>
 	/// Views that act on LostFocus (take the value, close a box) need nothing more.
 	/// </summary>
@@ -48,6 +51,37 @@ namespace Lyrious.UILib
 			InputElement.LostFocusEvent.AddClassHandler<TextBox>(OnLostFocus);
 			InputElement.IsKeyboardFocusWithinProperty.Changed.AddClassHandler<ComboBox>((box, _) => OnComboFocusChanged(box));
 			ComboBox.IsDropDownOpenProperty.Changed.AddClassHandler<ComboBox>((box, _) => OnComboFocusChanged(box));
+			// The text box's own scroller: its size is the room to type in.
+			Visual.BoundsProperty.Changed.AddClassHandler<ScrollViewer>((scroller, e) => OnTypingRoomChanged(scroller, e));
+		}
+
+		/// <summary>The room to type in a text box changed: the caret back in sight, once the text box is laid out anew.</summary>
+		private static void OnTypingRoomChanged(ScrollViewer scroller, AvaloniaPropertyChangedEventArgs e)
+		{
+			if (scroller.TemplatedParent is not TextBox box || !box.IsKeyboardFocusWithin
+			    || e.OldValue is not Rect before || e.NewValue is not Rect after || Math.Abs(before.Width - after.Width) < 0.5)
+			{
+				return;
+			}
+
+			Avalonia.Threading.Dispatcher.UIThread.Post(() => ShowCaret(box), Avalonia.Threading.DispatcherPriority.Background);
+		}
+
+		/// <summary>
+		/// Scrolls the text box so its caret shows: the caret is moved off and back (which scrolls to it),
+		/// and the selection is put back as it was.
+		/// </summary>
+		private static void ShowCaret(TextBox box)
+		{
+			var (start, end, caret) = (box.SelectionStart, box.SelectionEnd, box.CaretIndex);
+			var length = box.Text?.Length ?? 0;
+			box.CaretIndex = caret > 0 ? caret - 1 : Math.Min(1, length);
+			box.CaretIndex = caret;
+			if (start != end)
+			{
+				box.SelectionStart = start;
+				box.SelectionEnd = end;
+			}
 		}
 
 		/// <summary>The focus came to a drop-down (its value is kept, for Escape), or left it (its list closed too).</summary>

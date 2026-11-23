@@ -28,7 +28,8 @@ echo "Lyrious $version"
 
 appimagetool="${APPIMAGETOOL:-$(command -v appimagetool || true)}"
 
-# The menu entry, the same in every package (Exec is set per package). Named se.lyrious.Lyrious.desktop
+# The menu entry, the same in every package (Exec is set per package). It also takes lyrious://
+# links (%u), so the web app can open the installed app. Named se.lyrious.Lyrious.desktop
 # (reverse DNS, as freedesktop recommends; "lyrious.desktop" would also clash with the program
 # Lyrious.Desktop where names ignore case, e.g. when built on a Mac).
 entry_name="se.lyrious.Lyrious.desktop"
@@ -39,11 +40,12 @@ Type=Application
 Name=Lyrious
 GenericName=Songs and setlists for bands
 Comment=Songs, setlists and lyrics for your band, in sync
-Exec=$1
+Exec=$1 %u
 Icon=lyrious
 Terminal=false
 Categories=AudioVideo;Audio;Music;
 StartupWMClass=Lyrious.Desktop
+MimeType=x-scheme-handler/lyrious;
 ENTRY
 }
 

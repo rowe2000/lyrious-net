@@ -18,6 +18,9 @@ namespace Lyrious.UILib.Setlists
 	{
 		private readonly List<(T Item, Border Outline, Control Tools)> rows = [];
 
+		// Each item's whole row (with its toolbar), to hide it when it isn't found (see Filter).
+		private readonly List<(T Item, Control Row)> shownRows = [];
+
 		private readonly bool activateOnClick;
 		private readonly Thickness rowPadding;
 		private readonly bool toolsBelow;
@@ -26,6 +29,21 @@ namespace Lyrious.UILib.Setlists
 		public static readonly Thickness RowPadding = new(16, 12);
 
 		private IDisposable? selectedOutline;
+
+		/// <summary>Lists only the items <paramref name="shown"/> keeps (e.g. those a search finds); the others are hidden.</summary>
+		public void Filter(Func<T, bool> shown)
+		{
+			foreach (var (item, row) in shownRows)
+			{
+				row.IsVisible = shown(item);
+			}
+		}
+
+		/// <summary>How many items are listed (those found, while filtered).</summary>
+		public int ShownCount => shownRows.Count(pair => pair.Row.IsVisible);
+
+		/// <summary>The first item listed (the first found, while filtered), if any.</summary>
+		public T? FirstShown => shownRows.FirstOrDefault(pair => pair.Row.IsVisible).Item;
 
 		/// <summary>The selected item (outlined), if any.</summary>
 		public T? Selected { get; private set; }
@@ -66,6 +84,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				var current = isCurrent(item);
 				var row = Row(item, content(item), current, tools(item), activate);
+				shownRows.Add((item, row));
 				currentRow ??= current ? row : null;
 				list.Children.Add(row);
 			}
@@ -158,7 +177,23 @@ namespace Lyrious.UILib.Setlists
 			return new DockPanel { Children = { toolbar, outline } };
 		}
 
-		/// <summary>Selects the item (or nothing): outlines its row and shows its toolbar.</summary>
+		/// <summary>The selected row's toolbar hidden (it stays outlined), e.g. while songs are checked for the setlist tool.</summary>
+		public bool ToolsHidden
+		{
+			get => toolsHidden;
+			set
+			{
+				if (toolsHidden != value)
+				{
+					toolsHidden = value;
+					Select(Selected);
+				}
+			}
+		}
+
+		private bool toolsHidden;
+
+		/// <summary>Selects the item (or nothing): outlines its row and shows its toolbar (unless <see cref="ToolsHidden"/>).</summary>
 		public void Select(T? item)
 		{
 			var changed = !EqualityComparer<T?>.Default.Equals(Selected, item);
@@ -171,7 +206,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				var selected = item is not null && EqualityComparer<T>.Default.Equals(rowItem, item);
 				// A row without tools (e.g. the joined band) shows no toolbar, so it doesn't narrow.
-				tools.IsVisible = selected && tools is Panel { Children.Count: > 0 };
+				tools.IsVisible = selected && !toolsHidden && tools is Panel { Children.Count: > 0 };
 				if (selected)
 				{
 					selectedOutline = outline.Bind(Border.BorderBrushProperty, outline.GetResourceObservable(LyriousTheme.SelectionBrush));

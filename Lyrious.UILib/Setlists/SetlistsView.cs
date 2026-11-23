@@ -30,6 +30,18 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when the user picks a song of the shown setlist.</summary>
 		public event Action<SetlistSummary, SetlistEntry>? SongSelected;
 
+		/// <summary>Raised with a setlist's songs in their new order when the member moved one (see <see cref="SetlistMoveList"/>).</summary>
+		public event Action<SetlistSummary, IReadOnlyList<SetlistEntry>>? SongsMoved;
+
+		// A play triangle, for Play (making the setlist the current one).
+		private const string PlayIcon = "M7,4.5 L19,12 L7,19.5 Z";
+
+		// Marks the setlist's "Uncheck all songs" tool among its tools.
+		private const string UncheckAllTag = "uncheck-all";
+
+		// What a selected song's toolbar does (as in the songbook); none, no toolbar.
+		private readonly SongsView.SongToolActions? songTools;
+
 		/// <summary>Raised with the "+" button when the user wants to add songs to the shown setlist (to show the add menu at).</summary>
 		public event Action<SetlistSummary, Button>? AddSongsRequested;
 
@@ -58,14 +70,17 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="loadEntries">Gets a setlist's songs, to show them.</param>
 		/// <param name="selectedSetlistId">The setlist to show (e.g. one just added); else the current one.</param>
 		/// <param name="currentEntryId">The band's current song in the current setlist (highlighted, with a check).</param>
+		/// <param name="songTools">What a selected song's toolbar does (as in the songbook).</param>
 		public SetlistsView(
 			GroupSummary group,
 			IReadOnlyList<SetlistSummary> setlists,
 			Guid? currentSetlistId,
 			Func<SetlistSummary, Task<IReadOnlyList<SetlistEntry>>> loadEntries,
 			Guid? selectedSetlistId = null,
-			Guid? currentEntryId = null)
+			Guid? currentEntryId = null,
+			SongsView.SongToolActions? songTools = null)
 		{
+			this.songTools = songTools;
 			Group = group;
 			CurrentSetlistId = currentSetlistId;
 			this.currentEntryId = currentEntryId;
@@ -126,12 +141,24 @@ namespace Lyrious.UILib.Setlists
 		private Control Details(SetlistSummary setlist)
 		{
 			var isCurrent = setlist.Id == CurrentSetlistId;
-			var songCount = new TextBlock { Text = isCurrent ? L.T("Current setlist") : L.T("Not current"), Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
+			// "47 songs", and "· 2 checked" while any are (once the songs are read, see LoadSongsAsync).
+			var songCount = new TextBlock { Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
 
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
 			if (!isCurrent)
 			{
-				var makeCurrent = new Button { Content = L.T("Make current"), Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center, Height = 40, VerticalContentAlignment = VerticalAlignment.Center };
+				// "▶ Play": makes it the band's current setlist, to play from. The triangle in the button's text colour.
+				var playIcon = new Avalonia.Controls.Shapes.Path { Data = Geometry.Parse(PlayIcon), Width = 16, Height = 16, Stretch = Stretch.Uniform, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
+				playIcon.Bind(Avalonia.Controls.Shapes.Shape.FillProperty, playIcon.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
+				var makeCurrent = new Button
+				{
+					Content = new StackPanel { Orientation = Orientation.Horizontal, Children = { playIcon, new TextBlock { Text = L.T("Play"), VerticalAlignment = VerticalAlignment.Center } } },
+					Classes = { "accent" },
+					VerticalAlignment = VerticalAlignment.Center,
+					Height = 40,
+					VerticalContentAlignment = VerticalAlignment.Center,
+				};
+				ToolTip.SetTip(makeCurrent, L.T("Make this the band's current setlist, to play"));
 				makeCurrent.Click += (_, _) => SetlistMadeCurrent?.Invoke(setlist);
 				actions.Children.Add(makeCurrent);
 			}
@@ -145,7 +172,15 @@ namespace Lyrious.UILib.Setlists
 				() => SetlistDeleteRequested?.Invoke(setlist)));
 
 			DockPanel.SetDock(actions, Dock.Right);
-			// The name (or the box to change it) on one line with the tools; the song count below.
+			// Searching its songs, as in the right drawer: the box takes the name's place, the tools stay.
+			// The tools in order: Play (when not current), search, uncheck all (while songs are checked,
+			// see LoadSongsAsync), add songs, delete.
+			var search = new SetlistSearch(entry => SongSelected?.Invoke(setlist, entry));
+			actions.Children.Insert(isCurrent ? 0 : 1, search.Tool);
+			var title = PageLayout.EditableTitle(setlist.Name, newName => SetlistRenameRequested?.Invoke(setlist, newName));
+			search.SearchingChanged += searching => title.IsVisible = !searching;
+
+			// The name (or the box to change it, or the search) on one line with the tools; the search's filters and the song count below.
 			var header = new StackPanel
 			{
 				Spacing = 2,
@@ -156,20 +191,28 @@ namespace Lyrious.UILib.Setlists
 						Children =
 						{
 							actions,
-							PageLayout.EditableTitle(setlist.Name, newName => SetlistRenameRequested?.Invoke(setlist, newName)),
+							new Panel { Children = { title, search.Box } },
 						},
 					},
+					// The tags and media kinds to narrow the search by, while searching: right under the
+					// search box, above "Current setlist · 47 songs".
+					search.Filters,
 					songCount,
 				},
 			};
+			search.Filters.Margin = new Thickness(0, 6, 0, 4);
 
 			var songs = new ContentControl { Content = new TextBlock { Text = L.T("Loading songs…"), Opacity = 0.7 } };
-			_ = LoadSongsAsync(setlist, songs, songCount, isCurrent);
+			Border? card = null;
+			_ = LoadSongsAsync(setlist, songs, songCount, isCurrent, actions, () => card, search);
 
-			var card = new Border
+			// Outlined by a transparent border when not current, so moving songs can flash it (see SetlistMoveList.FlashBorder).
+			card = new Border
 			{
 				Padding = new Thickness(16),
 				CornerRadius = new CornerRadius(8),
+				BorderThickness = new Thickness(2),
+				BorderBrush = Brushes.Transparent,
 				Child = new StackPanel { Spacing = 12, Children = { header, songs } },
 			};
 			card.Bind(Border.BackgroundProperty, card.GetResourceObservable(LyriousTheme.CardBrush));
@@ -184,7 +227,10 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>Fills in the setlist's songs, unless another setlist is shown by then.</summary>
-		private async Task LoadSongsAsync(SetlistSummary setlist, ContentControl songs, TextBlock status, bool isCurrent)
+		/// <param name="actions">The setlist's tools: while songs are moved they're hidden, with the ✓ that ends it in their place.</param>
+		/// <param name="card">The setlist's card, whose border flashes while songs are moved.</param>
+		/// <param name="search">The search of the setlist's songs, which applies to them as they're listed.</param>
+		private async Task LoadSongsAsync(SetlistSummary setlist, ContentControl songs, TextBlock status, bool isCurrent, Panel actions, Func<Border?> card, SetlistSearch search)
 		{
 			IReadOnlyList<SetlistEntry> entries;
 			try
@@ -202,26 +248,98 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			var count = entries.Count == 1 ? "1 song" : $"{entries.Count} songs";
-			status.Text = isCurrent ? L.T("Current setlist · {0}", count) : count;
+			status.Text = SongsView.CountText(entries.Count, SongsView.CheckedEntries(entries.Select(entry => entry.Id)));
 			if (entries.Count == 0)
 			{
 				songs.Content = new TextBlock { Text = L.T("There are no songs in this setlist yet. Add some with +."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
 				return;
 			}
 
-			// The songs as in the songbook (without its check boxes); a click opens one. The band's current
-			// song is highlighted in the current setlist.
+			// The songs as in the songbook, with its check boxes (shared with it); a click selects one and
+			// shows its toolbar under it, a double click opens it, a longclick moves them (see
+			// SetlistMoveList). The band's current song is highlighted in the current setlist.
 			var current = isCurrent ? currentEntryId : null;
-			songs.Content = new SelectableList<SetlistEntry>(
+			void StartMoving(SetlistEntry pressed)
+			{
+				// Every song is moved: the search ends.
+				search.Show(false);
+				var moving = new SetlistMoveList(entries, pressed.Id, current);
+				moving.Moved += order =>
+				{
+					entries = order;
+					SongsMoved?.Invoke(setlist, order);
+				};
+
+				var tools = actions.Children.ToList();
+				var flash = card() is { } border ? SetlistMoveList.FlashBorder(border) : null;
+				Button? done = null;
+				// Also when the page (or another setlist) takes the list's place first.
+				done = moving.DoneButton(() =>
+				{
+					flash?.Dispose();
+					actions.Children.Remove(done!);
+					tools.ForEach(tool => tool.IsVisible = true);
+					if (songs.Content == moving)
+					{
+						_ = LoadSongsAsync(setlist, songs, status, isCurrent, actions, card, search);
+					}
+				});
+				tools.ForEach(tool => tool.IsVisible = false);
+				actions.Children.Add(done);
+				// How to move them, in place of "Current setlist · 45 songs" (put back when the songs show again).
+				status.Text = moving.Hint;
+				songs.Content = moving;
+			}
+
+			var boxes = new List<CheckBox>();
+			var ids = entries.Select(entry => entry.Id).ToArray();
+			SelectableList<SetlistEntry>? list = null;
+
+			// "Uncheck all songs" after the search among the setlist's tools, while songs are checked (one, also when the songs are shown again).
+			foreach (var old in actions.Children.Where(tool => UncheckAllTag.Equals(tool.Tag)).ToList())
+			{
+				actions.Children.Remove(old);
+			}
+
+			Button? uncheckAll = null;
+			uncheckAll = SongsView.UncheckAllButton(() => boxes, Dim);
+			uncheckAll.Tag = UncheckAllTag;
+			actions.Children.Insert(actions.Children.IndexOf(search.Tool) + 1, uncheckAll);
+
+			// Checked songs hide the selected song's toolbar, as in the songbook.
+			void Dim()
+			{
+				SongsView.DimCheckBoxes(boxes, SongsView.AnyEntryChecked(ids));
+				status.Text = SongsView.CountText(ids.Length, SongsView.CheckedEntries(ids), list?.ShownCount);
+				if (uncheckAll != null)
+				{
+					uncheckAll.IsVisible = SongsView.AnyEntryChecked(ids);
+				}
+
+				if (list != null)
+				{
+					list.ToolsHidden = SongsView.AnyEntryChecked(ids);
+				}
+			}
+
+			songs.Content = list = new SelectableList<SetlistEntry>(
 				entries,
-				entry => SongsView.SongRow(entry.Song, null, entry.Id == current, SongsView.SongListExtraHeight),
+				entry =>
+				{
+					var row = SongsView.CheckableRow(entry.Song, SongsView.SongRow(entry.Song, null, entry.Id == current, SongsView.SongListExtraHeight), boxes, Dim, entry.Id);
+					SetlistMoveList.OnLongClick(row, () => StartMoving(entry));
+					return row;
+				},
 				entry => entry.Id == current,
-				_ => [],
+				entry => songTools == null ? [] : SongsView.ToolButtons(entry.Song, entry.Id == current, () => SongSelected?.Invoke(setlist, entry), songTools),
 				entry => SongSelected?.Invoke(setlist, entry),
 				L.T("There are no songs in this setlist yet. Add some with +."),
-				activateOnClick: true,
-				rowPadding: SongsView.SongListRowPadding);
+				rowPadding: SongsView.SongListRowPadding,
+				toolsBelow: true);
+			// The count follows the search: "12 of 47 songs" while it leaves some out.
+			search.Filtered = Dim;
+			search.Use(list, entries);
+			Dim();
 		}
 	}
 }

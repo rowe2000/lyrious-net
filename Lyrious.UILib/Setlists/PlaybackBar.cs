@@ -26,8 +26,6 @@ namespace Lyrious.UILib.Setlists
 		private const string RestartIcon = "M6,5 V19 M18,5 L8,12 L18,19 Z";
 		private const string PlayIcon = "M8,5 L19,12 L8,19 Z";
 		private const string PauseIcon = "M8,5 V19 M16,5 V19";
-		// The caption above the next song's name: half of 14 would be too small to read.
-		private const double CaptionSize = 10;
 		// Slower and faster (the media file's speed): a turtle and a rabbit, side on.
 		private const string TurtleIcon = "M4,16 C4,10 8,7 12,7 C16,7 19,10 19,16 Z M4,16 H19 M8.5,16 L10,9.5 M14.5,16 L13.5,9.5 M6,16 V19 M17,16 V19 M19,14 C20,12.5 22.5,12.5 22.5,14.5 C22.5,16 21,16.5 19,16 M2.5,15.5 L4,16";
 		private const string RabbitIcon = "M3.5,19 C3,14.5 6.5,11.5 10.5,12 C13,12.3 14.5,13.5 15.2,14.8 M15.5,16.5 C15.6,18 14.8,19 13.5,19 H3.5 M15,12.5 A3.2,3.2 0 1,0 21.4,12.5 A3.2,3.2 0 1,0 15,12.5 M16.6,9.8 C15.6,7 15.6,4 16.7,3.2 C17.8,3.6 18.3,6.5 18,9.4 M18.9,9.4 C19.5,6.6 20.7,4.4 21.8,4.7 C22.4,5.5 21.6,8 20.4,10 M3.8,15 C2.3,14.8 2.1,16.8 3.5,17.2 M9.5,19 C9.5,17.5 10.5,16.8 11.8,17 M19.4,12 A0.2,0.2 0 1,0 19.8,12 A0.2,0.2 0 1,0 19.4,12";
@@ -36,8 +34,8 @@ namespace Lyrious.UILib.Setlists
 		private readonly Button playPause = HomeView.IconButton(PlayIcon, L.T("Scroll the lyrics"));
 		// Where the next song would be, after the last song of a setlist.
 		private readonly TextBlock noMoreSongs = new() { Text = L.T("No more songs"), FontSize = 14, Opacity = 0.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0), IsVisible = false };
-		private readonly TextBlock nextInfo = new() { FontSize = CaptionSize, Opacity = 0.7, Margin = new Thickness(8, 0, 0, 0) };
-		private readonly TextBlock nextName = new() { FontSize = 14, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+		// The next song as the right drawer shows it (see PageLayout.SongCard), smaller.
+		private readonly ContentControl nextCard = new() { VerticalAlignment = VerticalAlignment.Center };
 		private readonly Button next;
 		private readonly LongClickToggleButton bandSync = new()
 		{
@@ -124,12 +122,8 @@ namespace Lyrious.UILib.Setlists
 			// As tall as the icon buttons (24-pixel icon plus 8 padding above and below).
 			next = new Button
 			{
-				// A small line above the song's name: "Next" at the left, key · tempo · beat at the right.
-				Content = new StackPanel
-				{
-					VerticalAlignment = VerticalAlignment.Center,
-					Children = { CaptionLine(), nextName },
-				},
+				// The next song as in the right drawer (see SetNextSong), smaller.
+				Content = nextCard,
 				MinHeight = 40,
 				Padding = new Thickness(8, 0),
 				HorizontalAlignment = HorizontalAlignment.Left,
@@ -478,12 +472,6 @@ namespace Lyrious.UILib.Setlists
 		private static string Time(TimeSpan time)
 			=> time.TotalHours >= 1 ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}" : $"{(int)time.TotalMinutes}:{time.Seconds:00}";
 
-		private Control CaptionLine()
-		{
-			DockPanel.SetDock(nextInfo, Dock.Right);
-			return new DockPanel { Children = { nextInfo, new TextBlock { Text = L.T("Next"), FontSize = CaptionSize, Opacity = 0.7 } } };
-		}
-
 		/// <summary>
 		/// Sizes a toolbar icon button: the icon in a 24-pixel box (so every icon keeps its proportions
 		/// and line width), with 8 padding, like the app's other icon buttons.
@@ -538,26 +526,27 @@ namespace Lyrious.UILib.Setlists
 			Avalonia.Automation.AutomationProperties.SetName(playPause, description);
 		}
 
-		/// <summary>
-		/// Shows the next song's name and its key, tempo and beat. After the last song of a setlist
-		/// "No more songs" is shown there instead; for a song shown from the songbook, nothing.
-		/// </summary>
-		/// <param name="lastInSetlist">The current song is the setlist's last: "No more songs" is shown instead.</param>
 		/// <summary>Greys out the next song while playing: the song can't be changed then.</summary>
 		public void SetNextAllowed(bool allowed)
 		{
 			next.IsEnabled = allowed;
 		}
 
-		/// <param name="key">The next song's playing key, shown larger in its details.</param>
-		public void SetNextSong(string? nextSongName, string? details = null, bool lastInSetlist = false, string? key = null)
+		/// <summary>
+		/// Shows the next song as the right drawer does: its name, and under it its tags and its tempo,
+		/// beat and key (the key moved by the member's own transpose, with its value beside it). After the last song of a setlist
+		/// "No more songs" is shown there instead; for a song shown from the songbook, nothing.
+		/// </summary>
+		/// <param name="nextSong">The next song; none, nothing (or "No more songs").</param>
+		/// <param name="lastInSetlist">The current song is the setlist's last: "No more songs" is shown instead.</param>
+		public void SetNextSong(SongDetails? nextSong, bool lastInSetlist = false)
 		{
-			next.IsVisible = nextSongName != null;
-			noMoreSongs.IsVisible = nextSongName == null && lastInSetlist;
-			nextName.Text = nextSongName;
-			PageLayout.SetDetailsText(nextInfo, details, key);
+			var nextSongName = nextSong?.Name;
+			next.IsVisible = nextSong != null;
+			noMoreSongs.IsVisible = nextSong == null && lastInSetlist;
+			nextCard.Content = nextSong == null ? null : PageLayout.SongCard(nextSong, 14, 11, 9);
+			// No tooltip (the button shows it all); its name for screen readers.
 			var description = nextSongName == null ? L.T("Next song") : L.T("Next song: {0}", nextSongName);
-			ToolTip.SetTip(next, description);
 			Avalonia.Automation.AutomationProperties.SetName(next, description);
 		}
 	}

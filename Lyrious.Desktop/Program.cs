@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using Avalonia;
 using Lyrious.Client;
 using Lyrious.UILib;
@@ -12,13 +13,15 @@ internal class Program
     // yet and stuff might break.
     /// <param name="args">
     /// Optional: [0] Lyrious API base address. Else the host chosen on the Sync page last time, else
-    /// https://www.lyrious.se (<see cref="SettingKeys.DefaultServer"/>).
+    /// https://www.lyrious.se (<see cref="SettingKeys.DefaultServer"/>). A lyrious:// link (the web app
+    /// opening the installed app, see the installers) only starts the app.
     /// </param>
     [STAThread]
     public static void Main(string[] args)
     {
         var settings = new FileSettingsStore();
         App.Settings = settings;
+        args = args.Where(arg => !arg.StartsWith("lyrious:", StringComparison.OrdinalIgnoreCase)).ToArray();
         var host = args.Length > 0 ? args[0] : settings.Get(SettingKeys.Host) ?? SettingKeys.DefaultServer;
         // The offline cache and offline logins, in their own file (it's rewritten on every change).
         var offline = new FileSettingsStore("offline.json");

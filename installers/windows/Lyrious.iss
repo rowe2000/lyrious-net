@@ -55,5 +55,12 @@ Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Name: "{group}\Lyrious"; Filename: "{app}\Lyrious.Desktop.exe"
 Name: "{autodesktop}\Lyrious"; Filename: "{app}\Lyrious.Desktop.exe"; Tasks: desktopicon
 
+[Registry]
+; The lyrious:// link, so the web app can open the installed app (for this user or all users, as installed).
+Root: HKA; Subkey: "SoftwareClasseslyrious"; ValueType: string; ValueName: ""; ValueData: "URL:Lyrious"; Flags: uninsdeletekey
+Root: HKA; Subkey: "SoftwareClasseslyrious"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKA; Subkey: "SoftwareClasseslyriousDefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}Lyrious.Desktop.exe,0"
+Root: HKA; Subkey: "SoftwareClasseslyriousshellopencommand"; ValueType: string; ValueName: ""; ValueData: """{app}Lyrious.Desktop.exe"" ""%1"""
+
 [Run]
 Filename: "{app}\Lyrious.Desktop.exe"; Description: "{cm:LaunchProgram,Lyrious}"; Flags: nowait postinstall skipifsilent

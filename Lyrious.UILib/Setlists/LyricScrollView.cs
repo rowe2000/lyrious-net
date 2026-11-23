@@ -271,6 +271,20 @@ namespace Lyrious.UILib.Setlists
 		private MySongSetting mySetting = MySongSetting.None;
 
 		/// <summary>
+		/// For a preview of the song (the next one sliding in on a swipe): shown with the member's own
+		/// transpose and lyrics, and the transpose button, as it will be once open, so nothing changes
+		/// when it is. The keyboards aren't told and nothing is stored.
+		/// </summary>
+		public void ShowAsPreview(MySongSetting setting)
+		{
+			// The transpose button shows only where the member's settings can be kept; a preview's are, once it's open.
+			SaveMySetting = _ => Task.CompletedTask;
+			mySetting = setting ?? MySongSetting.None;
+			ShowSongHeader();
+			ShowLyrics();
+		}
+
+		/// <summary>
 		/// Lets the member have their own transpose and lyrics for the song: reads them (the lyrics are
 		/// then shown with them) and stores them with <paramref name="save"/> when changed.
 		/// </summary>
@@ -337,22 +351,8 @@ namespace Lyrious.UILib.Setlists
 
 		private static string Signed(int semitones) => semitones == 0 ? "±0" : semitones.ToString("+0;−0");
 
-		/// <summary>The song's details for the header, with the member's transpose after them.</summary>
-		private string InfoText()
-		{
-			var info = PageLayout.SongInfo(song);
-			if (mySetting.ActiveTranspose == 0)
-			{
-				return info;
-			}
-
-			// As the member counts it: a capo "Me: F# (capo I)", else semitones "Me: F# (−1)".
-			var amount = CapoMode ? L.T("capo {0}", TransposeText(mySetting.Transpose)) : Signed(mySetting.Transpose);
-			var mine = string.IsNullOrWhiteSpace(song.PlayingKey)
-				? L.T("Me: {0}", amount)
-				: L.T("Me: {0} ({1})", ShownKey, amount);
-			return info.Length == 0 ? mine : $"{info} · {mine}";
-		}
+		/// <summary>The song's details for the header, the playing key moved by the member's transpose, with the amount: "120 bpm · 4/4 · A (+2)".</summary>
+		private string InfoText() => PageLayout.SongInfo(song, mySetting.ActiveTranspose);
 
 		private readonly LongClickButton transposeButton;
 		private readonly Button lyricsSourceButton;
@@ -423,8 +423,9 @@ namespace Lyrious.UILib.Setlists
 		// Whether the song's lyrics have chords, as the toolbar was last shown (for showing it again).
 		private bool shownWithChords;
 
-		// The transpose button's value ("+2"), centred by its letters; bold, the toolbar's text size.
-		private readonly InkCenteredText transposeText = new() { [TextElement.FontSizeProperty] = 15.0, [TextElement.FontWeightProperty] = FontWeight.Bold };
+		// The transpose button's value ("+2"), centred by its letters; bold.
+		// A quarter larger than the other text buttons (15), so the transpose reads at a glance.
+		private readonly InkCenteredText transposeText = new() { [TextElement.FontSizeProperty] = 19.0, [TextElement.FontWeightProperty] = FontWeight.Bold };
 
 		// The transpose button's icon when there's no transpose: ♯♭ drawn (see TransposeIcon), 24 pixels as the
 		// other icons, in the button's text colour (so it follows hovering, as the value's text does).
@@ -899,7 +900,7 @@ namespace Lyrious.UILib.Setlists
 			// (The media player is the app's, over every page: see MediaPlayerLayer.)
 			// The time at the right of the toolbar (also in focus mode, so it shows while playing).
 			var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { titleActions, clock } };
-			Content = PageLayout.SongPage(TitleOf(song), body, InfoText(), toolbar, song.PlayingKey);
+			Content = PageLayout.SongPage(TitleOf(song), body, InfoText(), toolbar, ShownKey);
 			ShowTitle();
 		}
 
@@ -910,7 +911,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (Content is Control page)
 			{
-				PageLayout.SetSongTitle(page, TitleOf(song), InfoText(), song.PlayingKey);
+				PageLayout.SetSongTitle(page, TitleOf(song), InfoText(), ShownKey);
 			}
 		}
 
@@ -1877,9 +1878,10 @@ namespace Lyrious.UILib.Setlists
 			ToolTip.SetTip(chordGridButton, grid ? L.T("Show chords over the words") : L.T("Show a chord grid (chords only, by bar)"));
 
 			// The band's header in front of the lyrics, so it scrolls, zooms and transposes with them.
-			// Its $key is the key the lyrics are written in: as a chord it's moved with theirs.
+			// Its [$key] is the key the lyrics are written in, as a chord moved with theirs; $key is the
+			// playing key moved by the member's transpose, and $capo that transpose.
 			var shown = hasLyrics
-				? LyricsHeader.Prepend(LyricsHeader.Definition(LyricsHeader.Current), song, string.IsNullOrWhiteSpace(song.OriginalKey) ? song.PlayingKey : song.OriginalKey, lyrics)
+				? LyricsHeader.Prepend(LyricsHeader.Definition(LyricsHeader.Current), song, string.IsNullOrWhiteSpace(song.OriginalKey) ? song.PlayingKey : song.OriginalKey, lyrics, mySetting.ActiveTranspose)
 				: lyrics;
 			if (hasLyrics && ChordPro.HasFormatting(shown))
 			{
@@ -2193,7 +2195,7 @@ namespace Lyrious.UILib.Setlists
 		/// file kept on this device (see <see cref="ISoundStore"/>), whose button turns the media player
 		/// on or off for it (see <see cref="ToggleMedia"/>): on, it plays and stops with the lyrics (on from
 		/// where it stopped, until another song is shown), which follow it (see <see cref="FollowMedia"/>),
-		/// and the playback toolbar shows its progress, speed and pitch. Each shows Spotify's or YouTube's icon, a speaker for
+		/// and the playback toolbar shows its progress, speed and pitch. Each shows Spotify's or YouTube's icon, a waveform for
 		/// a sound file, else a note. A longclick (or right-click) on one shows a menu: remove that link,
 		/// and add another: search Spotify or YouTube for the song (its name and artist: the
 		/// song's, else the one the lyrics name), paste a link from the clipboard, or pick a sound file. A song
@@ -2232,7 +2234,7 @@ namespace Lyrious.UILib.Setlists
 				}
 			}
 
-			// The speaker turns into a stop sign while its sound plays, whoever started it.
+			// The waveform turns into a stop sign while its sound plays, whoever started it.
 			void OnPlayingChanged() => Dispatcher.UIThread.Post(ShowLinks);
 			if (sounds != null)
 			{
@@ -3128,7 +3130,8 @@ namespace Lyrious.UILib.Setlists
 				Tempo = (float)(tempo.Value ?? (decimal)song.Tempo),
 			};
 
-			var info = PageLayout.SongInfo(song);
+			// The playing key moved by the member's transpose, with the amount, as in the song's header.
+			var info = PageLayout.SongInfo(song, mySetting.ActiveTranspose);
 			var detailsText = new TextBlock
 			{
 				Opacity = 0.7,
@@ -3137,7 +3140,7 @@ namespace Lyrious.UILib.Setlists
 				Margin = new Thickness(0, 0, 0, 5),
 			};
 			// The playing key larger, as everywhere.
-			PageLayout.SetDetailsText(detailsText, string.IsNullOrEmpty(info) ? L.T("Set tempo, beat and keys") : info, song.PlayingKey);
+			PageLayout.SetDetailsText(detailsText, string.IsNullOrEmpty(info) ? L.T("Set tempo, beat and keys") : info, PageLayout.MovedKey(song.PlayingKey, mySetting.ActiveTranspose));
 			ToolTip.SetTip(detailsText, L.T("Click to change the tempo, beat, playing key and original key"));
 			var detailsSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Content = detailsText };
 			detailsText.Tapped += (_, e) =>
@@ -3179,8 +3182,8 @@ namespace Lyrious.UILib.Setlists
 				if (detailsSlot.Content == detailsInputs && !FocusInDetails())
 				{
 					var details = WithDetails();
-					var edited = PageLayout.SongInfo(details);
-					PageLayout.SetDetailsText(detailsText, string.IsNullOrEmpty(edited) ? L.T("Set tempo, beat and keys") : edited, details.PlayingKey);
+					var edited = PageLayout.SongInfo(details, mySetting.ActiveTranspose);
+					PageLayout.SetDetailsText(detailsText, string.IsNullOrEmpty(edited) ? L.T("Set tempo, beat and keys") : edited, PageLayout.MovedKey(details.PlayingKey, mySetting.ActiveTranspose));
 					detailsSlot.Content = detailsText;
 				}
 			});
