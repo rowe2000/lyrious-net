@@ -546,13 +546,16 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>
 		/// Check boxes for where settings are kept (this device, the user, the band): only the settings of
 		/// the checked ones show in <paramref name="form"/>, and a section's heading while any of its do. The
-		/// choice is remembered on this device.
+		/// choice lasts while the app runs (all checked again after a restart).
 		/// </summary>
 		/// <param name="bandName">The current band's name, for the Band check box's tooltip.</param>
 		/// <param name="memberName">The member's name, for the User check box's tooltip.</param>
+		// The kinds of settings unchecked in the filter, while the app runs (not kept over a restart).
+		private static string[] hiddenScopes = [];
+
 		private static Control ScopeFilter(Panel form, string? bandName, string? memberName)
 		{
-			var hidden = (App.Settings.Get(SettingKeys.SettingsFilter) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
+			var hidden = hiddenScopes;
 			var boxes = new (SettingScope Scope, CheckBox Box)[]
 			{
 				(SettingScope.Device, new CheckBox { Content = L.T("Device") }),
@@ -616,8 +619,7 @@ namespace Lyrious.UILib.Setlists
 						return;
 					}
 
-					var off = boxes.Where(b => b.Box.IsChecked != true).Select(b => b.Scope.ToString()).ToArray();
-					App.Settings.Set(SettingKeys.SettingsFilter, off.Length == 0 ? null : string.Join(",", off));
+					hiddenScopes = boxes.Where(b => b.Box.IsChecked != true).Select(b => b.Scope.ToString()).ToArray();
 					Show();
 				};
 			}

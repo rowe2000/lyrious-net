@@ -8,7 +8,8 @@
     <!-- Plain file names (no fingerprint placeholders): the SDK doesn't fill those in when the page
          is published through Lyrious.Api, which serves it. The server's ETags keep caches fresh. -->
     <script type='module' src="./main.js"></script>
-    <link rel="stylesheet" href="./app.css" />
+    <!-- (Not "app.css": published under the base path app/, the SDK served that one at the root.) -->
+    <link rel="stylesheet" href="./splash.css" />
     <!-- Installable as an app (PWA): the manifest, and main.js registers service-worker.js. -->
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./favicon.ico" />

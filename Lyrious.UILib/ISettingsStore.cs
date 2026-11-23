@@ -74,12 +74,6 @@ namespace Lyrious.UILib
 		/// </summary>
 		public const string ChordGridButton = "chord-grid-button";
 
-		/// <summary>
-		/// The kinds of settings the Settings page hides: some of "Device", "User" and "Band", separated by
-		/// commas; none (all shown) unless set. This device only.
-		/// </summary>
-		public const string SettingsFilter = "settings-filter";
-
 		/// <summary>"true" shows the app full screen (desktop and browser; F11 too); off unless set. This device only.</summary>
 		public const string FullScreen = "full-screen";
 

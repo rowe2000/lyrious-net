@@ -29,7 +29,8 @@ html, body {
     height: 100%;
     width: 100%;
     background-color: var(--splash-color);
-    font-family: 'Outfit', sans-serif;
+    /* The device's own font, as the product site at the root (nothing to load before it shows). */
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     justify-content: center;
     align-items: center;
     display: flex;

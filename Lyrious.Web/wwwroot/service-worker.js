@@ -16,7 +16,7 @@ function isAppFile(url) {
     const scope = new URL(self.registration.scope);
     if (url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return false;
     const path = url.pathname.slice(scope.pathname.length);
-    return path === "" || /^(index\.html|main\.js|app\.css|favicon\.ico|manifest\.webmanifest|icons\/.+|_framework\/.+)$/.test(path);
+    return path === "" || /^(index\.html|main\.js|splash\.css|favicon\.ico|manifest\.webmanifest|icons\/.+|_framework\/.+)$/.test(path);
 }
 
 // Without the query ("?api=..."): the same file either way.
