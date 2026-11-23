@@ -12,7 +12,12 @@
 #   Lyrious.Web/wwwroot/favicon.ico      the singer alone (transparent), 16 to 256 px
 #   Lyrious.Web/wwwroot/icons/           icon-192/512 (installed web app), icon-maskable-512,
 #                                        apple-touch-icon (iPhone home screen), singer.svg (the page's splash)
+#   Lyrious.Api/wwwroot/                 the product site's favicon.ico (the web app's) and site/singer.svg
+#   Lyrious.UILib/AppLogo.cs             the singer drawn in the app (its path)
 #   Lyrious.Android/Icon.png             Android
+#
+# The logo may come straight from an editor (e.g. Inkscape, spread over many lines): it's read as
+# its page (viewBox) and its one path, with the path's fill colour.
 set -euo pipefail
 # Decimal points in numbers, whatever the computer's language (printf follows it, bc doesn't).
 export LC_ALL=C
@@ -22,6 +27,24 @@ brand="$root/branding"
 logo="$brand/lyrious-logo.svg"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+
+# The logo on one line: its page and its one path (the editor's other markup left out).
+python3 -I - "$logo" "$work/logo.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1], encoding="utf-8").read()
+viewbox = re.search(r'viewBox="([^"]+)"', s).group(1)
+paths = re.findall(r'<path\b(.*?)/?>', s, re.S)
+if len(paths) != 1:
+    sys.exit(f"The logo must have exactly one path; it has {len(paths)}.")
+attrs = dict(re.findall(r'([\w:-]+)="(.*?)"', paths[0], re.S))
+d = " ".join(attrs["d"].split())
+style = re.search(r'fill:\s*(#[0-9a-fA-F]{3,8})', attrs.get("style", ""))
+fill = attrs.get("fill") or (style.group(1) if style else "#7f7f7f")
+transform = f' transform="{attrs["transform"]}"' if "transform" in attrs else ""
+with open(sys.argv[2], "w", encoding="utf-8") as out:
+    out.write(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{viewbox}"><path d="{d}" fill="{fill}"{transform}/></svg>\n')
+PY
+logo="$work/logo.svg"
 
 # The logo's page and its path (with the transform that places it on the page).
 viewbox="$(sed -E 's/.*viewBox="([^"]+)".*/\1/' "$logo")"
@@ -90,7 +113,22 @@ png "$brand/lyrious-icon-square.svg" 512 "$icons/icon-maskable-512.png"
 png "$brand/lyrious-icon-square.svg" 180 "$icons/apple-touch-icon.png"
 cp "$logo" "$icons/singer.svg"
 
+# The product site (Lyrious.Api serves it at the root): the same favicon and singer.
+cp "$root/Lyrious.Web/wwwroot/favicon.ico" "$root/Lyrious.Api/wwwroot/favicon.ico"
+cp "$logo" "$root/Lyrious.Api/wwwroot/site/singer.svg"
+
+# The app's own singer (AppLogo.cs): the path's data.
+python3 -I - "$logo" "$root/Lyrious.UILib/AppLogo.cs" <<'PY'
+import re, sys
+d = re.search(r' d="([^"]+)"', open(sys.argv[1], encoding="utf-8").read()).group(1)
+code = open(sys.argv[2], encoding="utf-8").read()
+code, count = re.subn(r'(private const string PathData = ")[^"]*(";)', lambda m: m.group(1) + d + m.group(2), code)
+if count != 1:
+    sys.exit("AppLogo.cs: PathData not found.")
+open(sys.argv[2], "w", encoding="utf-8").write(code)
+PY
+
 # Android
 png "$brand/lyrious-icon.svg" 400 "$root/Lyrious.Android/Icon.png"
 
-echo "Icons made from $logo"
+echo "Icons made from $brand/lyrious-logo.svg"
