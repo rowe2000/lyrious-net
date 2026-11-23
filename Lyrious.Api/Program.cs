@@ -198,17 +198,33 @@ internal class Program
 		app.MapControllers();
 		app.MapHub<LyriousHub>(LyriousHub.Path);
 
-		// The web app (Lyrious.Web, WebAssembly) on the same address as the API: its files, and its
-		// page at the root. Only the root: an unknown api/ path stays a 404 instead of becoming the page.
-		app.MapStaticAssets();
-		app.MapFallbackToFile("/", "index.html", new StaticFileOptions
+		// The product site (this project's wwwroot) at the root, and the web app (Lyrious.Web,
+		// WebAssembly) on the same address as the API, under /app/: its files, and its page at /app/,
+		// where the site's "Log in" leads. /app without the slash (which the page's relative paths
+		// need) forwards there, keeping the query (e.g. ?api=...). Only those pages: an unknown api/
+		// path stays a 404 instead of becoming a page.
+		// Always checked with the server (ETag), so a new version shows up at once.
+		var noCache = new StaticFileOptions { OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache" };
+		// (Not a route: "/app" would match "/app/" too, and forward it to itself.)
+		app.Use((context, next) =>
 		{
-			// Always checked with the server (ETag), so a new version of the app shows up at once.
-			OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache",
+			if (context.Request.Path.Value == "/app")
+			{
+				context.Response.Redirect(WebAppPath + context.Request.QueryString);
+				return Task.CompletedTask;
+			}
+
+			return next(context);
 		});
+		app.MapStaticAssets();
+		app.MapFallbackToFile("/", "index.html", noCache);
+		app.MapFallbackToFile(WebAppPath, "app/index.html", noCache);
 
 		app.Run();
 	}
+
+	/// <summary>Where the web app is served.</summary>
+	private const string WebAppPath = "/app/";
 
 	/// <summary>The port to serve to the outside when hosted in a container, else null.</summary>
 	private static int? GetHostPort()

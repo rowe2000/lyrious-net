@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  The product site at the root of the server (www.lyrious.se): what Lyrious is, with links to log in
+  to the web app at /app/ (see Lyrious.Api/Program.cs). One page, no scripts or outside files.
+-->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lyrious – setlists, songbooks and lyrics for bands</title>
+    <meta name="description" content="Lyrious keeps your band's setlists, songbook and lyrics with chords in one place. The lyrics scroll in time with the song, and the whole band follows along live.">
+    <meta name="theme-color" content="#1b2a4e">
+    <link rel="icon" href="/favicon.ico">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg-raised: #161c26;
+            --card: #1b2230;
+            --line: #2a3344;
+            --text: #e8ebf0;
+            --muted: #9aa3b2;
+            --accent: #f2b544;
+            --accent-text: #1b1300;
+            --navy: #1b2a4e;
+            --chord: #f2b544;
+            --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #f6f7f9;
+                --bg-raised: #ffffff;
+                --card: #ffffff;
+                --line: #dfe3ea;
+                --text: #18202e;
+                --muted: #5b6474;
+                --accent: #d4901a;
+                --accent-text: #ffffff;
+                --chord: #b8740b;
+                --shadow: 0 18px 50px rgba(27, 42, 78, 0.15);
+            }
+        }
+
+        * { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.55;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        a { color: inherit; }
+
+        .wrap {
+            max-width: 1080px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Header */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: color-mix(in srgb, var(--bg) 85%, transparent);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 64px;
+            gap: 16px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            font-weight: 650;
+            font-size: 1.25rem;
+            letter-spacing: 0.01em;
+        }
+
+        .brand img { width: 34px; height: auto; }
+
+        nav {
+            display: flex;
+            align-items: center;
+            gap: 22px;
+        }
+
+        nav a.link {
+            text-decoration: none;
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        nav a.link:hover { color: var(--text); }
+
+        .button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 999px;
+            background: var(--accent);
+            color: var(--accent-text);
+            font-weight: 600;
+            text-decoration: none;
+            border: 1px solid transparent;
+            white-space: nowrap;
+            transition: transform 120ms ease, filter 120ms ease;
+        }
+
+        .button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+        .button.ghost {
+            background: transparent;
+            color: var(--text);
+            border-color: var(--line);
+        }
+
+        @media (max-width: 640px) {
+            nav a.link { display: none; }
+        }
+
+        /* Hero */
+        .hero {
+            padding: 72px 0 56px;
+            display: grid;
+            grid-template-columns: 1.05fr 1fr;
+            gap: 48px;
+            align-items: center;
+        }
+
+        @media (max-width: 860px) {
+            .hero { grid-template-columns: 1fr; padding-top: 48px; }
+        }
+
+        .eyebrow {
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 0.9rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin: 0 0 12px;
+        }
+
+        h1 {
+            font-size: clamp(2.2rem, 5vw, 3.4rem);
+            line-height: 1.1;
+            margin: 0 0 18px;
+            letter-spacing: -0.02em;
+        }
+
+        .lead {
+            font-size: 1.15rem;
+            color: var(--muted);
+            margin: 0 0 28px;
+            max-width: 34em;
+        }
+
+        .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+
+        .actions .button { padding: 13px 26px; font-size: 1.05rem; }
+
+        /* The lyrics on stage, as the app shows them. */
+        .stage {
+            background: #000;
+            color: #f3f3f3;
+            border-radius: 18px;
+            border: 1px solid #262b35;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .stage-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            font-size: 0.8rem;
+            color: #9aa3b2;
+            border-bottom: 1px solid #1d222b;
+        }
+
+        .stage-title { font-size: 1.05rem; color: #fff; font-weight: 600; }
+
+        .dots { display: flex; gap: 6px; }
+
+        .dots span {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: #1b2a4e;
+            color: #cfd8ee;
+            font-size: 0.7rem;
+            display: grid;
+            place-items: center;
+            font-weight: 600;
+        }
+
+        .lyrics {
+            padding: 18px 22px 26px;
+            font-size: 1.05rem;
+            height: 290px;
+            overflow: hidden;
+            mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 80%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 80%, transparent 100%);
+        }
+
+        .scroller { animation: scroll 16s linear infinite; }
+
+        @keyframes scroll {
+            from { transform: translateY(0); }
+            to { transform: translateY(-50%); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .scroller { animation: none; }
+        }
+
+        .section-name {
+            color: #8fb3ff;
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin: 14px 0 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .line { margin: 0 0 6px; white-space: pre; }
+
+        .line b {
+            display: block;
+            color: var(--chord);
+            font-weight: 700;
+            font-size: 0.9rem;
+            line-height: 1.2;
+        }
+
+        .now {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 47%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(242, 181, 68, 0.55), transparent);
+        }
+
+        .stage-bottom {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 16px;
+            border-top: 1px solid #1d222b;
+            font-size: 0.8rem;
+            color: #9aa3b2;
+        }
+
+        .play {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: var(--chord);
+            display: grid;
+            place-items: center;
+        }
+
+        .progress {
+            flex: 1;
+            height: 4px;
+            border-radius: 2px;
+            background: #232a36;
+            overflow: hidden;
+        }
+
+        .progress i {
+            display: block;
+            height: 100%;
+            width: 40%;
+            background: var(--chord);
+            animation: progress 16s linear infinite;
+        }
+
+        @keyframes progress {
+            from { width: 5%; }
+            to { width: 95%; }
+        }
+
+        /* Sections */
+        section { padding: 64px 0; }
+
+        section.alt {
+            background: var(--bg-raised);
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+        }
+
+        h2 {
+            font-size: clamp(1.6rem, 3.4vw, 2.2rem);
+            margin: 0 0 10px;
+            letter-spacing: -0.01em;
+        }
+
+        .sub { color: var(--muted); margin: 0 0 36px; max-width: 40em; font-size: 1.05rem; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 18px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 22px;
+        }
+
+        .card h3 { margin: 12px 0 6px; font-size: 1.1rem; }
+
+        .card p { margin: 0; color: var(--muted); font-size: 0.97rem; }
+
+        .icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: color-mix(in srgb, var(--accent) 16%, transparent);
+            color: var(--accent);
+            display: grid;
+            place-items: center;
+        }
+
+        .icon svg { width: 22px; height: 22px; }
+
+        /* Steps */
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 18px;
+            counter-reset: step;
+        }
+
+        .step {
+            padding: 22px;
+            border-radius: 14px;
+            border: 1px dashed var(--line);
+        }
+
+        .step::before {
+            counter-increment: step;
+            content: counter(step);
+            display: inline-grid;
+            place-items: center;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: var(--accent-text);
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .step h3 { margin: 0 0 6px; font-size: 1.05rem; }
+
+        .step p { margin: 0; color: var(--muted); }
+
+        /* Platforms */
+        .platforms {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .chip {
+            padding: 8px 16px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: var(--card);
+            font-size: 0.95rem;
+        }
+
+        /* Call to action */
+        .cta {
+            text-align: center;
+            padding: 72px 0;
+        }
+
+        .cta img {
+            width: 110px;
+            height: auto;
+            margin-bottom: 18px;
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
+        }
+
+        @media (prefers-color-scheme: light) {
+            .cta img { filter: none; }
+        }
+
+        .cta .actions { justify-content: center; }
+
+        footer {
+            border-top: 1px solid var(--line);
+            padding: 26px 0;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        footer .wrap {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        footer a { text-decoration: none; }
+
+        footer a:hover { color: var(--text); }
+    </style>
+</head>
+
+<body>
+<header>
+    <div class="wrap bar">
+        <a class="brand" href="/">
+            <img src="/site/singer.svg" alt="">
+            Lyrious
+        </a>
+        <nav>
+            <a class="link" href="#features">Features</a>
+            <a class="link" href="#band">For the band</a>
+            <a class="link" href="#get">Get Lyrious</a>
+            <a class="button" href="/app/">Log in</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+    <div class="wrap hero">
+        <div>
+            <p class="eyebrow">For bands, on stage and at rehearsal</p>
+            <h1>Every song, every chord, the whole band in time.</h1>
+            <p class="lead">
+                Lyrious keeps your band's setlists, songbook and lyrics with chords in one place.
+                The lyrics scroll in time with the song, and everyone in the band follows along live,
+                on their own screen.
+            </p>
+            <div class="actions">
+                <a class="button" href="/app/">Log in to Lyrious</a>
+                <a class="button ghost" href="#features">See what it does</a>
+            </div>
+        </div>
+
+        <div class="stage" aria-hidden="true">
+            <div class="stage-top">
+                <div>
+                    <div class="stage-title">Northern Lights</div>
+                    Key G · 96 bpm · 4/4
+                </div>
+                <div class="dots"><span>AL</span><span>JK</span><span>MS</span></div>
+            </div>
+            <div class="lyrics">
+                <div class="scroller">
+                    <div class="section-name">Verse</div>
+                    <p class="line"><b>G               D</b>Out on the road where the city ends</p>
+                    <p class="line"><b>Em              C</b>Headlights fading, calling old friends</p>
+                    <p class="line"><b>G                D</b>We sing it louder every time</p>
+                    <p class="line"><b>C          D        G</b>Under the northern lights tonight</p>
+                    <div class="section-name">Chorus</div>
+                    <p class="line"><b>C        G</b>Hold on, hold on</p>
+                    <p class="line"><b>Em           D</b>The song goes on and on</p>
+                    <p class="line"><b>C          G         D</b>Every voice in time, every line</p>
+                    <div class="section-name">Verse</div>
+                    <p class="line"><b>G               D</b>Out on the road where the city ends</p>
+                    <p class="line"><b>Em              C</b>Headlights fading, calling old friends</p>
+                    <p class="line"><b>G                D</b>We sing it louder every time</p>
+                    <p class="line"><b>C          D        G</b>Under the northern lights tonight</p>
+                    <div class="section-name">Chorus</div>
+                    <p class="line"><b>C        G</b>Hold on, hold on</p>
+                    <p class="line"><b>Em           D</b>The song goes on and on</p>
+                    <p class="line"><b>C          G         D</b>Every voice in time, every line</p>
+                </div>
+            </div>
+            <div class="now"></div>
+            <div class="stage-bottom">
+                <div class="play">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#000"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+                </div>
+                <div class="progress"><i></i></div>
+                <span>Next: Long Way Home</span>
+            </div>
+        </div>
+    </div>
+
+    <section id="features" class="alt">
+        <div class="wrap">
+            <h2>Everything the band needs to play</h2>
+            <p class="sub">From the first rehearsal to the last encore: the songs, the order you play them in, and the lyrics and chords right in front of you.</p>
+            <div class="grid">
+                <div class="card">
+                    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M7 14l5 5 5-5"/></svg></div>
+                    <h3>Lyrics that scroll in time</h3>
+                    <p>Set the tempo and press play: the lyrics move at the pace of the song, so your hands stay on your instrument.</p>
+                </div>
+                <div class="card">
+                    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div>
+                    <h3>Setlists for every gig</h3>
+                    <p>Put songs in order for tonight's show, reuse them for the next, and step to the next song with one tap.</p>
+                </div>
+                <div class="card">
+                    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg></div>
+                    <h3>The band's songbook</h3>
+                    <p>All your songs, with lyrics, chords, key, tempo and tags. Import a SongbookPro backup to get started in minutes.</p>
+                </div>
+                <div class="card">
+                    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 5v14M10 5v14M5 10.5l7-1.5M5 15l7-1.5M15 5v14c2-.7 4-2.2 4-4.2s-2-2.6-4-1"/></svg></div>
+                    <h3>Transpose and capo</h3>
+                    <p>Change the key of any song for your voice, or show the chords with a capo. Your own settings, without changing the band's.</p>
+                </div>
+                <div class="card">
+                    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/></svg></div>
+                    <h3>Play along with the record</h3>
+                    <p>Link a song to its sound file, Spotify or YouTube, and the lyrics follow the music as it plays.</p>
+                </div>
+                <div class="card">
+                    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12a10 10 0 0 1 20 0M5 12a7 7 0 0 1 14 0M12 12v8"/></svg></div>
+                    <h3>Works offline</h3>
+                    <p>No signal backstage? Lyrious keeps your songs on the device and syncs the changes when you're back online.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="band">
+        <div class="wrap">
+            <h2>Play together, live</h2>
+            <p class="sub">When one of you picks the next song or presses play, everyone's screen follows. No more shouting song names across the stage.</p>
+            <div class="steps">
+                <div class="step">
+                    <h3>Create your band</h3>
+                    <p>Make an account, start a band and invite the others by email.</p>
+                </div>
+                <div class="step">
+                    <h3>Fill the songbook</h3>
+                    <p>Write or paste lyrics with chords, or import the songs you already have.</p>
+                </div>
+                <div class="step">
+                    <h3>Build tonight's setlist</h3>
+                    <p>Pick the songs and put them in order. Everyone in the band sees it at once.</p>
+                </div>
+                <div class="step">
+                    <h3>Play</h3>
+                    <p>Join the band and turn on band sync: the song, the scrolling and the next song stay the same for everyone.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="get" class="alt">
+        <div class="wrap">
+            <h2>On the screens you already have</h2>
+            <p class="sub">Use Lyrious right in your browser, on a laptop, tablet or phone, and install it as an app from there. Desktop apps are available too.</p>
+            <div class="platforms">
+                <span class="chip">Web browser</span>
+                <span class="chip">iPad and iPhone</span>
+                <span class="chip">Android</span>
+                <span class="chip">macOS</span>
+                <span class="chip">Windows</span>
+                <span class="chip">Linux</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="wrap cta">
+        <img src="/site/singer.svg" alt="">
+        <h2>Ready for the next gig?</h2>
+        <p class="sub" style="margin: 0 auto 28px">Log in, or create an account for your band. It takes a minute.</p>
+        <div class="actions">
+            <a class="button" href="/app/">Log in to Lyrious</a>
+        </div>
+    </div>
+</main>
+
+<footer>
+    <div class="wrap">
+        <span>© Lyrious</span>
+        <span><a href="/app/">Log in</a></span>
+    </div>
+</footer>
+</body>
+
+</html>

@@ -3,6 +3,8 @@
     <TargetFramework>net10.0-browser</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>enable</Nullable>
+    <!-- Served under /app/ (by Lyrious.Api, which forwards the site's root there). -->
+    <StaticWebAssetBasePath>app</StaticWebAssetBasePath>
     <!-- All languages' date and number formats (the default only has a few), e.g. Swedish for the
          app in Swedish. -->
     <WasmIncludeFullIcuData>true</WasmIncludeFullIcuData>
