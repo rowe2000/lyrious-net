@@ -40,6 +40,13 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		event Action<Guid, bool>? PlaybackChanged;
 
+		/// <summary>
+		/// Raised (on a background thread) with the band and where in the song another member of the
+		/// member's joined band is, just before their play, stop or back to the start: for timed lyrics
+		/// the time in the song in seconds, else how far down the lyrics (0 to 1).
+		/// </summary>
+		event Action<Guid, double>? PlaybackPositionChanged;
+
 		/// <summary>Raised (on any thread) when a bandmate comes online (true) or goes offline.</summary>
 		event Action<Guid, bool>? MemberConnectionChanged;
 
@@ -51,6 +58,9 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Tells the other members of the joined band that this member started or stopped playing.</summary>
 		Task SendPlaybackAsync(bool playing);
+
+		/// <summary>Tells the other members of the joined band where in the song this member is (see <see cref="PlaybackPositionChanged"/>).</summary>
+		Task SendPlaybackPositionAsync(double position);
 
 		/// <summary>Starts receiving changes made by other members (after login). Throws if the server can't be reached.</summary>
 		Task StartLiveUpdatesAsync();
@@ -121,6 +131,15 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Every member the logged-in member can see (a site manager: all of them), by name.</summary>
 		Task<IReadOnlyList<SiteMember>> GetAllMembersAsync(CancellationToken cancellationToken = default);
+
+		/// <summary>The members a site manager has disabled (they can't log in). Site managers only; throws otherwise or offline.</summary>
+		Task<IReadOnlySet<Guid>> GetDisabledMembersAsync(CancellationToken cancellationToken = default);
+
+		/// <summary>
+		/// Disables a member's account (they can't log in or use it) or enables it again. Site managers
+		/// only, and not their own account; throws otherwise or offline.
+		/// </summary>
+		Task SetMemberDisabledAsync(Guid memberId, bool disabled, CancellationToken cancellationToken = default);
 
 		/// <summary>Another member's own settings (a JSON object; null if none), for a site manager. Needs the server.</summary>
 		Task<string?> GetMemberSettingsAsync(Guid memberId, CancellationToken cancellationToken = default);
@@ -222,7 +241,8 @@ namespace Lyrious.UILib.Setlists
 		/// and tempo and this member as conductor, and returns the play; null if the song is gone. If
 		/// the song is already the last one in it, that play is returned instead (playing on after a stop).
 		/// </summary>
-		Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, CancellationToken cancellationToken = default);
+		/// <param name="setlistId">The setlist it's played from, kept with the play for the sessions; null for none.</param>
+		Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, Guid? setlistId = null, CancellationToken cancellationToken = default);
 
 		/// <summary>Adds to how long the song was played.</summary>
 		Task AddPlayTimeAsync(Guid playId, TimeSpan time, CancellationToken cancellationToken = default);
@@ -337,8 +357,8 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>A band's playlog: the songs played on one occasion (e.g. a gig or a rehearsal), in order.</summary>
 	public sealed record PlaylogSummary(Guid Id, DateTime CreatedAt, IReadOnlyList<PlayEntry> Plays);
 
-	/// <summary>A song played: when, in which key and tempo, for how long (zero if unknown) and who conducted it (empty if unknown).</summary>
-	public sealed record PlayEntry(Guid Id, DateTime PlayedAt, Guid SongId, string SongName, string Key, float Tempo, TimeSpan Duration, string Conductor);
+	/// <summary>A song played: when, in which key and tempo, for how long (zero if unknown), who conducted it (empty if unknown) and the setlist it was played from (null if none or unknown).</summary>
+	public sealed record PlayEntry(Guid Id, DateTime PlayedAt, Guid SongId, string SongName, string Key, float Tempo, TimeSpan Duration, string Conductor, Guid? SetlistId = null);
 
 	/// <summary>A song at a position in a setlist.</summary>
 	public sealed record SetlistEntry(Guid Id, Guid SetlistId, int Position, SongDetails Song);
@@ -354,9 +374,11 @@ namespace Lyrious.UILib.Setlists
 		public event Action<GroupSummary>? GroupChanged { add { } remove { } }
 		public event Action<Guid>? JoinedGroupChanged { add { } remove { } }
 		public event Action<Guid, bool>? PlaybackChanged { add { } remove { } }
+		public event Action<Guid, double>? PlaybackPositionChanged { add { } remove { } }
 		public event Action<Guid, bool>? MemberConnectionChanged { add { } remove { } }
 		public event Action? MembersChanged { add { } remove { } }
 		public Task SendPlaybackAsync(bool playing) => Task.CompletedTask;
+		public Task SendPlaybackPositionAsync(double position) => Task.CompletedTask;
 		public Task StartLiveUpdatesAsync() => Task.CompletedTask;
 		public Task StopLiveUpdatesAsync() => Task.CompletedTask;
 
@@ -374,6 +396,8 @@ namespace Lyrious.UILib.Setlists
 		public Task<string?> GetMySettingsAsync(CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SaveMySettingsAsync(string settings, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SiteMember>> GetAllMembersAsync(CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<IReadOnlySet<Guid>> GetDisabledMembersAsync(CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task SetMemberDisabledAsync(Guid memberId, bool disabled, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<ReleaseNoteEntry>> GetReleaseNotesAsync(CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SaveReleaseNoteAsync(ReleaseNoteEntry note, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<string?> GetMemberSettingsAsync(Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
@@ -402,7 +426,7 @@ namespace Lyrious.UILib.Setlists
 		public Task<SetlistEntry?> GetEntryAsync(Guid setlistItemId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SongDetails>> GetSongbookSongsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<PlaylogSummary>> GetPlaylogsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
-		public Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, Guid? setlistId = null, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task AddPlayTimeAsync(Guid playId, TimeSpan time, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<InternetSong>> SearchInternetAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SongDetails> CreateSongAsync(Guid groupId, string name, string lyrics, TimeSpan duration, CancellationToken cancellationToken = default) => throw NotConnected();

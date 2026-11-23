@@ -28,6 +28,8 @@ namespace Lyrious.UILib
 		public const string LogOut = "M14,4 H19 V20 H14 M10,8 L6,12 L10,16 M6,12 H16";
 		// A shield with a tick: managing the whole site.
 		public const string SiteManager = "M12,3 L19,6 V11 C19,15.5 16,19 12,21 C8,19 5,15.5 5,11 V6 Z M9,12 L11,14 L15,10";
+		// A magnifying glass: search.
+		public const string Search = "M4,10.5 A6.5,6.5 0 1 0 17,10.5 A6.5,6.5 0 1 0 4,10.5 M15.2,15.2 L20,20";
 		public const string Trash = "M5,7 H19 M10,7 V5 H14 V7 M7,7 L8,20 H16 L17,7 M10,11 V16 M14,11 V16";
 
 		/// <summary>

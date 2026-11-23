@@ -36,6 +36,9 @@ namespace Lyrious.UILib.Setlists
 		private IReadOnlyList<GroupSummary> allBands = [];
 		private IReadOnlyDictionary<Guid, IReadOnlyList<GroupMember>> bandMembers = new Dictionary<Guid, IReadOnlyList<GroupMember>>();
 		private IReadOnlyList<SiteMember> allMembers = [];
+		// The members a site manager has disabled (they can't log in), and the site manager's own username.
+		private HashSet<Guid> disabledMembers = [];
+		private readonly string? myUserName;
 		// Each band's songs, setlists and sessions (and the last session's date), for its details.
 		private Dictionary<Guid, BandContent> bandContent = [];
 
@@ -49,11 +52,13 @@ namespace Lyrious.UILib.Setlists
 
 		/// <param name="showBandMembers">Puts the band's members (their roles, inviting) in the place given.</param>
 		/// <param name="showBandSettings">Puts the band's settings in the place given.</param>
-		public SiteManagerView(ISetlistService service, Func<Guid, ContentControl, Task> showBandMembers, Func<Guid, ContentControl, Task> showBandSettings)
+		/// <param name="myUserName">The site manager's own username: their own account can't be disabled here.</param>
+		public SiteManagerView(ISetlistService service, Func<Guid, ContentControl, Task> showBandMembers, Func<Guid, ContentControl, Task> showBandSettings, string? myUserName = null)
 		{
 			this.service = service;
 			this.showBandMembers = showBandMembers;
 			this.showBandSettings = showBandSettings;
+			this.myUserName = myUserName;
 
 			filter.TextChanged += (_, _) => Show();
 			// A magnifying glass at the left in the search box, dimmed like its placeholder.
@@ -123,6 +128,16 @@ namespace Lyrious.UILib.Setlists
 				allBands = (await service.GetGroupsAsync()).OrderBy(band => band.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
 				bandMembers = await service.GetGroupMembersAsync();
 				allMembers = await service.GetAllMembersAsync();
+				// Who's disabled: needs the server; without it no one shows as disabled.
+				try
+				{
+					disabledMembers = [.. await service.GetDisabledMembersAsync()];
+				}
+				catch (Exception ex)
+				{
+					System.Diagnostics.Debug.WriteLine($"Couldn't read which members are disabled: {ex.Message}");
+					disabledMembers = [];
+				}
 				bandContent = [];
 				foreach (var band in allBands)
 				{
@@ -333,7 +348,81 @@ namespace Lyrious.UILib.Setlists
 				member = member with { Name = newName };
 			});
 
-			var details = MemberDetails(member, memberships);
+			var details = MemberDetails(member, memberships, disabledMembers.Contains(member.Id));
+
+			// Disable (they can't log in or use their account) or enable again; not the site manager's own account.
+			var disable = new Button { VerticalAlignment = VerticalAlignment.Center, IsVisible = member.UserName != myUserName };
+			var disabled = disabledMembers.Contains(member.Id);
+
+			void ShowDisabled()
+			{
+				disable.Content = disabled ? L.T("Enable") : L.T("Disable…");
+				ToolTip.SetTip(disable, disabled
+					? L.T("Lets them log in and use their account again.")
+					: L.T("Stops them logging in and using their account (their bands and songs stay), until enabled again."));
+			}
+
+			async Task SetDisabledAsync(bool on)
+			{
+				disable.IsEnabled = false;
+				try
+				{
+					await service.SetMemberDisabledAsync(member.Id, on);
+					disabled = on;
+					if (on)
+					{
+						disabledMembers.Add(member.Id);
+					}
+					else
+					{
+						disabledMembers.Remove(member.Id);
+					}
+
+					ShowDisabled();
+					Show(message, on ? L.T("{0} is disabled.", member.Name) : L.T("{0} is enabled again.", member.Name), error: false);
+				}
+				catch (Exception ex)
+				{
+					Show(message, L.T("Couldn't change it. {0}", ex.Message), error: true);
+				}
+
+				disable.IsEnabled = true;
+			}
+
+			// Disabling asks first; enabling doesn't.
+			var confirmDisable = PageLayout.DangerButton(L.T("Disable"));
+			var cancelDisable = new Button { Content = L.T("Cancel") };
+			var disableFlyout = new Flyout
+			{
+				Content = new StackPanel
+				{
+					Spacing = 12,
+					MaxWidth = 300,
+					Children =
+					{
+						new TextBlock { Text = L.T("Disable {0}? They can't log in or use Lyrious until they're enabled again.", member.Name), TextWrapping = TextWrapping.Wrap },
+						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { confirmDisable, cancelDisable } },
+					},
+				},
+			};
+			confirmDisable.Click += (_, _) =>
+			{
+				disableFlyout.Hide();
+				_ = SetDisabledAsync(true);
+			};
+			cancelDisable.Click += (_, _) => disableFlyout.Hide();
+			disable.Click += (_, _) =>
+			{
+				if (disabled)
+				{
+					_ = SetDisabledAsync(false);
+				}
+				else
+				{
+					disableFlyout.ShowAt(disable);
+				}
+			};
+			ShowDisabled();
 
 			// Their own settings (the colours and the like), as JSON: read when opened, saved with Save.
 			var settingsButton = new Button { Content = L.T("User settings"), VerticalAlignment = VerticalAlignment.Center };
@@ -421,8 +510,15 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 2,
 				Children =
 				{
-					// The name, with User settings at the right.
-					new DockPanel { Children = { Docked(settingsButton, Dock.Right), name } },
+					// The name, with Disable and User settings at the right.
+					new DockPanel
+					{
+						Children =
+						{
+							Docked(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { disable, settingsButton } }, Dock.Right),
+							name,
+						},
+					},
 					details,
 					message,
 					settingsPanel,
@@ -431,7 +527,7 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// A name shown as a title; a click on it puts it in a text box to change, with a tick beside it
+		/// A name shown as a title; a click on it puts it in a text box to change, with a tick in it
 		/// once the text differs. Enter or the tick saves it (<paramref name="save"/>); Escape, focus
 		/// moving elsewhere, or leaving it unchanged puts the title back (unsaved text dropped). The row keeps its height either way; how it went shows in <paramref name="message"/>.
 		/// </summary>
@@ -449,10 +545,10 @@ namespace Lyrious.UILib.Setlists
 			};
 			ToolTip.SetTip(shown, tip);
 			var box = new TextBox { MinWidth = 200, MaxWidth = 300, VerticalAlignment = VerticalAlignment.Center };
-			var ok = HomeView.IconButton("M5,12 L10,17 L19,7", L.T("OK"));
-			ok.VerticalAlignment = VerticalAlignment.Center;
-			ok.IsVisible = false;
-			var editor = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, IsVisible = false, Children = { box, ok } };
+			// The ✓ in the box, once the text differs from the name.
+			var ok = PageLayout.OkButton(L.T("OK"));
+			PageLayout.OkInBox(box, ok, () => (box.Text ?? "").Trim() is { Length: > 0 } text && text != current);
+			var editor = new Panel { IsVisible = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Children = { box } };
 			var saving = false;
 
 			void Edit(bool on)
@@ -497,7 +593,6 @@ namespace Lyrious.UILib.Setlists
 				ok.IsEnabled = true;
 			}
 
-			box.TextChanged += (_, _) => ok.IsVisible = (box.Text ?? "").Trim() is { Length: > 0 } text && text != current;
 			// Focus elsewhere: back to the title, unless it went to the tick (or a press on it is under way).
 			box.LostFocus += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
 			{
@@ -533,15 +628,20 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// About a member, as labelled lines: their username, status (online now, and the band they've
+		/// About a member, as labelled lines: their username, status (disabled, online now, and the band they've
 		/// joined), last login, and their bands with their role in each (and whether invited only).
 		/// </summary>
-		private static Control MemberDetails(SiteMember member, IReadOnlyList<Membership> memberships)
+		private static Control MemberDetails(SiteMember member, IReadOnlyList<Membership> memberships, bool disabled = false)
 		{
 			var status = new List<string>
 			{
 				memberships.Any(membership => membership.Member.Connected) ? L.T("Online now") : L.T("Offline"),
 			};
+			if (disabled)
+			{
+				// First: it's what matters most about them now.
+				status.Insert(0, L.T("Disabled"));
+			}
 			if (memberships.FirstOrDefault(membership => membership.Member.Joined) is { } joined)
 			{
 				status.Add(L.T("joined {0}", joined.Band.Name));

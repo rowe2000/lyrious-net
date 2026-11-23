@@ -74,8 +74,9 @@ namespace Lyrious.UILib.Login
 				}
 			}
 
+			// The ✓ in the box, shown once the host has been changed (CheckTyped says so too).
+			PageLayout.OkInBox(host, saveButton, () => !string.Equals(host.Text?.Trim(), currentHost.Trim(), StringComparison.OrdinalIgnoreCase));
 			host.TextChanged += (_, _) => CheckTyped();
-			saveButton.IsVisible = false; // Nothing changed yet.
 
 			async Task SaveAsync()
 			{
@@ -167,7 +168,7 @@ namespace Lyrious.UILib.Login
 						Children = { statusTitle, statusText, problemText, syncNow },
 					},
 					// The host, with ✓ right after it to save just that.
-					new StackPanel { Spacing = 4, Children = { new TextBlock { Text = L.T("Host"), FontSize = 13, Opacity = 0.75 }, HostRow(host, saveButton) } },
+					new StackPanel { Spacing = 4, Children = { new TextBlock { Text = L.T("Host"), FontSize = 13, Opacity = 0.75 }, host } },
 					error,
 					new TextBlock
 					{
@@ -309,15 +310,6 @@ namespace Lyrious.UILib.Login
 					status,
 				},
 			};
-		}
-
-		/// <summary>The host box with its ✓ right after it.</summary>
-		private static Control HostRow(TextBox box, Button save)
-		{
-			save.Margin = new Thickness(8, 0, 0, 0);
-			save.VerticalAlignment = VerticalAlignment.Center;
-			DockPanel.SetDock(save, Dock.Right);
-			return new DockPanel { Children = { save, box } };
 		}
 
 		/// <summary>

@@ -288,14 +288,14 @@ namespace Lyrious.UILib.Setlists
 		public static (Control Row, Action Show) NameRow(string placeholder, Action<string> add, bool closeOnAdd = false)
 		{
 			var nameBox = new TextBox { PlaceholderText = placeholder, VerticalContentAlignment = VerticalAlignment.Center };
+			// The ✓ in the box, once a name is typed.
 			var confirm = OkButton(L.T("Add"));
-			confirm.IsEnabled = false;
+			OkInBox(nameBox, confirm, () => !string.IsNullOrWhiteSpace(nameBox.Text));
 			// Escape (once the box is left) is Cancel, before the page's ✕.
 			var cancel = EscapeKey.MarkAsClose(CancelButton(L.T("Cancel")), first: true);
-
-			var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(8, 0, 0, 0), Children = { confirm, cancel } };
-			DockPanel.SetDock(buttons, Dock.Right);
-			var row = new DockPanel { Margin = new Thickness(0, 0, 0, 16), IsVisible = false, Children = { buttons, nameBox } };
+			cancel.Margin = new Thickness(8, 0, 0, 0);
+			DockPanel.SetDock(cancel, Dock.Right);
+			var row = new DockPanel { Margin = new Thickness(0, 0, 0, 16), IsVisible = false, Children = { cancel, nameBox } };
 			DockPanel.SetDock(row, Dock.Top);
 
 			void Close()
@@ -323,7 +323,6 @@ namespace Lyrious.UILib.Setlists
 				nameBox.Focus();
 			}
 
-			nameBox.TextChanged += (_, _) => confirm.IsEnabled = !string.IsNullOrWhiteSpace(nameBox.Text);
 			nameBox.KeyDown += (_, e) =>
 			{
 				if (e.Key == Key.Enter)
@@ -353,6 +352,85 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			return button;
+		}
+
+		/// <summary>
+		/// Puts an OK button (a ✓, see <see cref="OkButton"/>) inside the text box, at its right end:
+		/// square and as high as the box. It shows only while <paramref name="changed"/> says the text
+		/// was changed (so there's something to save). The box keeps its width either way: the text
+		/// makes room for the button inside it.
+		/// </summary>
+		public static void OkInBox(TextBox box, Button ok, Func<bool> changed)
+		{
+			FitInBox(box, ok);
+			box.InnerRightContent = ok;
+
+			void Show() => ok.IsVisible = changed();
+			box.TextChanged += (_, _) => Show();
+			Show();
+		}
+
+		/// <summary>
+		/// Shapes a button to sit inside <paramref name="box"/> (its inner right content): as high as the
+		/// box inside its border.
+		/// A button with only an icon is square too, as wide as it is high, with a smaller icon; one
+		/// with text keeps its text's width.
+		/// </summary>
+		/// <param name="atEnd">
+		/// Whether it's the last thing at the box's right end: then it's rounded like the box's right
+		/// corners; else (another button follows it) it's square-cornered.
+		/// </param>
+		/// <param name="iconSize">The icon's size, for a button with only an icon.</param>
+		public static void FitInBox(TextBox box, Button button, bool atEnd = true, double iconSize = 16)
+		{
+			button.Margin = new Thickness(0);
+			button.MinWidth = 0;
+			button.MinHeight = 0;
+			button.VerticalAlignment = VerticalAlignment.Center;
+			// Its height from the box's (inside its border), not from stretching: a box with its text
+			// centred (VerticalContentAlignment) centres what's in it at its own height too.
+			void Fit()
+			{
+				var height = box.Bounds.Height - box.BorderThickness.Top - box.BorderThickness.Bottom;
+				// (Its height is unset, NaN, until the first time.)
+				if (height > 0 && (double.IsNaN(button.Height) || Math.Abs(height - button.Height) > 0.5))
+				{
+					button.Height = height;
+					if (button.Content is not string)
+					{
+						button.Width = height;
+					}
+				}
+			}
+
+			box.SizeChanged += (_, e) =>
+			{
+				if (e.HeightChanged)
+				{
+					Fit();
+				}
+			};
+			Fit();
+			button.HorizontalContentAlignment = HorizontalAlignment.Center;
+			button.VerticalContentAlignment = VerticalAlignment.Center;
+			// Rounded like the box's right corners, inside its border.
+			var radius = Application.Current?.TryFindResource("ControlCornerRadius", out var found) == true && found is CornerRadius r ? r.TopRight : 4;
+			var inner = atEnd ? Math.Max(0, radius - 1) : 0;
+			button.CornerRadius = new CornerRadius(0, inner, inner, 0);
+			if (button.Content is string)
+			{
+				// Text: room on its sides, as a text button has.
+				button.Padding = new Thickness(10, 0);
+				return;
+			}
+
+			button.Padding = new Thickness(0);
+			if (button.Content is Avalonia.Controls.Shapes.Shape icon)
+			{
+				icon.Width = iconSize;
+				icon.Height = iconSize;
+				icon.Stretch = Stretch.Uniform;
+			}
 		}
 
 		/// <summary>A cancel button: a cross, beside an <see cref="OkButton"/>.</summary>
@@ -443,6 +521,19 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		public static Control CurrentCheck(string description)
 		{
+			var note = Note();
+			note.Margin = new Thickness(12, -2, 0, -2);
+			ToolTip.SetTip(note, description);
+			DockPanel.SetDock(note, Dock.Right);
+			return note;
+		}
+
+		/// <summary>
+		/// The app's quarter note (♩), the sign of the current one (setlist, song, joined band), in the
+		/// colour of the text around it, 24 high.
+		/// </summary>
+		public static Avalonia.Controls.Shapes.Path Note()
+		{
 			// A filled, tilted note head with its stem rising from the head's right side.
 			var note = new Avalonia.Controls.Shapes.Path
 			{
@@ -456,12 +547,9 @@ namespace Lyrious.UILib.Setlists
 				},
 				Width = 24,
 				Height = 24,
-				Margin = new Thickness(12, -2, 0, -2),
 				VerticalAlignment = VerticalAlignment.Center,
 			};
 			note.Bind(Avalonia.Controls.Shapes.Shape.FillProperty, note.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
-			ToolTip.SetTip(note, description);
-			DockPanel.SetDock(note, Dock.Right);
 			return note;
 		}
 
@@ -520,7 +608,8 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// A card's title (e.g. a setlist's or band's name); clicking it turns it into a box to change
-		/// it. Enter (or leaving the box) calls <paramref name="rename"/> with a new, non-empty name;
+		/// it. Enter, the ✓ in the box (shown once the name is changed) or leaving the box calls
+		/// <paramref name="rename"/> with a new, non-empty name;
 		/// Escape keeps the old one.
 		/// </summary>
 		public static Control EditableTitle(string text, Action<string> rename)
@@ -574,6 +663,13 @@ namespace Lyrious.UILib.Setlists
 					}
 				};
 				box.LostFocus += (_, _) => Finish(save: true);
+
+				// A ✓ in the box once the name is changed; it saves, as Enter does. It doesn't take the
+				// focus, so pressing it doesn't first leave the box.
+				var ok = OkButton(L.T("Save the name"));
+				ok.Focusable = false;
+				OkInBox(box, ok, () => box.Text?.Trim() is { Length: > 0 } typed && typed != title.Text);
+				ok.Click += (_, _) => Finish(save: true);
 				box.AttachedToVisualTree += (_, _) =>
 				{
 					box.Focus();
@@ -665,16 +761,14 @@ namespace Lyrious.UILib.Setlists
 			var clear = new Button
 			{
 				Content = cross,
-				Padding = new Thickness(6),
-				Margin = new Thickness(0, 0, 2, 0),
-				MinHeight = 0,
 				Background = Brushes.Transparent,
 				BorderThickness = new Thickness(0),
-				VerticalAlignment = VerticalAlignment.Center,
 				Focusable = false,
 				Cursor = new Cursor(StandardCursorType.Arrow),
 				IsVisible = !string.IsNullOrEmpty(box.Text),
 			};
+			// The box's height, square.
+			FitInBox(box, clear, iconSize: 14);
 			ToolTip.SetTip(clear, L.T("Clear"));
 			clear.Click += (_, _) =>
 			{

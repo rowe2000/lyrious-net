@@ -49,6 +49,7 @@ public sealed class HttpSetlistService : ISetlistService
 
         live.EntitiesChanged += OnServerChanged;
         live.PlaybackChanged += (groupId, playing) => PlaybackChanged?.Invoke(groupId, playing);
+        live.PlaybackPositionChanged += (groupId, position) => PlaybackPositionChanged?.Invoke(groupId, position);
         live.SongSelected += OnSongSelected;
         live.MemberConnectionChanged += (memberId, connected) => MemberConnectionChanged?.Invoke(memberId, connected);
         live.SettingsChanged += settings => MySettingsChanged?.Invoke(settings);
@@ -68,6 +69,8 @@ public sealed class HttpSetlistService : ISetlistService
 
     public event Action<Guid, bool>? PlaybackChanged;
 
+    public event Action<Guid, double>? PlaybackPositionChanged;
+
     public event Action<Guid, bool>? MemberConnectionChanged;
     public event Action? MembersChanged;
 
@@ -80,6 +83,8 @@ public sealed class HttpSetlistService : ISetlistService
     public SyncStatus Status => new(engine.Online, cache?.PendingCount ?? 0, cache?.LastSynced, engine.Problem);
 
     public Task SendPlaybackAsync(bool playing) => live.SetPlaybackAsync(playing);
+
+    public Task SendPlaybackPositionAsync(double position) => live.SetPlaybackPositionAsync(position);
 
     /// <summary>Starts live updates now if the server can be reached, else as soon as it can.</summary>
     public async Task StartLiveUpdatesAsync()
@@ -672,14 +677,15 @@ public sealed class HttpSetlistService : ISetlistService
                         play.KeyString ?? "",
                         play.Tempo,
                         TimeSpan.FromMilliseconds(play.DurationMilliSeconds),
-                        members.GetValueOrDefault(play.ConductorId, "")))
+                        members.GetValueOrDefault(play.ConductorId, ""),
+                        play.SetlistId))
                     .ToArray()))
             .ToArray();
     }
 
     // ---- Changing (into the cache, then sent) ----
 
-    public async Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, CancellationToken cancellationToken = default)
+    public async Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, Guid? setlistId = null, CancellationToken cancellationToken = default)
     {
         var memberId = auth.MemberId ?? throw new InvalidOperationException(L.T("You're not logged in."));
         var current = await CacheAsync();
@@ -707,7 +713,7 @@ public sealed class HttpSetlistService : ISetlistService
             return last.Id;
         }
 
-        var newPlay = new PlayDto(Guid.NewGuid(), playlog.Id, songId, memberId, song.Key ?? "", song.Tempo, 0, now, now, Removed: false);
+        var newPlay = new PlayDto(Guid.NewGuid(), playlog.Id, songId, memberId, song.Key ?? "", song.Tempo, 0, now, now, Removed: false, SetlistId: setlistId);
         current.Create("play", Node(newPlay, ClientJsonContext.Default.PlayDto));
         Queued(current);
         return newPlay.Id;
@@ -1092,6 +1098,20 @@ public sealed class HttpSetlistService : ISetlistService
             .Select(member => new SiteMember(member.Id, !string.IsNullOrWhiteSpace(member.Name) ? member.Name : member.UserName ?? "Unknown", member.UserName ?? "", member.LastLoginAt))
             .OrderBy(member => member.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
+    }
+
+    public async Task<IReadOnlySet<Guid>> GetDisabledMembersAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await SendMySettingsAsync(HttpMethod.Get, null, cancellationToken, "api/member/disabled");
+        var ids = JsonNode.Parse(await response.Content.ReadAsStringAsync(cancellationToken)) as JsonArray ?? [];
+        return ids.Select(id => Guid.TryParse((string?)id, out var guid) ? guid : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .ToHashSet();
+    }
+
+    public async Task SetMemberDisabledAsync(Guid memberId, bool disabled, CancellationToken cancellationToken = default)
+    {
+        using var response = await SendMySettingsAsync(HttpMethod.Put, disabled ? "true" : "false", cancellationToken, $"api/member/{memberId}/disabled");
     }
 
     public async Task<string?> GetMemberSettingsAsync(Guid memberId, CancellationToken cancellationToken = default)

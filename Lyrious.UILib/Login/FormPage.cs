@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -113,7 +114,10 @@ namespace Lyrious.UILib.Login
 		/// <summary>Adds a link-style button below the submit button, e.g. to another page.</summary>
 		protected HyperlinkButton AddLink(string text, Action onClick)
 		{
-			var link = new HyperlinkButton { Content = text, HorizontalAlignment = HorizontalAlignment.Center };
+			// In the colour of details (the text colour, a little dimmed), not the link blue: they're
+			// the form's side roads, the button is its way on.
+			var link = new HyperlinkButton { Content = text, HorizontalAlignment = HorizontalAlignment.Center, Opacity = 0.7 };
+			link.Bind(TemplatedControl.ForegroundProperty, link.GetResourceObservable(LyriousTheme.ForegroundBrush));
 			link.Click += (_, _) => onClick();
 			links.Children.Add(link);
 			return link;

@@ -77,28 +77,14 @@ namespace Lyrious.UILib.Setlists
 
 		private Control NameSection(AuthenticatedUser user, ISetlistService service)
 		{
-			// Its own height, centred beside the tick (not stretched to the tick's).
 			var name = new TextBox { Text = user.DisplayName, MaxWidth = 360, HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 240, VerticalAlignment = VerticalAlignment.Center };
-			// A tick beside the name ("Save name" as its tip), shown once the name differs from the saved one.
-			var save = HomeView.IconButton("M5,12 L10,17 L19,7", L.T("Save name"));
-			save.VerticalAlignment = VerticalAlignment.Center;
-			save.IsVisible = false;
-			save.PropertyChanged += (_, e) =>
-			{
-				if (e.Property == IsEnabledProperty)
-				{
-					save.IsVisible = save.IsEnabled;
-				}
-			};
-			save.IsEnabled = false;
 			var message = Message();
 			var saved = user.DisplayName;
+			// A ✓ in the box ("Save name" as its tip), shown once the name differs from the saved one.
+			var save = PageLayout.OkButton(L.T("Save name"));
+			PageLayout.OkInBox(name, save, () => !string.IsNullOrWhiteSpace(name.Text) && name.Text.Trim() != saved);
 
-			name.TextChanged += (_, _) =>
-			{
-				save.IsEnabled = !string.IsNullOrWhiteSpace(name.Text) && name.Text.Trim() != saved;
-				message.IsVisible = false;
-			};
+			name.TextChanged += (_, _) => message.IsVisible = false;
 
 			async Task SaveAsync()
 			{
@@ -113,6 +99,9 @@ namespace Lyrious.UILib.Setlists
 				{
 					await service.RenameMeAsync(newName);
 					saved = newName;
+					// Saved: nothing is changed any more, so no ✓.
+					save.IsVisible = false;
+					save.IsEnabled = true;
 					Show(message, L.T("Your name has been changed."), error: false);
 					Renamed?.Invoke(newName);
 				}
@@ -126,7 +115,7 @@ namespace Lyrious.UILib.Setlists
 			save.Click += (_, _) => _ = SaveAsync();
 			name.KeyDown += (_, e) =>
 			{
-				if (e.Key == Avalonia.Input.Key.Enter && save.IsEnabled)
+				if (e.Key == Avalonia.Input.Key.Enter && save.IsVisible && save.IsEnabled)
 				{
 					e.Handled = true;
 					_ = SaveAsync();
@@ -139,8 +128,7 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					Section(L.T("Name")),
-					// As tall as the tick, shown or not, so nothing below moves when it appears.
-					new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, MinHeight = 40, Children = { name, save } },
+					name,
 					message,
 				},
 			};
@@ -228,12 +216,9 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private Control EmailSection(IAuthService auth)
 		{
-			// Its own height, centred beside the tick (not stretched to the tick's).
 			var address = new TextBox { Text = auth.Email ?? "", PlaceholderText = L.T("Email address"), MaxWidth = 360, MinWidth = 240, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
-			// A tick beside the box ("Send code" as its tip), shown once the address differs from theirs.
-			var sendCode = HomeView.IconButton("M5,12 L10,17 L19,7", L.T("Send code"));
-			sendCode.VerticalAlignment = VerticalAlignment.Center;
-			sendCode.IsVisible = false;
+			// A ✓ in the box ("Send code" as its tip), shown once the address differs from theirs.
+			var sendCode = PageLayout.OkButton(L.T("Send code"));
 			var sent = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
 			var code = new TextBox { PlaceholderText = L.T("Code from the email"), MaxWidth = 200, MinWidth = 160, HorizontalAlignment = HorizontalAlignment.Left, IsVisible = false };
 			var verify = new Button { Content = L.T("Verify"), IsVisible = false, IsEnabled = false };
@@ -241,11 +226,18 @@ namespace Lyrious.UILib.Setlists
 			string? sentTo = null;
 			var busy = false;
 
+			bool Changed()
+			{
+				var typed = address.Text?.Trim() ?? "";
+				return typed.Length > 0 && !string.Equals(typed, auth.Email, StringComparison.OrdinalIgnoreCase);
+			}
+
+			PageLayout.OkInBox(address, sendCode, Changed);
+
 			void Enable()
 			{
 				var typed = address.Text?.Trim() ?? "";
-				var changed = typed.Length > 0 && !string.Equals(typed, auth.Email, StringComparison.OrdinalIgnoreCase);
-				sendCode.IsVisible = changed;
+				sendCode.IsVisible = Changed();
 				sendCode.IsEnabled = !busy;
 				// The code is for the address it was sent to: another address needs a new one.
 				var codeStep = sentTo != null && typed == sentTo;
@@ -304,8 +296,18 @@ namespace Lyrious.UILib.Setlists
 					Show(message, result.Error ?? L.T("Changing the email address failed."), error: true);
 				}
 			});
-			address.TextChanged += (_, _) => Enable();
-			code.TextChanged += (_, _) => Enable();
+			address.TextChanged += (_, _) =>
+			{
+				// A new address: what was said about the last one (e.g. an error) no longer applies.
+				message.IsVisible = false;
+				Enable();
+			};
+			code.TextChanged += (_, _) =>
+			{
+				// Typing the code again: the last error (e.g. a wrong code) no longer applies.
+				message.IsVisible = false;
+				Enable();
+			};
 			code.KeyDown += (_, e) =>
 			{
 				if (e.Key == Avalonia.Input.Key.Enter && verify.IsEnabled)
@@ -321,7 +323,7 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					Section(L.T("Email")),
-					new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, MinHeight = 40, Children = { address, sendCode } },
+					address,
 					sent,
 					code,
 					verify,

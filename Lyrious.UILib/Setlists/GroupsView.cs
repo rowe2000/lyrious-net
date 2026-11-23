@@ -164,7 +164,25 @@ namespace Lyrious.UILib.Setlists
 			// Join only for the band's own members (a site manager looking at another band has none).
 			if (!joined && me != null)
 			{
-				var join = new Button { Content = me is { Approved: false } ? L.T("Accept and join") : "Join", Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center, Height = 40, VerticalContentAlignment = VerticalAlignment.Center };
+				// The note of the joined band (♩) before the text: joining makes it the current one.
+				var joinNote = PageLayout.Note();
+				joinNote.Margin = new Thickness(-4, -4, 4, -4);
+				var join = new Button
+				{
+					Content = new StackPanel
+					{
+						Orientation = Orientation.Horizontal,
+						Children =
+						{
+							joinNote,
+							new TextBlock { Text = me is { Approved: false } ? L.T("Accept and join") : L.T("Join"), VerticalAlignment = VerticalAlignment.Center },
+						},
+					},
+					Classes = { "accent" },
+					VerticalAlignment = VerticalAlignment.Center,
+					Height = 40,
+					VerticalContentAlignment = VerticalAlignment.Center,
+				};
 				join.Click += (_, _) => GroupSelected?.Invoke(group);
 				actions.Children.Add(join);
 			}
@@ -270,7 +288,9 @@ namespace Lyrious.UILib.Setlists
 			if (isAdmin)
 			{
 				// The pencil: another member's name (their own isn't an admin's matter).
-				tools.Children.Add(member.IsMe ? new Border { Width = 40 } : EditButton(group, member));
+				// (A gap of its size for the member themselves, so the role boxes line up.)
+				Control edit = member.IsMe ? new Border { Width = 32 } : EditButton(group, member);
+				tools.Children.Add(edit);
 
 				var role = new ComboBox { Width = 130, VerticalAlignment = VerticalAlignment.Center, IsEnabled = !lastAdmin };
 				foreach (var choice in Enum.GetValues<GroupRole>())
@@ -293,15 +313,33 @@ namespace Lyrious.UILib.Setlists
 				};
 				tools.Children.Add(role);
 
-				if (!member.IsMe && !lastAdmin)
+				// The ✕ to kick them out. Where there's none, a gap of its size keeps the role boxes lined up.
+				Control kickOut = !member.IsMe && !lastAdmin
+					? RemoveButton(group, member)
+					: new Border { Width = 32 };
+				tools.Children.Add(kickOut);
+
+				// The pencil and the ✕ (or their gaps): as tall as the role box between them, and square.
+				foreach (var button in new[] { edit, kickOut }.OfType<Button>())
 				{
-					tools.Children.Add(RemoveButton(group, member));
+					button.Padding = new Thickness(0);
+					button.MinWidth = 0;
+					button.MinHeight = 0;
+					button.HorizontalContentAlignment = HorizontalAlignment.Center;
+					button.VerticalContentAlignment = VerticalAlignment.Center;
 				}
-				else
+
+				role.SizeChanged += (_, e) =>
 				{
-					// Keeps the role boxes lined up.
-					tools.Children.Add(new Border { Width = 40 });
-				}
+					if (e.HeightChanged)
+					{
+						foreach (var square in new[] { edit, kickOut })
+						{
+							square.Width = e.NewSize.Height;
+							square.Height = e.NewSize.Height;
+						}
+					}
+				};
 			}
 			else
 			{
@@ -317,8 +355,13 @@ namespace Lyrious.UILib.Setlists
 		{
 			var button = PageLayout.EditButton(L.T("Edit {0}", member.Name), () => { });
 			var nameBox = new TextBox { Text = member.Name, PlaceholderText = L.T("Name"), MaxLength = 100, MinWidth = 220 };
+			// The ✓ in the box, once the name is changed.
 			var save = PageLayout.OkButton(L.T("Save the name"));
+			PageLayout.OkInBox(nameBox, save, () => !string.IsNullOrWhiteSpace(nameBox.Text) && nameBox.Text.Trim() != member.Name);
+			// The ✕ beside the box.
 			var cancel = PageLayout.CancelButton(L.T("Cancel"));
+			cancel.Margin = new Thickness(4, 0, 0, 0);
+			DockPanel.SetDock(cancel, Dock.Right);
 			var flyout = new Flyout
 			{
 				Content = new StackPanel
@@ -328,8 +371,7 @@ namespace Lyrious.UILib.Setlists
 					Children =
 					{
 						new TextBlock { Text = L.T("Name"), FontSize = 13, Opacity = 0.75 },
-						nameBox,
-						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { save, cancel } },
+						new DockPanel { Children = { cancel, nameBox } },
 					},
 				},
 			};
@@ -349,7 +391,6 @@ namespace Lyrious.UILib.Setlists
 				}
 			}
 
-			nameBox.TextChanged += (_, _) => save.IsEnabled = !string.IsNullOrWhiteSpace(nameBox.Text);
 			nameBox.KeyDown += (_, e) =>
 			{
 				if (e.Key == Avalonia.Input.Key.Enter)
@@ -374,8 +415,10 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>✕ that asks first, then removes the member from the band.</summary>
 		private Button RemoveButton(GroupSummary group, GroupMember member)
 		{
-			var button = HomeView.IconButton(RemoveIcon, L.T("Remove {0}", member.Name));
-			var confirm = PageLayout.DangerButton(L.T("Remove"));
+			var button = HomeView.IconButton(RemoveIcon, L.T("Kick out {0}", member.Name));
+			// Red when pointed at, as the trash buttons: it removes someone from the band.
+			PageLayout.RedOnHover(button);
+			var confirm = PageLayout.DangerButton(L.T("Kick out"));
 			var cancel = new Button { Content = L.T("Cancel") };
 			var flyout = new Flyout
 			{
@@ -385,7 +428,7 @@ namespace Lyrious.UILib.Setlists
 					MaxWidth = 280,
 					Children =
 					{
-						new TextBlock { Text = L.T("Remove {0} from {1}?", member.Name, group.Name), TextWrapping = TextWrapping.Wrap },
+						new TextBlock { Text = L.T("Kick {0} out of {1}?", member.Name, group.Name), TextWrapping = TextWrapping.Wrap },
 						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { confirm, cancel } },
 					},
 				},
@@ -400,11 +443,15 @@ namespace Lyrious.UILib.Setlists
 			return button;
 		}
 
-		/// <summary>A box for a username, email or phone, and Invite (or Enter). Problems show below it.</summary>
+		/// <summary>A box for a username, email or phone, with Invite in it (or Enter). Problems show below it.</summary>
 		private Control InviteRow(GroupSummary group)
 		{
 			var box = new TextBox { PlaceholderText = L.T("Username, email or phone"), VerticalAlignment = VerticalAlignment.Center };
-			var invite = new Button { Content = L.T("Invite"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+			// Invite in the box, at its right end: highlighted, as tall as the box; usable once something's typed.
+			var invite = new Button { Content = L.T("Invite"), Classes = { "accent" }, IsEnabled = false };
+			PageLayout.FitInBox(box, invite);
+			box.InnerRightContent = invite;
+			box.TextChanged += (_, _) => invite.IsEnabled = !string.IsNullOrWhiteSpace(box.Text);
 			var problem = new TextBlock { IsVisible = false, TextWrapping = TextWrapping.Wrap };
 			problem.Bind(TextBlock.ForegroundProperty, problem.GetResourceObservable(LyriousTheme.ErrorBrush));
 
@@ -429,7 +476,8 @@ namespace Lyrious.UILib.Setlists
 				}
 				finally
 				{
-					invite.IsEnabled = box.IsEnabled = true;
+					box.IsEnabled = true;
+					invite.IsEnabled = !string.IsNullOrWhiteSpace(box.Text);
 				}
 			}
 
@@ -443,14 +491,13 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 
-			DockPanel.SetDock(invite, Dock.Right);
 			return new StackPanel
 			{
 				Spacing = 6,
 				Children =
 				{
 					new TextBlock { Text = L.T("Invite a member"), FontWeight = FontWeight.SemiBold },
-					new DockPanel { Children = { invite, box } },
+					box,
 					problem,
 				},
 			};

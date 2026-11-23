@@ -55,8 +55,7 @@ namespace Lyrious.UILib.Localization
 			["Username"] = "Användarnamn",
 			["Password"] = "Lösenord",
 			["Forgot my password?"] = "Glömt lösenordet?",
-			["New to Lyrious? Create an account"] = "Ny på Lyrious? Skapa ett konto",
-			["Host: {0} · Change"] = "Server: {0} · Ändra",
+			["Create an account"] = "Skapa ett konto",
 			["Login failed."] = "Inloggningen misslyckades.",
 			["Create account"] = "Skapa konto",
 			["Join Lyrious to share songs and setlists with your band."] = "Gå med i Lyrious för att dela låtar och låtlistor med ditt band.",
@@ -160,6 +159,7 @@ namespace Lyrious.UILib.Localization
 			["Accept"] = "Acceptera",
 			["Couldn't accept the invitation. {0}"] = "Det gick inte att acceptera inbjudan. {0}",
 			["Accept and join"] = "Tacka ja och gå med",
+			["Join"] = "Gå med",
 			["Delete {0}"] = "Radera {0}",
 			["Delete the band {0}? Its members, setlists and songs go with it."] = "Radera bandet {0}? Dess medlemmar, låtlistor och låtar försvinner med det.",
 			["This is your private place to keep your own songs and setlists. No one else can see them, and no one can be invited here."] = "Det här är din privata plats för dina egna låtar och låtlistor. Ingen annan kan se dem, och ingen kan bjudas in hit.",
@@ -168,9 +168,10 @@ namespace Lyrious.UILib.Localization
 			["Edit {0}"] = "Redigera {0}",
 			["Name"] = "Namn",
 			["Save the name"] = "Spara namnet",
-			["Remove {0}"] = "Ta bort {0}",
+			["Kick out {0}"] = "Sparka ut {0}",
 			["Remove"] = "Ta bort",
-			["Remove {0} from {1}?"] = "Ta bort {0} från {1}?",
+			["Kick out"] = "Sparka ut",
+			["Kick {0} out of {1}?"] = "Sparka ut {0} ur {1}?",
 			["Username, email or phone"] = "Användarnamn, e-post eller telefon",
 			["Invite"] = "Bjud in",
 			["Invite a member"] = "Bjud in en medlem",
@@ -314,7 +315,6 @@ namespace Lyrious.UILib.Localization
 			["Tags, separated by spaces (e.g. ballad christmas)"] = "Taggar, åtskilda med mellanslag (t.ex. ballad jul)",
 			["Add artist"] = "Lägg till artist",
 			["Click to change the artist"] = "Klicka för att ändra artisten",
-			["Used tags"] = "Använda taggar",
 			["Add {0}"] = "Lägg till {0}",
 			["Add tags"] = "Lägg till taggar",
 			["Click to change the tags"] = "Klicka för att ändra taggarna",
@@ -479,6 +479,18 @@ namespace Lyrious.UILib.Localization
 			["Songs in songbook"] = "Låtar i sångboken",
 			["Setlists"] = "Låtlistor",
 			["Online now"] = "Online nu",
+
+			// Site manager: disabling a member's account
+			["Disabled"] = "Avstängd",
+			["Enable"] = "Aktivera",
+			["Disable…"] = "Stäng av…",
+			["Disable"] = "Stäng av",
+			["Lets them log in and use their account again."] = "Låter dem logga in och använda sitt konto igen.",
+			["Stops them logging in and using their account (their bands and songs stay), until enabled again."] = "Hindrar dem från att logga in och använda sitt konto (deras band och låtar finns kvar), tills det aktiveras igen.",
+			["{0} is disabled."] = "{0} är avstängd.",
+			["{0} is enabled again."] = "{0} är aktiverad igen.",
+			["Couldn't change it. {0}"] = "Kunde inte ändra det. {0}",
+			["Disable {0}? They can't log in or use Lyrious until they're enabled again."] = "Stänga av {0}? De kan inte logga in eller använda Lyrious förrän de aktiveras igen.",
 			["joined {0}"] = "ansluten till {0}",
 			["Status"] = "Status",
 			["Last login"] = "Senaste inloggning",
@@ -803,6 +815,18 @@ namespace Lyrious.UILib.Localization
 
 			// Language choice
 			["Same as the device"] = "Samma som enheten",
+
+			// Settings: what band sync follows
+			["Band sync"] = "Bandsynk",
+			["With band sync on (the band icon in the play toolbar), what follows the band when another member changes it. What you change is still sent to the band. Yours on all your devices."] = "Med bandsynk på (bandikonen i spelverktygsfältet): vad som följer bandet när en annan medlem ändrar det. Det du ändrar skickas fortfarande till bandet. Dina på alla dina enheter.",
+			["Follow the band's setlist"] = "Följ bandets låtlista",
+			["When another member picks the band's setlist, yours changes to it too. Yours on all your devices."] = "När en annan medlem väljer bandets låtlista byts din också till den. Dina på alla dina enheter.",
+			["Follow the band's song"] = "Följ bandets låt",
+			["When another member picks the band's song, yours changes to it too (in your setlist, or the band's if you follow that). Yours on all your devices."] = "När en annan medlem väljer bandets låt byts din också till den (i din låtlista, eller bandets om du följer den). Dina på alla dina enheter.",
+			["Follow play and stop"] = "Följ spela och stanna",
+			["When another member presses play or stop, your lyrics start or stop scrolling too. Yours on all your devices."] = "När en annan medlem trycker på spela eller stanna börjar eller slutar din text också att rulla. Dina på alla dina enheter.",
+			["Follow the place in the song"] = "Följ platsen i låten",
+			["When another member presses play or stop, or goes back to the start, your lyrics go to the same place in the song. Yours on all your devices."] = "När en annan medlem trycker på spela eller stanna, eller går tillbaka till början, går din text till samma plats i låten. Dina på alla dina enheter.",
 		};
 	}
 }

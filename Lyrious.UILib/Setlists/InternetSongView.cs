@@ -23,7 +23,8 @@ namespace Lyrious.UILib.Setlists
 		private readonly Func<string, Task<IReadOnlyList<InternetSong>>> search;
 		private readonly IReadOnlySet<string> songbookNames;
 		private readonly TextBox query = PageLayout.WithClearButton(new TextBox { PlaceholderText = L.T("Title and/or artist") });
-		private readonly Button searchButton = new() { Content = L.T("Search"), IsEnabled = false };
+		// In the box, at its right end after the ✕ (see the constructor).
+		private readonly Button searchButton = HomeView.IconButton(AppIcons.Search, L.T("Search"));
 		private readonly Button ultimateGuitarButton = new() { Content = L.T("Search on Ultimate Guitar ↗"), IsEnabled = false, Margin = new Thickness(0, 0, 0, 16) };
 		private readonly ContentControl results = new();
 		private readonly Control searchPage;
@@ -42,7 +43,18 @@ namespace Lyrious.UILib.Setlists
 			this.search = search;
 			this.songbookNames = songbookNames;
 
+			// The search button in the box, at its right end after the ✕ (which clears the box).
 			searchButton.Classes.Add("accent");
+			searchButton.IsEnabled = false;
+			PageLayout.FitInBox(query, searchButton);
+			var clear = (Button)query.InnerRightContent!;
+			// Not at the end any more: the search button is.
+			PageLayout.FitInBox(query, clear, atEnd: false, iconSize: 14);
+			query.InnerRightContent = new StackPanel
+			{
+				Orientation = Avalonia.Layout.Orientation.Horizontal,
+				Children = { clear, searchButton },
+			};
 			searchButton.Click += (_, _) => _ = SearchAsync();
 			query.TextChanged += (_, _) => searchButton.IsEnabled = ultimateGuitarButton.IsEnabled = !string.IsNullOrWhiteSpace(query.Text);
 			ToolTip.SetTip(ultimateGuitarButton, L.T("Opens the search in your browser, to copy chords or lyrics into a song"));
@@ -57,15 +69,13 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 
-			DockPanel.SetDock(searchButton, Dock.Right);
-			searchButton.Margin = new Thickness(8, 0, 0, 0);
-			var searchRow = new DockPanel { Margin = new Thickness(0, 0, 0, 16), Children = { searchButton, query } };
-			DockPanel.SetDock(searchRow, Dock.Top);
+			query.Margin = new Thickness(0, 0, 0, 16);
+			DockPanel.SetDock(query, Dock.Top);
 
 			results.Content = Message(L.T("Search for a song to add its lyrics to the songbook."));
 			searchPage = PageLayout.Page(
 				L.T("Find song online"),
-				new DockPanel { Children = { searchRow, ultimateGuitarButton, results } },
+				new DockPanel { Children = { query, ultimateGuitarButton, results } },
 				subtitle: L.T("Lyrics from LRCLIB (lrclib.net)"),
 				closable: true,
 				icon: AppIcons.FindOnline);

@@ -42,6 +42,9 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
     /// <summary>Raised on a background thread when another member of the joined band starts (true) or stops playing.</summary>
     public event Action<Guid, bool>? PlaybackChanged;
 
+    /// <summary>Another member of the joined band says where in the song they are (before their play, stop or back to the start): (groupId, position).</summary>
+    public event Action<Guid, double>? PlaybackPositionChanged;
+
     /// <summary>
     /// Raised on a background thread when another member picks a band's current setlist and song
     /// (groupId, setlistId, setlistItemId), before the change is stored.
@@ -85,6 +88,7 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
             }
 
             connection.On<Guid, bool>("PlaybackChanged", (groupId, playing) => PlaybackChanged?.Invoke(groupId, playing));
+            connection.On<Guid, double>("PlaybackPositionChanged", (groupId, position) => PlaybackPositionChanged?.Invoke(groupId, position));
             connection.On<Guid, Guid?, Guid?>("SongSelected", (groupId, setlistId, itemId) => SongSelected?.Invoke(groupId, setlistId, itemId));
             connection.On<Guid, bool>("MemberConnectionChanged", (memberId, connected) => MemberConnectionChanged?.Invoke(memberId, connected));
             connection.On<string>("SettingsChanged", settings => SettingsChanged?.Invoke(settings));
@@ -109,6 +113,19 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
         if (connection is { State: HubConnectionState.Connected })
         {
             await connection.InvokeAsync<bool>("SetPlayback", playing);
+        }
+    }
+
+    /// <summary>
+    /// Tells the other members of the joined band where in the song this member is (if connected),
+    /// ahead of their play or stop. Doesn't wait for the server's answer (a server without it just
+    /// ignores it).
+    /// </summary>
+    public async Task SetPlaybackPositionAsync(double position)
+    {
+        if (connection is { State: HubConnectionState.Connected })
+        {
+            await connection.SendAsync("SetPlaybackPosition", position);
         }
     }
 

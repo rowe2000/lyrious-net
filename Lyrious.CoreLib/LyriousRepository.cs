@@ -317,7 +317,42 @@ public class LyriousRepository(LyriousContext context)
 	public void SetIdentity(IIdentity? identity)
 	{
 		elevated = identity is System.Security.Claims.ClaimsIdentity claims && claims.HasClaim(SiteManagerClaim, "true");
-		Me = identity != null ? context.Members.FirstOrDefault(o => o.UserName == identity.Name) : null;
+		var member = identity != null ? context.Members.FirstOrDefault(o => o.UserName == identity.Name) : null;
+		// A disabled member is no one here, also with a token from before they were disabled.
+		Me = member != null && IsDisabled(member) ? null : member;
+	}
+
+	/// <summary>Whether a site manager has disabled the member: they can't log in or use their account until enabled again.</summary>
+	public static bool IsDisabled(Member member) => member.LockoutEnd is { } end && end > DateTimeOffset.UtcNow;
+
+	/// <summary>The members a site manager has disabled (see <see cref="IsDisabled"/>), for a site manager; none for anyone else.</summary>
+	public IReadOnlyList<Guid> DisabledMembersForSiteManager()
+	{
+		if (!IsSiteManager)
+			return [];
+
+		var now = DateTimeOffset.UtcNow;
+		// Compared here, not in the database: SQLite can't compare DateTimeOffset values.
+		return context.Members.Where(m => !m.Removed && m.LockoutEnd != null).AsEnumerable()
+			.Where(m => m.LockoutEnd > now)
+			.Select(m => m.Id)
+			.ToList();
+	}
+
+	/// <summary>
+	/// Disables a member's account (they can't log in or use it) or enables it again, as a site
+	/// manager. Not the site manager's own account. False when that isn't allowed or there's no such member.
+	/// </summary>
+	public bool SetMemberDisabled(Guid memberId, bool disabled)
+	{
+		if (MemberForSiteManager(memberId) is not { } member || member.Id == Me?.Id)
+			return false;
+
+		// Locked out for good, through Identity's lockout (which the login checks too).
+		member.LockoutEnabled = true;
+		member.LockoutEnd = disabled ? DateTimeOffset.MaxValue : null;
+		context.SaveChanges();
+		return true;
 	}
 
 	protected override bool HasAccess<TEntity>(TEntity entity)

@@ -43,7 +43,7 @@ namespace Lyrious.UILib.Setlists
 		private const string AddIcon = "M12,5 V19 M5,12 H19";
 		private const string CloseIcon = "M6,6 L18,18 M18,6 L6,18";
 		// A magnifying glass: the lens and its handle.
-		private const string SearchIcon = "M4,10.5 A6.5,6.5 0 1 0 17,10.5 A6.5,6.5 0 1 0 4,10.5 M15.2,15.2 L20,20";
+		private const string SearchIcon = AppIcons.Search;
 		// A pushpin: head, body widening to a base, and the needle.
 		private const string PinIcon = "M9,3 H15 M10,3 V9 L7,13 H17 L14,9 V3 M12,13 V21";
 
@@ -256,7 +256,12 @@ namespace Lyrious.UILib.Setlists
 			mediaPlayer.PlayingChanged += OnMediaPlayingChanged;
 			setlistDrawer.Content = new Grid { Children = { new DockPanel { Children = { playbackBar, pageHost } }, mediaPlayer, topRow, notice } };
 			playbackBar.PlayPauseRequested += () => PlayPause();
-			playbackBar.RestartRequested += () => (page.Content as LyricScrollView)?.ScrollToStart();
+			playbackBar.RestartRequested += () =>
+			{
+				(page.Content as LyricScrollView)?.ScrollToStart();
+				// The band goes back to the start too (those following the place in the song).
+				_ = SendPlaybackPositionAsync();
+			};
 			playbackBar.NextRequested += NextSong;
 			// The MIDI setup page (the button shows while MIDI is on), with the band's MIDI as the start.
 			// The MIDI page (the button shows while MIDI is on): the keyboard's sounds, to choose the open song's.
@@ -434,6 +439,7 @@ namespace Lyrious.UILib.Setlists
 			// Follow the joined band's current setlist and song, and its play/stop, when another member changes them.
 			service.GroupChanged += OnGroupChanged;
 			service.PlaybackChanged += OnPlaybackChanged;
+			service.PlaybackPositionChanged += OnPlaybackPositionChanged;
 			service.MemberConnectionChanged += OnMemberConnectionChanged;
 			service.MembersChanged += OnMembersChanged;
 			service.StatusChanged += OnStatusChanged;
@@ -470,6 +476,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			service.GroupChanged -= OnGroupChanged;
 			service.PlaybackChanged -= OnPlaybackChanged;
+			service.PlaybackPositionChanged -= OnPlaybackPositionChanged;
 			service.MemberConnectionChanged -= OnMemberConnectionChanged;
 			service.MembersChanged -= OnMembersChanged;
 			service.StatusChanged -= OnStatusChanged;
@@ -604,11 +611,31 @@ namespace Lyrious.UILib.Setlists
 
 			try
 			{
+				// Where in the song first: the others go there, then start or stop.
+				await SendPlaybackPositionAsync();
 				await service.SendPlaybackAsync(playing);
 			}
 			catch (Exception ex)
 			{
 				System.Diagnostics.Debug.WriteLine($"Couldn't send play/stop to the band: {ex.Message}");
+			}
+		}
+
+		/// <summary>With band sync on, tells the others where in the song the lyrics shown here are (see <see cref="LyricScrollView.PlayPosition"/>).</summary>
+		private async Task SendPlaybackPositionAsync()
+		{
+			if (!bandSync || page.Content is not LyricScrollView { IsEditing: false, PlayPosition: { } position })
+			{
+				return;
+			}
+
+			try
+			{
+				await service.SendPlaybackPositionAsync(position);
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't send the place in the song to the band: {ex.Message}");
 			}
 		}
 
@@ -673,7 +700,7 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The Site manager page (every band and member), for a member logged in elevated.</summary>
 		private void OpenSiteManager()
 		{
-			page.Content = new SiteManagerView(service, ShowBandMembersInlineAsync, ShowBandSettingsAsync);
+			page.Content = new SiteManagerView(service, ShowBandMembersInlineAsync, ShowBandSettingsAsync, user.UserName);
 		}
 
 		// Ctrl/⌘+M asked for the Site manager page before logging in elevated: it opens once they have.
@@ -981,14 +1008,16 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			timedPlay = (lyrics, AddPlayAsync(group.Id, songId), DateTime.Now);
+			// The setlist it's played from goes with it, for the sessions (not the songbook shown as a setlist: no setlist).
+			var setlistId = currentSetlist is { } setlist && !IsSongbookSetlist(setlist) ? setlist.Id : (Guid?)null;
+			timedPlay = (lyrics, AddPlayAsync(group.Id, songId, setlistId), DateTime.Now);
 		}
 
-		private async Task<Guid?> AddPlayAsync(Guid groupId, Guid songId)
+		private async Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, Guid? setlistId)
 		{
 			try
 			{
-				return await service.AddPlayAsync(groupId, songId);
+				return await service.AddPlayAsync(groupId, songId, setlistId);
 			}
 			catch (Exception ex)
 			{
@@ -1016,9 +1045,23 @@ namespace Lyrious.UILib.Setlists
 		{
 			// Only with band sync on, for the joined band, on its lyrics page (not while editing). Focus
 			// mode follows, as when pressing play/pause here. Not sent on, so it doesn't bounce back and forth.
-			if (bandSync && currentGroup?.Id == groupId && page.Content is LyricScrollView { IsEditing: false } lyrics)
+			// Not when the member chose not to follow play and stop (Settings → Band sync).
+			if (bandSync && PlaybackSettings.FollowPlayback && currentGroup?.Id == groupId && page.Content is LyricScrollView { IsEditing: false } lyrics)
 			{
 				lyrics.SetAutoScroll(playing);
+			}
+		});
+
+		/// <summary>
+		/// Another member says where in the song they are (before their play or stop, or going back to
+		/// the start): with band sync on, the lyrics go there, unless the member chose not to follow the
+		/// place in the song (Settings → Band sync).
+		/// </summary>
+		private void OnPlaybackPositionChanged(Guid groupId, double position) => Dispatcher.UIThread.Post(() =>
+		{
+			if (bandSync && PlaybackSettings.FollowPosition && currentGroup?.Id == groupId && page.Content is LyricScrollView { IsEditing: false } lyrics)
+			{
+				lyrics.GoToPlayPosition(position);
 			}
 		});
 
@@ -1133,12 +1176,15 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			var setlistChanged = catchUp
+			// Only what the member chose to follow (Settings → Band sync): the setlist, the song, or both.
+			var followSetlist = PlaybackSettings.FollowSetlist;
+			var followSong = PlaybackSettings.FollowSong;
+			var setlistChanged = followSetlist && (catchUp
 				? group.CurrentSetlistId != currentSetlist?.Id
-				: group.CurrentSetlistId is { } newSetlistId && newSetlistId != currentSetlist?.Id;
-			var songChanged = catchUp
+				: group.CurrentSetlistId is { } newSetlistId && newSetlistId != currentSetlist?.Id);
+			var songChanged = followSong && (catchUp
 				? group.CurrentSetlistItemId != currentEntryId
-				: group.CurrentSetlistItemId is { } newItemId && newItemId != currentEntryId;
+				: group.CurrentSetlistItemId is { } newItemId && newItemId != currentEntryId);
 			if (!setlistChanged && !songChanged)
 			{
 				return;
@@ -1153,7 +1199,7 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			if (catchUp && group.CurrentSetlistId == null)
+			if (catchUp && followSetlist && group.CurrentSetlistId == null)
 			{
 				// The band has no current setlist: its start page (or, while busy here, just the drawers).
 				var replace = page.Content is SetlistsView or NoSongView or LyricScrollView { IsEditing: false };
@@ -1169,15 +1215,18 @@ namespace Lyrious.UILib.Setlists
 					return;
 				}
 
-				var entry = group.CurrentSetlistItemId is { } itemId ? await service.GetEntryAsync(itemId) : null;
+				// The band's song only when following it, and only in the setlist shown here.
+				var entry = followSong && group.CurrentSetlistItemId is { } itemId ? await service.GetEntryAsync(itemId) : null;
 				if (entry?.SetlistId != setlist.Id)
 				{
 					entry = null;
 				}
 
-				if (!setlistChanged && entry == null && !catchUp)
+				// The new current song is gone already, or not in this setlist. (Catching up while following
+				// only the song: the member's own song stays when the band's isn't in their setlist.)
+				if (!setlistChanged && entry == null && (!catchUp || !followSetlist))
 				{
-					return; // The new current song is gone already, or not in this setlist.
+					return;
 				}
 
 				// Not a setlist being looked at: it stays on that setlist (the drawers follow the band).
@@ -2859,16 +2908,17 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// The setlists used in each session, worked out from its songs (a play doesn't keep which
-		/// setlist it was played from): the band's setlists (not its songbook) that cover most of the songs
-		/// played, best first, each covering at least two songs not yet covered (or the session's only
-		/// song). None if it can't be read.
+		/// The setlists used in each session: those its songs were played from, in the order first
+		/// played from (a play keeps its setlist). For older plays, which don't, worked out from their
+		/// songs: the band's setlists (not its songbook) that cover most of them, best first, each covering
+		/// at least two songs not yet covered (or the only song); "Songbook" when none of them does. None
+		/// if it can't be read.
 		/// </summary>
 		private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<string>>?> SetlistsUsedAsync(Guid groupId, IReadOnlyList<PlaylogSummary> playlogs)
 		{
 			try
 			{
-				var setlists = new List<(string Name, HashSet<Guid> Songs)>();
+				var setlists = new List<(Guid Id, string Name, HashSet<Guid> Songs)>();
 				foreach (var setlist in await service.GetSetlistsAsync(groupId))
 				{
 					if (setlist.Id == groupId)
@@ -2877,16 +2927,25 @@ namespace Lyrious.UILib.Setlists
 					}
 
 					var entries = await service.GetEntriesAsync(setlist.Id);
-					setlists.Add((setlist.Name, entries.Select(entry => entry.Song.Id).ToHashSet()));
+					setlists.Add((setlist.Id, setlist.Name, entries.Select(entry => entry.Song.Id).ToHashSet()));
 				}
 
 				var used = new Dictionary<Guid, IReadOnlyList<string>>();
 				foreach (var playlog in playlogs)
 				{
-					var left = playlog.Plays.Select(play => play.SongId).ToHashSet();
+					// The setlists the plays say they were played from (one deleted since can't be named).
+					var names = playlog.Plays
+						.Select(play => play.SetlistId)
+						.OfType<Guid>()
+						.Distinct()
+						.Select(id => setlists.FirstOrDefault(setlist => setlist.Id == id).Name)
+						.OfType<string>()
+						.ToList();
+
+					// The songs of older plays, which don't say: guessed from the setlists they're in.
+					var left = playlog.Plays.Where(play => play.SetlistId == null).Select(play => play.SongId).ToHashSet();
 					var least = left.Count == 1 ? 1 : 2;
-					var names = new List<string>();
-					var candidates = setlists.ToList();
+					var candidates = setlists.Where(setlist => !names.Contains(setlist.Name)).ToList();
 					while (left.Count > 0 && candidates.Count > 0)
 					{
 						// The setlist with the most of the songs not yet covered (the smaller one if tied: closer to what was played).
@@ -2903,6 +2962,12 @@ namespace Lyrious.UILib.Setlists
 						names.Add(best.Setlist.Name);
 						left.ExceptWith(best.Setlist.Songs);
 						candidates.Remove(best.Setlist);
+					}
+
+					// Songs played, but in none of the band's setlists (now): played from the songbook.
+					if (names.Count == 0 && playlog.Plays.Count > 0)
+					{
+						names.Add(L.T("Songbook"));
 					}
 
 					used[playlog.Id] = names;
@@ -3494,7 +3559,8 @@ namespace Lyrious.UILib.Setlists
 		// The page in a frame (opaque and shadowed while it slides away) in a clipped grid, with the
 		// song sliding in over it or lying under it (see StartSlide).
 		private readonly Border pageFrame = new();
-		private readonly Grid pageHost = new() { ClipToBounds = true };
+		// Transparent, so a press in the side margins of a page (where its drawer swipes start) counts too.
+		private readonly Grid pageHost = new() { ClipToBounds = true, Background = Brushes.Transparent };
 		private Control? slidePreview;
 		private int slideStep;
 		private IDisposable? pageFrameBackground;
@@ -3502,7 +3568,7 @@ namespace Lyrious.UILib.Setlists
 
 		private static readonly BoxShadows SlideShadow = BoxShadows.Parse("0 0 18 0 #70000000");
 
-		/// <summary>A press on the lyrics page (not while editing, nor with a drawer sliding over it): perhaps a swipe.</summary>
+		/// <summary>A press on the page: perhaps a swipe (from an edge on any page, for a drawer; elsewhere on the lyrics, not while editing, for another song).</summary>
 		private void OnSwipePressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
 		{
 			swipe = null;
@@ -3519,8 +3585,7 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			if (page.Content is not LyricScrollView { IsEditing: false }
-			    || e.Pointer.Type == Avalonia.Input.PointerType.Mouse && !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+			if (e.Pointer.Type == Avalonia.Input.PointerType.Mouse && !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
 			{
 				return;
 			}
@@ -3534,6 +3599,13 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var edge = start.X <= SwipeEdge - topRow.Margin.Left ? -1 : start.X >= width - (SwipeEdge - topRow.Margin.Right) ? 1 : 0;
+			// From the edges the drawers come in on every page; elsewhere a swipe changes song, only on
+			// the lyrics (not while editing them).
+			if (edge == 0 && page.Content is not LyricScrollView { IsEditing: false })
+			{
+				return;
+			}
+
 			swipe = new SwipeState(e.Pointer, start, edge, e.Timestamp);
 		}
 

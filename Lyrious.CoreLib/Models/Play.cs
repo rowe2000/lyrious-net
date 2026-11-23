@@ -16,6 +16,12 @@ public sealed class Play : Entity
     [DataMember] public Guid PlaylogId { get; set; }
     [DataMember] public Guid SongId { get; set; }
 
+    /// <summary>
+    /// The setlist the song was played from, for the band's sessions (which setlists were used);
+    /// null when it wasn't played from a setlist, or the play is older than this.
+    /// </summary>
+    [DataMember] public Guid? SetlistId { get; set; }
+
     [JsonIgnore] public Member? Conductor { get; set; }
     [JsonIgnore] public Playlog? Playlog { get; set; }
 	[JsonIgnore] public Song? Song { get; set; }

@@ -139,8 +139,7 @@ namespace Lyrious.UILib
 				login.ShowNotice(notice, userName);
 			}
 
-			var view = new LoginView(login, App.AuthService.ServerAddress);
-			view.HostRequested += ShowHostFromLogin;
+			var view = new LoginView(login);
 			view.RegisterRequested += ShowRegister;
 			view.ForgotPasswordRequested += () => ShowForgotPassword(login.UserName);
 			Content = view;
@@ -324,35 +323,6 @@ namespace Lyrious.UILib
 				ShowLogin(L.T("Now syncing with {0}. Log in to continue.", auth.ServerAddress), null);
 			};
 			home.ShowDrawerPage(view);
-		}
-
-		/// <summary>
-		/// The host page, from the login page: there's no session yet, so it's only the address (no
-		/// sync status). A new host is remembered on this device; back to the login page either way.
-		/// </summary>
-		private void ShowHostFromLogin()
-		{
-			var auth = App.AuthService;
-			var current = auth.ServerAddress;
-			var view = new SyncView(current, address => SameHost(address, current)
-				? Task.FromResult(new ServerCheck(current, true, null))
-				: auth.CheckServerAsync(address));
-			view.Cancelled += ShowLogin;
-			view.Saved += address =>
-			{
-				if (SameHost(address, current))
-				{
-					// The same server, but remembered: it may only have come from the page's address (Web's ?api=).
-					App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
-					ShowLogin();
-					return;
-				}
-
-				auth.UseServer(Tidy(address));
-				App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
-				ShowLogin(L.T("Now using {0}.", auth.ServerAddress), null);
-			};
-			Content = view;
 		}
 
 		private static bool SameHost(string address, string current)

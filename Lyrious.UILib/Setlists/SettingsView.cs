@@ -92,6 +92,18 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 
+			// What band sync (the band icon in the play toolbar) changes here when another member changes it.
+			var bandSyncSection = Section(L.T("Band sync"));
+			ToolTip.SetTip(bandSyncSection, Explained(L.T("With band sync on (the band icon in the play toolbar), what follows the band when another member changes it. What you change is still sent to the band. Yours on all your devices.")));
+
+			// A switch for one of them, saved as soon as it's changed.
+			ToggleSwitch FollowSwitch(Func<bool> get, Action<bool> set)
+			{
+				var toggle = new ToggleSwitch { IsChecked = get(), OnContent = L.T("On"), OffContent = L.T("Off") };
+				toggle.IsCheckedChanged += (_, _) => set(toggle.IsChecked == true);
+				return toggle;
+			}
+
 			var colorsSection = Section(L.T("Colors"));
 			ToolTip.SetTip(colorsSection, Explained(L.T("Yours on all your devices.")));
 			var form = new StackPanel
@@ -134,6 +146,23 @@ namespace Lyrious.UILib.Setlists
 							L.T("On: + in the transpose dialog puts the capo a fret higher, which moves the chords down (capo +1 makes G F#). Off: a transpose in semitones, which moves them up. Yours on all your devices."),
 							capoMode),
 					}),
+					bandSyncSection,
+					Scoped(SettingScope.User, Setting(
+						L.T("Follow the band's setlist"),
+						L.T("When another member picks the band's setlist, yours changes to it too. Yours on all your devices."),
+						FollowSwitch(() => PlaybackSettings.FollowSetlist, on => PlaybackSettings.FollowSetlist = on))),
+					Scoped(SettingScope.User, Setting(
+						L.T("Follow the band's song"),
+						L.T("When another member picks the band's song, yours changes to it too (in your setlist, or the band's if you follow that). Yours on all your devices."),
+						FollowSwitch(() => PlaybackSettings.FollowSong, on => PlaybackSettings.FollowSong = on))),
+					Scoped(SettingScope.User, Setting(
+						L.T("Follow play and stop"),
+						L.T("When another member presses play or stop, your lyrics start or stop scrolling too. Yours on all your devices."),
+						FollowSwitch(() => PlaybackSettings.FollowPlayback, on => PlaybackSettings.FollowPlayback = on))),
+					Scoped(SettingScope.User, Setting(
+						L.T("Follow the place in the song"),
+						L.T("When another member presses play or stop, or goes back to the start, your lyrics go to the same place in the song. Yours on all your devices."),
+						FollowSwitch(() => PlaybackSettings.FollowPosition, on => PlaybackSettings.FollowPosition = on))),
 					colorsSection,
 					ColorSetting(
 						L.T("Highlight"),
@@ -1040,6 +1069,44 @@ namespace Lyrious.UILib.Setlists
 		{
 			get => App.Settings.Get(SettingKeys.BandSync) != "false";
 			set => App.Settings.Set(SettingKeys.BandSync, value ? "true" : "false");
+		}
+
+		/// <summary>Whether band sync changes this member's current setlist to the band's. Kept with the user; on unless turned off.</summary>
+		public static bool FollowSetlist
+		{
+			get => App.Settings.Get(SettingKeys.BandSyncSetlist) != "false";
+			set => SetFollow(SettingKeys.BandSyncSetlist, value);
+		}
+
+		/// <summary>Whether band sync changes this member's current song to the band's. Kept with the user; on unless turned off.</summary>
+		public static bool FollowSong
+		{
+			get => App.Settings.Get(SettingKeys.BandSyncSong) != "false";
+			set => SetFollow(SettingKeys.BandSyncSong, value);
+		}
+
+		/// <summary>Whether band sync starts and stops this member's lyrics with the band's play and stop. Kept with the user; on unless turned off.</summary>
+		public static bool FollowPlayback
+		{
+			get => App.Settings.Get(SettingKeys.BandSyncPlayback) != "false";
+			set => SetFollow(SettingKeys.BandSyncPlayback, value);
+		}
+
+		/// <summary>
+		/// Whether band sync moves this member's lyrics to where the member who plays, stops or goes
+		/// back to the start is in the song. Kept with the user; on unless turned off.
+		/// </summary>
+		public static bool FollowPosition
+		{
+			get => App.Settings.Get(SettingKeys.BandSyncPosition) != "false";
+			set => SetFollow(SettingKeys.BandSyncPosition, value);
+		}
+
+		// On is kept as nothing (the default), off as "false"; sent with the user's other settings.
+		private static void SetFollow(string key, bool value)
+		{
+			App.Settings.Set(key, value ? null : "false");
+			UserSettings.ChangedHere();
 		}
 	}
 }

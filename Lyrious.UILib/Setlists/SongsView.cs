@@ -223,15 +223,14 @@ namespace Lyrious.UILib.Setlists
 
 				// A new setlist: "Create a setlist" shows its name box, then ✓ (or Enter) makes it; the
 				// popup stays open until it's made (or closed with its ✕, Escape or a click outside).
-				// As tall as the ✓ and ✕ beside it, with its text in the middle.
+				// Its text in the middle of its height.
 				var name = new TextBox { PlaceholderText = L.T("Name of the new setlist"), MinWidth = 200, VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center };
+				// The ✓ in the box, once a name is typed.
 				var ok = PageLayout.OkButton(L.T("Create the setlist"));
-				ok.IsEnabled = false;
+				PageLayout.OkInBox(name, ok, () => !string.IsNullOrWhiteSpace(name.Text));
 				// The popup's ✕, at its top right: closes it.
 				var close = PageLayout.CancelButton(L.T("Close"));
-				ok.Margin = new Avalonia.Thickness(8, 0, 0, 0);
-				DockPanel.SetDock(ok, Dock.Right);
-				var nameRow = new DockPanel { IsVisible = false, Children = { ok, name } };
+				var nameRow = new DockPanel { IsVisible = false, Children = { name } };
 				var create = PopupItem(L.T("Create a setlist"), NewSetlistIcon);
 				create.IsEnabled = chosen.Count > 0;
 				// The name box takes the button's place, with its icon at the left in the box.
@@ -267,7 +266,6 @@ namespace Lyrious.UILib.Setlists
 					DimCheckBoxes();
 				}
 
-				name.TextChanged += (_, _) => ok.IsEnabled = !string.IsNullOrWhiteSpace(name.Text);
 				name.KeyDown += (_, e) =>
 				{
 					// Escape leaves the box as in every text box (see TextBoxFocus); the next one closes the popup.

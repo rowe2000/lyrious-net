@@ -63,6 +63,42 @@ public class MemberController(LyriousRepository repo, IEmailSender emailSender, 
 		return NoContent();
 	}
 
+	// GET api/member/disabled
+	/// <summary>The ids of the members a site manager has disabled, for a site manager.</summary>
+	[HttpGet("disabled")]
+	public ActionResult<IEnumerable<Guid>> GetDisabled()
+	{
+		Repo.SetIdentity(User.Identity);
+		if (!Repo.IsSiteManager)
+		{
+			return StatusCode(StatusCodes.Status403Forbidden, "Only site managers see which members are disabled.");
+		}
+
+		return Ok(Repo.DisabledMembersForSiteManager());
+	}
+
+	// PUT api/member/{id}/disabled
+	/// <summary>
+	/// Disables a member's account (true: they can't log in or use it, also with a token they have)
+	/// or enables it again (false), as a site manager. Not their own account.
+	/// </summary>
+	[HttpPut("{id:guid}/disabled")]
+	public IActionResult PutDisabled(Guid id, [FromBody] bool disabled)
+	{
+		Repo.SetIdentity(User.Identity);
+		if (!Repo.IsSiteManager)
+		{
+			return StatusCode(StatusCodes.Status403Forbidden, "Only site managers disable members.");
+		}
+
+		if (id == Repo.Me?.Id)
+		{
+			return BadRequest("You can't disable your own account.");
+		}
+
+		return Repo.SetMemberDisabled(id, disabled) ? NoContent() : NotFound();
+	}
+
 	// GET api/member/me/settings
 	/// <summary>The caller's own settings (the same on all their devices): a JSON object; 204 No Content if they've never saved any.</summary>
 	[HttpGet("me/settings")]

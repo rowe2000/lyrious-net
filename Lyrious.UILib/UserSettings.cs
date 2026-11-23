@@ -38,6 +38,10 @@ namespace Lyrious.UILib
 			SettingKeys.Midi,
 			SettingKeys.MidiExpressions,
 			SettingKeys.MidiCommands,
+			SettingKeys.BandSyncSetlist,
+			SettingKeys.BandSyncSong,
+			SettingKeys.BandSyncPlayback,
+			SettingKeys.BandSyncPosition,
 		];
 
 		/// <summary>How long after the last change it's sent.</summary>

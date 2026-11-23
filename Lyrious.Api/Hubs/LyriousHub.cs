@@ -33,6 +33,9 @@ public class LyriousHub(LyriousRepository repo, HubConnectionRegistry registry) 
 	/// <summary>Sent to a joined group's channel when one of its members starts or stops playing: (groupId, playing).</summary>
 	public const string PlaybackChangedMethod = "PlaybackChanged";
 
+	/// <summary>Sent to a joined group's channel with where in the song a member is, before their play, stop or back to the start: (groupId, position).</summary>
+	public const string PlaybackPositionChangedMethod = "PlaybackPositionChanged";
+
 	/// <summary>Sent to a member's groups when they come online or go offline (their app connects or disconnects): (memberId, connected).</summary>
 	public const string MemberConnectionChangedMethod = "MemberConnectionChanged";
 
@@ -105,6 +108,24 @@ public class LyriousHub(LyriousRepository repo, HubConnectionRegistry registry) 
 		}
 
 		await Clients.GroupExcept(JoinedGroupName(joined), [Context.ConnectionId]).SendAsync(PlaybackChangedMethod, joined, playing);
+		return true;
+	}
+
+	/// <summary>
+	/// Tells the other members that have joined the caller's joined group where in the song the
+	/// caller is (sent with play, stop and back to the start, before them): for timed lyrics the time
+	/// in the song in seconds, else how far down the lyrics (0 to 1). Nothing is stored. Returns false
+	/// when the caller hasn't joined a group they're a member of.
+	/// </summary>
+	public async Task<bool> SetPlaybackPosition(double position)
+	{
+		repo.SetIdentity(Context.User?.Identity);
+		if (repo.Me?.JoinedGroupId is not { } joined || !repo.IsMember(joined) || double.IsNaN(position) || double.IsInfinity(position))
+		{
+			return false;
+		}
+
+		await Clients.GroupExcept(JoinedGroupName(joined), [Context.ConnectionId]).SendAsync(PlaybackPositionChangedMethod, joined, position);
 		return true;
 	}
 

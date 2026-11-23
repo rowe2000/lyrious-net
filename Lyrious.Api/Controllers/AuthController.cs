@@ -96,6 +96,13 @@ public class AuthController(
 
 		// Verifies the password (and lockout state) without creating a cookie session.
 		var result = await signInManager.CheckPasswordSignInAsync(member, model.Password, lockoutOnFailure: false);
+		if (result.IsLockedOut)
+		{
+			// Disabled by a site manager. Not 401 (a wrong password, which the app would also forget
+			// offline) nor 403 (taken for a server that isn't there): a refusal that says why.
+			return BadRequest("This account has been disabled. Ask the site's managers to enable it again.");
+		}
+
 		if (!result.Succeeded)
 		{
 			return Unauthorized("Invalid username or password.");

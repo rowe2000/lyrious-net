@@ -959,6 +959,62 @@ namespace Lyrious.UILib.Setlists
 			lyricsActions.IsHitTestVisible = !focused;
 		}
 
+		/// <summary>
+		/// Where in the song the lyrics are, for the band (see <see cref="GoToPlayPosition"/>): for timed
+		/// lyrics the time in the song at the middle of the view, in seconds; else how far down the
+		/// lyrics the line under the toolbar is (0 at the start, 1 at the end). Null before they're laid out.
+		/// </summary>
+		public double? PlayPosition
+		{
+			get
+			{
+				if (scroller is not { } viewer || viewer.Extent.Height <= 0)
+				{
+					return null;
+				}
+
+				if (IsTimed && Timeline() is { } points)
+				{
+					return TimeAt(points, CenterAt(viewer.Offset.Y));
+				}
+
+				var height = viewer.Extent.Height - overscroll - overscrollBottom;
+				return height > 0 ? Math.Clamp((viewer.Offset.Y - StartOffset) / height, 0, 1) : 0;
+			}
+		}
+
+		/// <summary>
+		/// Goes to where another member's lyrics are in the song (their <see cref="PlayPosition"/>): the
+		/// same time for timed lyrics (playing, the song's clock goes on from there), else the same share
+		/// of the way down, so it's the same place on a screen of another size.
+		/// </summary>
+		public void GoToPlayPosition(double position)
+		{
+			if (scroller is not { } viewer || viewer.Extent.Height <= 0 || double.IsNaN(position))
+			{
+				return;
+			}
+
+			StopNudge();
+			if (IsTimed && Timeline() is { } points)
+			{
+				var seconds = Math.Max(0, position);
+				viewer.Offset = new Vector(viewer.Offset.X, Math.Clamp(OffsetCentering(CenterAt(points, seconds)), 0, MaxOffset(viewer)));
+				if (scrollTimer.IsEnabled)
+				{
+					playbackStart = seconds - ScrollSeconds;
+					// Not taken for a scroll by hand at the next step.
+					timedPoints = null;
+				}
+
+				return;
+			}
+
+			var height = viewer.Extent.Height - overscroll - overscrollBottom;
+			viewer.Offset = new Vector(viewer.Offset.X, Math.Clamp(StartOffset + Math.Clamp(position, 0, 1) * height, 0, MaxOffset(viewer)));
+			scrollPosition = null;
+		}
+
 		/// <summary>Scrolls the lyrics back to the start; if they're scrolling by themselves, they go on from there.</summary>
 		public void ScrollToStart()
 		{
@@ -3194,15 +3250,7 @@ namespace Lyrious.UILib.Setlists
 				Padding = new Thickness(8),
 				CornerRadius = new CornerRadius(6),
 				BorderThickness = new Thickness(1),
-				Child = new StackPanel
-				{
-					Spacing = 6,
-					Children =
-					{
-						new TextBlock { Text = L.T("Used tags"), FontSize = 12, Opacity = 0.7 },
-						usedTagsList,
-					},
-				},
+				Child = usedTagsList,
 			};
 			usedTagsFrame.Bind(Border.BackgroundProperty, usedTagsFrame.GetResourceObservable("FlyoutPresenterBackground"));
 			usedTagsFrame.Bind(Border.BorderBrushProperty, usedTagsFrame.GetResourceObservable("FlyoutBorderThemeBrush"));

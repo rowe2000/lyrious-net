@@ -29,6 +29,18 @@ namespace Lyrious.UILib
 		/// <summary>"false" stops following and sending the band's song, setlist and play/stop (on by default).</summary>
 		public const string BandSync = "band-sync";
 
+		/// <summary>"false": band sync doesn't change this member's current setlist (on unless turned off; kept with the user).</summary>
+		public const string BandSyncSetlist = "band-sync-setlist";
+
+		/// <summary>"false": band sync doesn't change this member's current song (on unless turned off; kept with the user).</summary>
+		public const string BandSyncSong = "band-sync-song";
+
+		/// <summary>"false": band sync doesn't start or stop this member's lyrics (on unless turned off; kept with the user).</summary>
+		public const string BandSyncPlayback = "band-sync-playback";
+
+		/// <summary>"false": band sync doesn't move this member's lyrics to where the others are in the song (on unless turned off; kept with the user).</summary>
+		public const string BandSyncPosition = "band-sync-position";
+
 		/// <summary>The highlight colour, "#RRGGBB"; none for the system's accent colour.</summary>
 		public const string HighlightColor = "highlight-color";
 
