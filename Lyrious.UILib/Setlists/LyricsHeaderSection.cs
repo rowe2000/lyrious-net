@@ -94,9 +94,11 @@ namespace Lyrious.UILib.Setlists
 			saveProblem.Bind(TextBlock.ForegroundProperty, saveProblem.GetResourceObservable(LyriousTheme.ErrorBrush));
 
 			// As stored: the default is kept as null, so a band on the default gets a better default later.
+			// Not trimmed: spaces and empty lines at the start or end are part of the header as written
+			// (e.g. an empty line under it), and changing only them is a change to save.
 			string? Current()
 			{
-				var text = (box.Text ?? "").Replace("\r\n", "\n").Trim();
+				var text = (box.Text ?? "").Replace("\r\n", "\n");
 				return text == LyricsHeader.Default ? null : text;
 			}
 

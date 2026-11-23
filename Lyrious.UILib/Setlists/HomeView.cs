@@ -297,6 +297,9 @@ namespace Lyrious.UILib.Setlists
 			menuDrawer = Drawer(SplitViewPanePlacement.Left, 280);
 			menuDrawer.Content = setlistDrawer;
 			menuDrawer.Pane = MenuDrawerContent(user, menuButton, offerForgetSavedPassword);
+			// A drawer swiped in from the edge stays open when the swipe is let go.
+			menuDrawer.PaneClosing += (_, e) => KeepSwipedDrawerOpen(menuDrawer, e);
+			setlistDrawer.PaneClosing += (_, e) => KeepSwipedDrawerOpen(setlistDrawer, e);
 
 			menuButton.Click += (_, _) =>
 			{
@@ -3379,6 +3382,12 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>How far a press moves before it's locked to scrolling (more up or down) or to swiping (more sideways), until it's released.</summary>
 		private const double SwipeLockDistance = 5;
 
+		/// <summary>
+		/// From an edge, how much more up or down than sideways a press may start and still be a swipe
+		/// that opens a drawer (1.7: up to about 60° from level, where elsewhere it's 45°).
+		/// </summary>
+		private const double EdgeSwipeSlant = 1.7;
+
 		/// <summary>How fast (px/ms) a swipe let go short of the way still goes on to the other song.</summary>
 		private const double SwipeFlingSpeed = 0.4;
 
@@ -3399,6 +3408,89 @@ namespace Lyrious.UILib.Setlists
 
 		private SwipeState? swipe;
 
+		// The pointer of a swipe that opened a drawer from the edge, and that drawer, until it's let go.
+		private (Avalonia.Input.IPointer Pointer, SplitView Drawer)? drawerSwipe;
+
+		/// <summary>
+		/// A drawer opened by a swipe from the edge stays open when the swipe is let go. The release is
+		/// outside the drawer (the swipe started on the page), and a drawer that slides over the page
+		/// closes on a release beside it, as for a tap there.
+		/// </summary>
+		private void KeepSwipedDrawerOpen(SplitView drawer, Avalonia.Interactivity.CancelRoutedEventArgs e)
+		{
+			if (drawerSwipe is var (_, swiped) && swiped == drawer)
+			{
+				e.Cancel = true;
+			}
+		}
+
+		/// <summary>A press on an open drawer (one that slides over the page), perhaps a swipe to put it away.</summary>
+		private sealed class CloseSwipeState(Avalonia.Input.IPointer pointer, Point start, SplitView drawer)
+		{
+			public Avalonia.Input.IPointer Pointer { get; } = pointer;
+			public Point Start { get; } = start;
+			public SplitView Drawer { get; } = drawer;
+			public bool Sideways { get; set; }
+		}
+
+		private CloseSwipeState? closeSwipe;
+
+		/// <summary>
+		/// A swipe on an open drawer towards its edge (the menu to the left, the setlist to the right)
+		/// puts it away, as the swipe from the edge brought it. Up or down, it scrolls the drawer.
+		/// False when the press isn't on an open drawer, so it may be a swipe on the page.
+		/// </summary>
+		private bool StartCloseSwipe(Avalonia.Input.PointerPressedEventArgs e)
+		{
+			var drawer = menuDrawer.IsPaneOpen && !IsPinned(menuDrawer) ? menuDrawer
+				: setlistDrawer.IsPaneOpen && !IsPinned(setlistDrawer) ? setlistDrawer
+				: null;
+			if (drawer == null)
+			{
+				return false;
+			}
+
+			if (e.Pointer.Type != Avalonia.Input.PointerType.Mouse || e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+			{
+				closeSwipe = new CloseSwipeState(e.Pointer, e.GetPosition(this), drawer);
+			}
+
+			return true;
+		}
+
+		/// <summary>The press on an open drawer moving: locked by its first pixels to a scroll or a swipe; far enough towards the drawer's edge, the drawer goes.</summary>
+		private void OnCloseSwipeMoved(CloseSwipeState current, Avalonia.Input.PointerEventArgs e)
+		{
+			var now = e.GetPosition(this);
+			var dx = now.X - current.Start.X;
+			var dy = now.Y - current.Start.Y;
+			if (!current.Sideways)
+			{
+				if (Math.Max(Math.Abs(dx), Math.Abs(dy)) < SwipeLockDistance)
+				{
+					return;
+				}
+
+				if (Math.Abs(dy) >= Math.Abs(dx))
+				{
+					closeSwipe = null; // A scroll in the drawer, until released.
+					return;
+				}
+
+				// A swipe: what was pressed in the drawer (a button) doesn't get the press any more.
+				current.Sideways = true;
+				e.Pointer.Capture(this);
+			}
+
+			e.Handled = true;
+			var towardsEdge = current.Drawer == menuDrawer ? -dx : dx;
+			if (towardsEdge >= SwipeDistance)
+			{
+				closeSwipe = null; // Once per swipe.
+				current.Drawer.IsPaneOpen = false;
+			}
+		}
+
 		// The page in a frame (opaque and shadowed while it slides away) in a clipped grid, with the
 		// song sliding in over it or lying under it (see StartSlide).
 		private readonly Border pageFrame = new();
@@ -3414,13 +3506,20 @@ namespace Lyrious.UILib.Setlists
 		private void OnSwipePressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
 		{
 			swipe = null;
+			drawerSwipe = null;
+			closeSwipe = null;
 			if (slideTimer == null)
 			{
 				EndSlide();
 			}
 
-			if (page.Content is not LyricScrollView { IsEditing: false } || menuDrawer.IsPaneOpen && !IsPinned(menuDrawer)
-			    || setlistDrawer.IsPaneOpen && !IsPinned(setlistDrawer)
+			// With a drawer open over the page, a swipe can only put it away (on any page).
+			if (StartCloseSwipe(e))
+			{
+				return;
+			}
+
+			if (page.Content is not LyricScrollView { IsEditing: false }
 			    || e.Pointer.Type == Avalonia.Input.PointerType.Mouse && !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
 			{
 				return;
@@ -3448,6 +3547,12 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private void OnSwipeMoved(object? sender, Avalonia.Input.PointerEventArgs e)
 		{
+			if (closeSwipe is { } closing && closing.Pointer == e.Pointer)
+			{
+				OnCloseSwipeMoved(closing, e);
+				return;
+			}
+
 			if (swipe is not { } current || current.Pointer != e.Pointer)
 			{
 				return;
@@ -3463,7 +3568,10 @@ namespace Lyrious.UILib.Setlists
 					return;
 				}
 
-				if (Math.Abs(dy) >= Math.Abs(dx))
+				// From an edge a swipe often starts on a slant (a thumb sweeping in), and up and down
+				// is rarely meant there: it counts as a swipe unless it's clearly more up or down.
+				var slant = current.Edge != 0 ? EdgeSwipeSlant : 1;
+				if (Math.Abs(dy) >= Math.Abs(dx) * slant)
 				{
 					swipe = null; // A scroll, until released.
 					return;
@@ -3488,6 +3596,8 @@ namespace Lyrious.UILib.Setlists
 				{
 					swipe = null; // Once per swipe.
 					Swiped(current.Edge, dx);
+					// The drawer is opened while the finger is still down; see OnSwipeReleased.
+					drawerSwipe = (current.Pointer, current.Edge < 0 ? menuDrawer : setlistDrawer);
 				}
 
 				return;
@@ -3512,6 +3622,22 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The swipe let go: far or fast enough, the song slides the rest of the way and is shown; else it slides back.</summary>
 		private void OnSwipeReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
 		{
+			// The swipe that opened a drawer is let go: the drawer has seen the release already (it
+			// listens on the whole window) and was kept open (see KeepSwipedDrawerOpen).
+			if (drawerSwipe is var (pointer, _) && pointer == e.Pointer)
+			{
+				drawerSwipe = null;
+				e.Handled = true;
+				return;
+			}
+
+			// A swipe on an open drawer, let go before it went far enough: the drawer stays.
+			if (closeSwipe is { } closing && closing.Pointer == e.Pointer)
+			{
+				closeSwipe = null;
+				return;
+			}
+
 			if (swipe is not { } current || current.Pointer != e.Pointer)
 			{
 				return;

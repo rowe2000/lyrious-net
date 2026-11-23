@@ -21,7 +21,8 @@ namespace Lyrious.UILib.Setlists
 	/// <list type="bullet">
 	/// <item>Each chord starts a piece of the line with the chord on top and its text below, so chords
 	/// line up with their words in any font; the pieces wrap like words on a narrow screen.</item>
-	/// <item>Directives: {comment:}/{c:}/{ci:}/{cb:}/{highlight:} show as notes, {capo:} as "Capo n",
+	/// <item>Directives, alone on a line or several on one ("{c: Intro} {c: x2}", shown side by side):
+	/// {comment:}/{c:}/{ci:}/{cb:}/{highlight:} show as notes, {capo:} as "Capo n",
 	/// {chorus} as "Chorus"; {start_of_chorus}/{soc} … {end_of_chorus}/{eoc} is indented with a bar;
 	/// {start_of_tab}/{sot} … {end_of_tab}/{eot} is shown in a fixed-width font. Title, artist, key,
 	/// tempo and other directives are left out (the song's header shows those).</item>
@@ -273,44 +274,76 @@ namespace Lyrious.UILib.Setlists
 					continue;
 				}
 
-				if (DirectiveLine().Match(trimmed) is { Success: true } directive)
+				if (Directives(trimmed) is { } directives)
 				{
-					var name = directive.Groups[1].Value.ToLowerInvariant();
-					var value = directive.Groups[2].Value.Trim();
-					switch (name)
+					// Several on a line ("{c: Intro} {c: x2}"): their notes side by side, in the order
+					// written. A chorus or tab starting or ending among them does so where it's written.
+					var notes = new List<Control>();
+					void ShowNotes()
 					{
-						case "start_of_chorus" or "soc":
-							current = new StackPanel();
-							var chorus = new Border
+						if (notes.Count == 1)
+						{
+							current.Children.Add(notes[0]);
+						}
+						else if (notes.Count > 1)
+						{
+							var row = new WrapPanel { Orientation = Orientation.Horizontal };
+							foreach (var note in notes)
 							{
-								BorderThickness = new Thickness(3, 0, 0, 0),
-								Padding = new Thickness(16, 0, 0, 0),
-								Margin = new Thickness(0, 4),
-								Child = current,
-							};
-							chorus.Bind(Border.BorderBrushProperty, chorus.GetResourceObservable(LyriousTheme.ChordBrush));
-							root.Children.Add(chorus);
-							break;
-						case "end_of_chorus" or "eoc":
-							current = root;
-							break;
-						case "start_of_tab" or "sot":
-							inTab = true;
-							break;
-						case "end_of_tab" or "eot":
-							inTab = false;
-							break;
-						case "comment" or "c" or "comment_italic" or "ci" or "comment_box" or "cb" or "highlight":
-							current.Children.Add(Note(value, fontSize));
-							break;
-						case "chorus":
-							current.Children.Add(Note(value.Length > 0 ? value : "Chorus", fontSize));
-							break;
-						case "capo":
-							current.Children.Add(Note($"Capo {value}", fontSize));
-							break;
+								note.Margin = new Thickness(0, 4, fontSize * 0.6, 4);
+								note.VerticalAlignment = VerticalAlignment.Bottom;
+								row.Children.Add(note);
+							}
+
+							current.Children.Add(row);
+						}
+
+						notes.Clear();
 					}
 
+					foreach (var (name, value) in directives)
+					{
+						if (name is "start_of_chorus" or "soc" or "end_of_chorus" or "eoc" or "start_of_tab" or "sot" or "end_of_tab" or "eot")
+						{
+							ShowNotes();
+						}
+
+						switch (name)
+						{
+							case "start_of_chorus" or "soc":
+								current = new StackPanel();
+								var chorus = new Border
+								{
+									BorderThickness = new Thickness(3, 0, 0, 0),
+									Padding = new Thickness(16, 0, 0, 0),
+									Margin = new Thickness(0, 4),
+									Child = current,
+								};
+								chorus.Bind(Border.BorderBrushProperty, chorus.GetResourceObservable(LyriousTheme.ChordBrush));
+								root.Children.Add(chorus);
+								break;
+							case "end_of_chorus" or "eoc":
+								current = root;
+								break;
+							case "start_of_tab" or "sot":
+								inTab = true;
+								break;
+							case "end_of_tab" or "eot":
+								inTab = false;
+								break;
+							case "comment" or "c" or "comment_italic" or "ci" or "comment_box" or "cb" or "highlight":
+								notes.Add(Note(value, fontSize));
+								break;
+							case "chorus":
+								notes.Add(Note(value.Length > 0 ? value : "Chorus", fontSize));
+								break;
+							case "capo":
+								notes.Add(Note($"Capo {value}", fontSize));
+								break;
+						}
+					}
+
+					ShowNotes();
 					continue;
 				}
 
@@ -421,10 +454,13 @@ namespace Lyrious.UILib.Setlists
 			for (var i = 0; i < lines.Length; i++)
 			{
 				var trimmed = lines[i].Trim();
-				if (DirectiveLine().Match(trimmed) is { Success: true } directive)
+				if (Directives(trimmed) is { } directives)
 				{
-					var name = directive.Groups[1].Value.ToLowerInvariant();
-					inTab = name is "start_of_tab" or "sot" || (inTab && name is not ("end_of_tab" or "eot"));
+					foreach (var (name, _) in directives)
+					{
+						inTab = name is "start_of_tab" or "sot" || (inTab && name is not ("end_of_tab" or "eot"));
+					}
+
 					continue;
 				}
 
@@ -806,16 +842,18 @@ namespace Lyrious.UILib.Setlists
 			for (var i = 0; i < lines.Length; i++)
 			{
 				var line = lines[i];
-				if (DirectiveLine().Match(line) is { Success: true } directive)
+				if (Directives(line) is { } directives)
 				{
-					var name = directive.Groups[1].Value.ToLowerInvariant();
-					if (name is "start_of_tab" or "sot")
+					foreach (var (name, _) in directives)
 					{
-						inTab = true;
-					}
-					else if (name is "end_of_tab" or "eot")
-					{
-						inTab = false;
+						if (name is "start_of_tab" or "sot")
+						{
+							inTab = true;
+						}
+						else if (name is "end_of_tab" or "eot")
+						{
+							inTab = false;
+						}
 					}
 
 					continue;
@@ -934,20 +972,43 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The value of the first of these directives in the text (e.g. "artist" for "{artist: The Beatles}"); null if none.</summary>
 		public static string? DirectiveValue(string text, params string[] names)
 		{
-			foreach (Match match in DirectiveLine().Matches(text))
+			foreach (Match line in DirectiveLine().Matches(text))
 			{
-				if (names.Contains(match.Groups[1].Value, StringComparer.OrdinalIgnoreCase) && match.Groups[2].Value.Trim() is { Length: > 0 } value)
+				foreach (var (name, value) in Directives(line.Value.Trim()) ?? [])
 				{
-					return value;
+					if (names.Contains(name, StringComparer.OrdinalIgnoreCase) && value.Length > 0)
+					{
+						return value;
+					}
 				}
 			}
 
 			return null;
 		}
 
-		/// <summary>A directive on a line of its own: {name} or {name: value}.</summary>
-		[GeneratedRegex(@"^\s*\{([A-Za-z_]+)(?:[:\s]\s*(.*?))?\}\s*$", RegexOptions.Multiline)]
+		/// <summary>
+		/// The directives of a line made of directives only ("{c: Intro}", or several: "{c: Intro} {c: x2}"),
+		/// in order, each name in lower case with its value; null when the line is something else.
+		/// </summary>
+		private static List<(string Name, string Value)>? Directives(string line)
+		{
+			if (!DirectiveLine().IsMatch(line))
+			{
+				return null;
+			}
+
+			return InlineDirective().Matches(line)
+				.Select(directive => (directive.Groups[1].Value.ToLowerInvariant(), directive.Groups[2].Value.Trim()))
+				.ToList();
+		}
+
+		/// <summary>A line of directives only: one or more {name} or {name: value}, with spaces between them.</summary>
+		[GeneratedRegex(@"^[ \t]*(?:\{[A-Za-z_]+(?:[: \t][^{}\n]*)?\}[ \t]*)+\r?$", RegexOptions.Multiline)]
 		private static partial Regex DirectiveLine();
+
+		/// <summary>One directive in a line: {name} or {name: value}.</summary>
+		[GeneratedRegex(@"\{([A-Za-z_]+)(?:[: \t][ \t]*([^{}\n]*?))?\}")]
+		private static partial Regex InlineDirective();
 
 		[GeneratedRegex(@"(?<!\*)(?<m>\*\*\*)(?=\S)(.+?)(?<=\S)\*\*\*(?!\*)")]
 		private static partial Regex BoldItalicStars();
