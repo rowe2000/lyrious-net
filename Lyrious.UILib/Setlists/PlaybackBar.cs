@@ -112,8 +112,8 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when the user presses play/pause.</summary>
 		public event Action? PlayPauseRequested;
 
-		/// <summary>Raised when the MIDI button is pressed: the MIDI setup is wanted.</summary>
-		public event Action? MidiRequested;
+		/// <summary>Raised with the MIDI button when it's pressed: the MIDI setup is wanted (in a popup from it).</summary>
+		public event Action<Control>? MidiRequested;
 
 		public PlaybackBar()
 		{
@@ -164,7 +164,7 @@ namespace Lyrious.UILib.Setlists
 			// The MIDI setup, just left of the band icon (while MIDI is on, here or on another device).
 			DockPanel.SetDock(midi, Dock.Right);
 			midi.Margin = new Thickness(4, 0, 0, 0);
-			midi.Click += (_, _) => MidiRequested?.Invoke();
+			midi.Click += (_, _) => MidiRequested?.Invoke(midi);
 			void ShowMidi() => Dispatcher.UIThread.Post(() => midi.IsVisible = MidiModule.Enabled);
 			ShowMidi();
 			midi.AttachedToVisualTree += (_, _) =>
@@ -549,12 +549,13 @@ namespace Lyrious.UILib.Setlists
 			next.IsEnabled = allowed;
 		}
 
-		public void SetNextSong(string? nextSongName, string? details = null, bool lastInSetlist = false)
+		/// <param name="key">The next song's playing key, shown larger in its details.</param>
+		public void SetNextSong(string? nextSongName, string? details = null, bool lastInSetlist = false, string? key = null)
 		{
 			next.IsVisible = nextSongName != null;
 			noMoreSongs.IsVisible = nextSongName == null && lastInSetlist;
 			nextName.Text = nextSongName;
-			nextInfo.Text = details;
+			PageLayout.SetDetailsText(nextInfo, details, key);
 			var description = nextSongName == null ? L.T("Next song") : L.T("Next song: {0}", nextSongName);
 			ToolTip.SetTip(next, description);
 			Avalonia.Automation.AutomationProperties.SetName(next, description);

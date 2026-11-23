@@ -124,14 +124,17 @@ namespace Lyrious.UILib.Setlists
 		/// the action at the right. It sits a little higher than other pages, so the action lines up
 		/// with the drawer buttons in the top corners (both 40 high, centred 24 from the top).
 		/// </summary>
-		public static Control SongPage(string title, Control content, string? details, Control titleAction)
+		/// <param name="key">The song's playing key, shown larger in the details (see <see cref="SetDetailsText"/>).</param>
+		public static Control SongPage(string title, Control content, string? details, Control titleAction, string? key = null)
 		{
 			var titleText = new TextBlock { Text = title, FontSize = 28, FontWeight = FontWeight.Bold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 12, 0) };
 			var titleRow = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { titleText } };
 			if (!string.IsNullOrEmpty(details))
 			{
 				// On the title's baseline (the smaller text sits a little less deep below it).
-				titleRow.Children.Add(new TextBlock { Text = details, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 5) });
+				var detailsText = new TextBlock { Opacity = 0.7, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 5) };
+				SetDetailsText(detailsText, details, key);
+				titleRow.Children.Add(detailsText);
 			}
 
 			titleAction.VerticalAlignment = VerticalAlignment.Top;
@@ -152,7 +155,8 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>Changes the title and details of a <see cref="SongPage"/>, e.g. after the song is renamed.</summary>
-		public static void SetSongTitle(Control songPage, string title, string? details)
+		/// <param name="key">The song's playing key, shown larger in the details.</param>
+		public static void SetSongTitle(Control songPage, string title, string? details, string? key = null)
 		{
 			if (songPage is not Grid { Children: [DockPanel { Children: [_, WrapPanel { Children: [TextBlock titleText, ..] } titleRow, ..] }, ..] })
 			{
@@ -170,11 +174,13 @@ namespace Lyrious.UILib.Setlists
 			}
 			else if (detailsText != null)
 			{
-				detailsText.Text = details;
+				SetDetailsText(detailsText, details, key);
 			}
 			else
 			{
-				titleRow.Children.Add(new TextBlock { Text = details, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 5) });
+				var added = new TextBlock { Opacity = 0.7, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 5) };
+				SetDetailsText(added, details, key);
+				titleRow.Children.Add(added);
 			}
 		}
 
@@ -822,9 +828,9 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// A song's keys, tempo and beat for a list row, after <paramref name="note"/> (e.g. "in setlist")
-		/// when there is one: the playing key in the full text colour, the rest (with the original key,
-		/// when it differs) dimmed.
+		/// A song's tempo, beat and keys for a list row (the order details go in everywhere), after
+		/// <paramref name="note"/> (e.g. "in setlist") when there is one: the playing key in the full
+		/// text colour, the rest (with the original key, when it differs) dimmed.
 		/// </summary>
 		public static Control SongInfoText(SongDetails song, string? note = null, double fontSize = 14)
 		{
@@ -832,21 +838,55 @@ namespace Lyrious.UILib.Setlists
 			var original = OriginalKeyNote(song);
 			var rest = SongInfo(song with { PlayingKey = "", OriginalKey = "" });
 			var line = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-			void Add(string text, bool dim)
+			// On one baseline: the playing key is larger (see KeyScale), so the parts sit on their bottoms.
+			// Lines only a little taller than the letters, so the larger key doesn't add room above and
+			// below the row's line.
+			void Add(string text, bool dim, double scale = 1)
 			{
 				if (text.Length > 0)
 				{
-					line.Children.Add(new TextBlock { Text = text, FontSize = fontSize, Opacity = dim ? 0.7 : 1 });
+					var size = Math.Round(fontSize * scale);
+					line.Children.Add(new TextBlock { Text = text, FontSize = size, LineHeight = Math.Round(size * 1.15), Opacity = dim ? 0.7 : 1, VerticalAlignment = VerticalAlignment.Bottom });
 				}
 			}
 
-			// "in setlist · G (orig. A) · 120 bpm · 4/4", with only the parts there are.
+			// "in setlist · 120 bpm · 4/4 · G (orig. A)", with only the parts there are.
 			var keyPart = key.Length > 0 || original.Length > 0;
 			Add(string.IsNullOrEmpty(note) ? "" : note + (keyPart || rest.Length > 0 ? " · " : ""), true);
-			Add(key, false);
+			Add(rest.Length == 0 ? "" : rest + (keyPart ? " · " : ""), true);
+			Add(key, false, KeyScale);
 			Add(original.Length == 0 ? "" : (key.Length > 0 ? $" ({original})" : original), true);
-			Add(rest.Length == 0 ? "" : (keyPart ? " · " : "") + rest, true);
 			return line;
+		}
+
+		/// <summary>How much larger the playing key is than the tempo and beat beside it (half as large again), so it stands out.</summary>
+		public const double KeyScale = 1.5;
+
+		/// <summary>
+		/// Writes a song's details line (e.g. "120 bpm · 4/4 · G (orig. A)") into the text block with the
+		/// playing key in it half as large again (see <see cref="KeyScale"/>): where it starts the line or
+		/// follows a " · ". Just the text when there's no key, or it isn't in the line.
+		/// </summary>
+		public static void SetDetailsText(TextBlock block, string? text, string? key)
+		{
+			block.Inlines?.Clear();
+			text ??= "";
+			var playing = key?.Trim() ?? "";
+			var at = playing.Length == 0 ? -1
+				: text.StartsWith(playing, StringComparison.Ordinal) ? 0
+				: text.IndexOf(" · " + playing, StringComparison.Ordinal) is >= 0 and var found ? found + 3
+				: -1;
+			if (at < 0)
+			{
+				block.Text = text;
+				return;
+			}
+
+			block.Text = null;
+			block.Inlines ??= [];
+			block.Inlines.Add(new Avalonia.Controls.Documents.Run(text[..at]));
+			block.Inlines.Add(new Avalonia.Controls.Documents.Run(playing) { FontSize = Math.Round(block.FontSize * KeyScale) });
+			block.Inlines.Add(new Avalonia.Controls.Documents.Run(text[(at + playing.Length)..]));
 		}
 
 		/// <summary>"orig. A" when the song's original key is set and isn't the playing key; else empty.</summary>
@@ -856,17 +896,15 @@ namespace Lyrious.UILib.Setlists
 			return original.Length > 0 && !original.Equals(song.PlayingKey?.Trim(), StringComparison.Ordinal) ? $"orig. {original}" : "";
 		}
 
-		/// <summary>A song's keys, tempo and beat, e.g. "G# (orig. A) · 120 bpm · 4/4"; empty if none are set.</summary>
+		/// <summary>A song's tempo, beat and keys (the order details go in everywhere), e.g. "120 bpm · 4/4 · G# (orig. A)"; empty if none are set.</summary>
 		public static string SongInfo(SongDetails song)
 		{
 			var parts = new System.Collections.Generic.List<string>();
 			var key = song.PlayingKey?.Trim() ?? "";
 			var original = OriginalKeyNote(song);
-			if (key.Length > 0 || original.Length > 0)
-			{
-				parts.Add(key.Length == 0 ? original : original.Length == 0 ? key : $"{key} ({original})");
-			}
-
+			var keys = key.Length > 0 || original.Length > 0
+				? key.Length == 0 ? original : original.Length == 0 ? key : $"{key} ({original})"
+				: "";
 			if (song.Tempo > 0)
 			{
 				parts.Add($"{song.Tempo.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} bpm");
@@ -875,6 +913,11 @@ namespace Lyrious.UILib.Setlists
 			if (!string.IsNullOrWhiteSpace(song.Beat))
 			{
 				parts.Add(song.Beat);
+			}
+
+			if (keys.Length > 0)
+			{
+				parts.Add(keys);
 			}
 
 			return string.Join(" · ", parts);

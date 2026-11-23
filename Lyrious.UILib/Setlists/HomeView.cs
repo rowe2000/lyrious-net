@@ -234,7 +234,7 @@ namespace Lyrious.UILib.Setlists
 			pageFrame.Child = page;
 			pageHost.Children.Add(pageFrame);
 
-			setlistDrawer = Drawer(SplitViewPanePlacement.Right, 280);
+			setlistDrawer = Drawer(SplitViewPanePlacement.Right, DrawerWidth);
 			// The playback toolbar sits under the lyrics page, also in focus mode.
 			DockPanel.SetDock(playbackBar, Dock.Bottom);
 			notice = new Border
@@ -263,13 +263,30 @@ namespace Lyrious.UILib.Setlists
 				_ = SendPlaybackPositionAsync();
 			};
 			playbackBar.NextRequested += NextSong;
-			// The MIDI setup page (the button shows while MIDI is on), with the band's MIDI as the start.
-			// The MIDI page (the button shows while MIDI is on): the keyboard's sounds, to choose the open song's.
-			playbackBar.MidiRequested += () =>
+			// The MIDI button (shown while MIDI is on): the keyboard's sounds, to choose the open song's, in
+			// a popup from the button, over the page (the lyrics stay).
+			playbackBar.MidiRequested += button =>
 			{
 				var lyrics = page.Content as LyricScrollView;
 				var open = lyrics is { IsEditing: false } ? lyrics : null;
-				page.Content = new MidiSoundsView(open, open?.SongName);
+				var midi = new MidiSoundsView(open, open?.SongName, popup: true);
+				var popup = new Flyout { Content = midi, Placement = PlacementMode.TopEdgeAlignedRight };
+				// Its ✕, or Escape: in the popup (it presses the ✕), or in the window under it while it's open
+				// (the focus may have stayed there), before anything there takes the key.
+				midi.CloseRequested += popup.Hide;
+				var window = TopLevel.GetTopLevel(this);
+				void OnEscape(object? sender, Avalonia.Input.KeyEventArgs e)
+				{
+					if (e.Key == Avalonia.Input.Key.Escape && e.KeyModifiers == Avalonia.Input.KeyModifiers.None)
+					{
+						e.Handled = true;
+						popup.Hide();
+					}
+				}
+
+				popup.Opened += (_, _) => window?.AddHandler(KeyDownEvent, OnEscape, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+				popup.Closed += (_, _) => window?.RemoveHandler(KeyDownEvent, OnEscape);
+				popup.ShowAt(button);
 			};
 			playbackBar.SetBandSync(bandSync);
 			// Longclick on the globe: band sync on, with this member's setlist and song sent to the band.
@@ -299,11 +316,29 @@ namespace Lyrious.UILib.Setlists
 			};
 			setlistDrawer.Pane = SetlistDrawerContent(setlistButton);
 
-			menuDrawer = Drawer(SplitViewPanePlacement.Left, 280);
+			menuDrawer = Drawer(SplitViewPanePlacement.Left, DrawerWidth);
 			menuDrawer.Content = setlistDrawer;
 			menuDrawer.Pane = MenuDrawerContent(user, menuButton, offerForgetSavedPassword);
 			// A drawer swiped in from the edge stays open when the swipe is let go.
 			menuDrawer.PaneClosing += (_, e) => KeepSwipedDrawerOpen(menuDrawer, e);
+			// Wide on a narrow window (see UpdateDrawerWidths): as the window changes, and a drawer is pinned or unpinned.
+			SizeChanged += (_, e) =>
+			{
+				if (e.WidthChanged)
+				{
+					UpdateDrawerWidths();
+				}
+			};
+			foreach (var drawer in new[] { menuDrawer, setlistDrawer })
+			{
+				drawer.PropertyChanged += (_, e) =>
+				{
+					if (e.Property == SplitView.DisplayModeProperty)
+					{
+						UpdateDrawerWidths();
+					}
+				};
+			}
 			setlistDrawer.PaneClosing += (_, e) => KeepSwipedDrawerOpen(setlistDrawer, e);
 
 			menuButton.Click += (_, _) =>
@@ -1264,6 +1299,40 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		/// <summary>The drawers' width, where the window has room for it.</summary>
+		private const double DrawerWidth = 280;
+
+		// The setlist drawer's content, as wide as the drawer (see UpdateDrawerWidths).
+		private DockPanel? setlistDrawerContent;
+
+		/// <summary>
+		/// A drawer that slides over the page and would cover more than three quarters of the window
+		/// (a phone) takes all of it but the corner with the other drawer's button (see SwipeEdge), so that
+		/// button still shows; else, and when pinned beside the page, its usual width.
+		/// </summary>
+		private void UpdateDrawerWidths()
+		{
+			var width = Bounds.Width;
+			if (width <= 0)
+			{
+				return;
+			}
+
+			foreach (var drawer in new[] { menuDrawer, setlistDrawer })
+			{
+				var length = !IsPinned(drawer) && DrawerWidth > width * 0.75 ? Math.Max(0, width - SwipeEdge) : DrawerWidth;
+				if (Math.Abs(drawer.OpenPaneLength - length) > 0.5)
+				{
+					drawer.OpenPaneLength = length;
+				}
+			}
+
+			if (setlistDrawerContent != null)
+			{
+				setlistDrawerContent.Width = Math.Max(0, setlistDrawer.OpenPaneLength - 8);
+			}
+		}
+
 		/// <summary>A drawer, unpinned: it slides over the page and closes when tapping outside it.</summary>
 		private static SplitView Drawer(SplitViewPanePlacement placement, double width)
 		{
@@ -1918,13 +1987,14 @@ namespace Lyrious.UILib.Setlists
 
 			// As wide as the open drawer whatever room it has, so it slides in and out as it is instead
 			// of being squeezed while the drawer opens or closes.
-			return new DockPanel
+			setlistDrawerContent = new DockPanel
 			{
 				Margin = new Thickness(4, 4, 4, 0),
 				Width = setlistDrawer.OpenPaneLength - 8,
 				HorizontalAlignment = HorizontalAlignment.Left,
 				Children = { titleRow, TopDocked(drawerTagFilter), setlistDrawerBody },
 			};
+			return setlistDrawerContent;
 		}
 
 		/// <summary>
@@ -2156,23 +2226,24 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
-		/// <summary>One song in the right drawer: its name, then key, tempo, beat and tags; the current song is highlighted.</summary>
+		/// <summary>One song in the right drawer: its name, then its tags (at the left) and tempo, beat and key (at the right); the current song is highlighted.</summary>
 		private Button SongRow(GroupSummary group, SetlistSummary setlist, SetlistEntry entry)
 		{
 			var details = PageLayout.SongInfo(entry.Song);
-			var content = new StackPanel { Spacing = 2 };
+			// The name and the line under it close together (the second line keeps its own room small too).
+			var content = new StackPanel { Spacing = 0 };
 			content.Children.Add(new TextBlock { Text = entry.Song.Name, FontSize = 18, FontWeight = FontWeight.Bold, TextTrimming = TextTrimming.CharacterEllipsis });
 			var tags = SongTags.Sorted(entry.Song.Tags);
 			if (details.Length > 0 || tags.Count > 0)
 			{
-				// At the right: the tags, then key, tempo and beat. When the drawer is too narrow for
-				// all of them, the tags wrap onto more lines.
+				// The tags at the left, under the name; tempo, beat and key at the right. When the drawer is
+				// too narrow for all of them, the tags wrap onto more lines.
 				var detailsText = PageLayout.SongInfoText(entry.Song, fontSize: 13);
 				DockPanel.SetDock(detailsText, Dock.Right);
 				var chips = PageLayout.TagChips(tags, 11);
 				chips.Margin = new Thickness(0, 0, details.Length > 0 && tags.Count > 0 ? 8 : 0, 0);
 				chips.VerticalAlignment = VerticalAlignment.Center;
-				chips.HorizontalAlignment = HorizontalAlignment.Right;
+				chips.HorizontalAlignment = HorizontalAlignment.Left;
 				content.Children.Add(new DockPanel { Children = { detailsText, chips } });
 			}
 
@@ -3410,7 +3481,7 @@ namespace Lyrious.UILib.Setlists
 				var index = IndexOfEntry(entries, entryId.Value);
 				var nextSong = index >= 0 && index < entries.Count - 1 ? entries[index + 1].Song : null;
 				var isLast = index >= 0 && index == entries.Count - 1;
-				playbackBar.SetNextSong(nextSong?.Name, nextSong == null ? null : PageLayout.SongInfo(nextSong), lastInSetlist: isLast);
+				playbackBar.SetNextSong(nextSong?.Name, nextSong == null ? null : PageLayout.SongInfo(nextSong), lastInSetlist: isLast, key: nextSong?.PlayingKey);
 			}
 			catch (Exception ex)
 			{

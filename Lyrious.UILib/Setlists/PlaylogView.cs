@@ -12,7 +12,7 @@ namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
 	/// The band's sessions (playlogs): at the top the latest one with the songs played in it (time,
-	/// song, key, tempo, length and conductor's initials); below, all sessions, newest first, each by
+	/// song, tempo, key, length and conductor's initials); below, all sessions, newest first, each by
 	/// its date, its number of songs and the setlists used. Tapping one there shows it at the top instead;
 	/// the one shown is highlighted.
 	/// </summary>
@@ -102,7 +102,7 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
-		/// <summary>One song played: its number and time at the left, the song, then key · tempo · length · conductor's initials.</summary>
+		/// <summary>One song played: its number and time at the left, the song, then tempo · key · length · conductor's initials.</summary>
 		private static Control PlayRow(PlayEntry play, int number)
 		{
 			var when = new TextBlock
@@ -123,15 +123,16 @@ namespace Lyrious.UILib.Setlists
 
 		private static string Details(PlayEntry play)
 		{
+			// Tempo before key, as song details go everywhere.
 			var parts = new List<string>();
-			if (!string.IsNullOrWhiteSpace(play.Key))
-			{
-				parts.Add(play.Key);
-			}
-
 			if (play.Tempo > 0)
 			{
 				parts.Add($"{play.Tempo.ToString("0.#", CultureInfo.InvariantCulture)} bpm");
+			}
+
+			if (!string.IsNullOrWhiteSpace(play.Key))
+			{
+				parts.Add(play.Key);
 			}
 
 			if (play.Duration > TimeSpan.Zero)

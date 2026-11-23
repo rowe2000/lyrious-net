@@ -899,7 +899,7 @@ namespace Lyrious.UILib.Setlists
 			// (The media player is the app's, over every page: see MediaPlayerLayer.)
 			// The time at the right of the toolbar (also in focus mode, so it shows while playing).
 			var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { titleActions, clock } };
-			Content = PageLayout.SongPage(TitleOf(song), body, InfoText(), toolbar);
+			Content = PageLayout.SongPage(TitleOf(song), body, InfoText(), toolbar, song.PlayingKey);
 			ShowTitle();
 		}
 
@@ -910,7 +910,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (Content is Control page)
 			{
-				PageLayout.SetSongTitle(page, TitleOf(song), InfoText());
+				PageLayout.SetSongTitle(page, TitleOf(song), InfoText(), song.PlayingKey);
 			}
 		}
 
@@ -3116,7 +3116,8 @@ namespace Lyrious.UILib.Setlists
 			ToolTip.SetTip(tempo, L.T("Tempo (bpm)"));
 			ToolTip.SetTip(beat, L.T("Beat"));
 			var originalLabel = new TextBlock { Text = L.T("orig."), Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center };
-			var detailsInputs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { key, originalLabel, originalKey, tempo, beat } };
+			// Tempo, beat, then the keys (as the details read in the editor).
+			var detailsInputs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { tempo, beat, key, originalLabel, originalKey } };
 
 			// The song with the keys, tempo and beat as they are in the inputs.
 			SongDetails WithDetails() => song with
@@ -3130,19 +3131,20 @@ namespace Lyrious.UILib.Setlists
 			var info = PageLayout.SongInfo(song);
 			var detailsText = new TextBlock
 			{
-				Text = string.IsNullOrEmpty(info) ? L.T("Set keys, tempo and beat") : info,
 				Opacity = 0.7,
 				Background = Brushes.Transparent,
 				Cursor = new Cursor(StandardCursorType.Hand),
 				Margin = new Thickness(0, 0, 0, 5),
 			};
-			ToolTip.SetTip(detailsText, L.T("Click to change the playing key, original key, tempo and beat"));
+			// The playing key larger, as everywhere.
+			PageLayout.SetDetailsText(detailsText, string.IsNullOrEmpty(info) ? L.T("Set tempo, beat and keys") : info, song.PlayingKey);
+			ToolTip.SetTip(detailsText, L.T("Click to change the tempo, beat, playing key and original key"));
 			var detailsSlot = new ContentControl { VerticalAlignment = VerticalAlignment.Bottom, Content = detailsText };
 			detailsText.Tapped += (_, e) =>
 			{
 				e.Handled = true;
 				detailsSlot.Content = detailsInputs;
-				Dispatcher.UIThread.Post(() => key.Focus());
+				Dispatcher.UIThread.Post(() => tempo.Focus());
 			};
 
 			// Whether the focus is in one of the three inputs: in the input itself, or in the open
@@ -3176,8 +3178,9 @@ namespace Lyrious.UILib.Setlists
 			{
 				if (detailsSlot.Content == detailsInputs && !FocusInDetails())
 				{
-					var edited = PageLayout.SongInfo(WithDetails());
-					detailsText.Text = string.IsNullOrEmpty(edited) ? L.T("Set keys, tempo and beat") : edited;
+					var details = WithDetails();
+					var edited = PageLayout.SongInfo(details);
+					PageLayout.SetDetailsText(detailsText, string.IsNullOrEmpty(edited) ? L.T("Set tempo, beat and keys") : edited, details.PlayingKey);
 					detailsSlot.Content = detailsText;
 				}
 			});
@@ -3391,8 +3394,8 @@ namespace Lyrious.UILib.Setlists
 			ShowTagsText();
 
 			// Tab opens the next item to edit (Shift+Tab the one before), round in this order: the name,
-			// the artist, the playing key, original key, tempo and beat, the tags, and the lyrics.
-			Control[] tabOrder = [name, artist, key, originalKey, tempo, beat, tagsBox, editor];
+			// the artist, the tags, the tempo and beat, the playing and original keys, and the lyrics.
+			Control[] tabOrder = [name, artist, tagsBox, tempo, beat, key, originalKey, editor];
 			void OpenForEditing(int index)
 			{
 				switch (index)
@@ -3403,7 +3406,7 @@ namespace Lyrious.UILib.Setlists
 					case 1:
 						ShowArtistBox();
 						break;
-					case 6:
+					case 2:
 						ShowTagsBox();
 						break;
 					case 7:
@@ -3446,7 +3449,8 @@ namespace Lyrious.UILib.Setlists
 
 			// Beside the tools as far as they fit; what doesn't goes on the next line, which takes the
 			// whole width, under the tools too.
-			editHeader = new CornerWrapPanel { VerticalAlignment = VerticalAlignment.Top, Children = { nameSlot, artistSlot, detailsSlot, tagsSlot } };
+			// The name, the artist, the tags, then tempo, beat and keys.
+			editHeader = new CornerWrapPanel { VerticalAlignment = VerticalAlignment.Top, Children = { nameSlot, artistSlot, tagsSlot, detailsSlot } };
 
 			// The media button, the capo, Save and Cancel take the pencil's place at the right of the title.
 			// (The capo's button moves here from the lyrics' tools, and back when the lyrics show again.)

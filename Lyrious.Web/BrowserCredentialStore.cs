@@ -7,10 +7,10 @@ using Lyrious.UILib.Login;
 namespace Lyrious.Web;
 
 /// <summary>
-/// Saves the login in the browser's password manager through the Credential Management API
-/// (<c>navigator.credentials</c>, functions in wwwroot/main.js). The browser asks the user itself
-/// before saving, and only the browser's settings can remove a saved password. Browsers without
-/// <c>PasswordCredential</c> (Firefox, Safari) aren't offered anything.
+/// Leaves the login (username and password) to the browser's own password manager, in every browser
+/// (functions in wwwroot/main.js): Chromium's through the Credential Management API, the others
+/// through a hidden login form in index.html that they fill in and offer to save. The browser asks
+/// the user itself before saving, and only the browser's settings can remove a saved password.
 /// </summary>
 [SupportedOSPlatform("browser")]
 internal sealed partial class BrowserCredentialStore : ICredentialStore

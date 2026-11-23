@@ -5,20 +5,54 @@ if (!is_browser) throw new Error(`Expected to be running in a browser`);
 
 // The browser's password manager (Credential Management API), used by BrowserCredentialStore.cs.
 // Only Chromium browsers have PasswordCredential; elsewhere nothing is offered.
-globalThis.lyriousCredentials = {
-    isSupported: () => typeof globalThis.PasswordCredential === "function" && !!navigator.credentials,
-    // The browser shows its own "Save password?" prompt.
-    store: async (id, password) => {
-        await navigator.credentials.store(new PasswordCredential({ id, password, name: id }));
-    },
-    // May show the browser's account chooser; resolves to null when nothing is saved or chosen.
-    load: async () => {
-        const credential = await navigator.credentials.get({ password: true, mediation: "optional" });
-        return credential && credential.type === "password"
-            ? JSON.stringify({ id: credential.id, password: credential.password })
-            : null;
-    },
-};
+// The login is kept by the browser's own password manager, in every browser, through the hidden
+// login form in index.html (BrowserCredentialStore.cs): the app draws its own fields, which the
+// browser can't see.
+globalThis.lyriousCredentials = (() => {
+    const form = () => document.getElementById("lyrious-login");
+
+    return {
+        isSupported: () => !!form(),
+        // After logging in, the browser offers to save the login with its own prompt: Chromium's
+        // through the Credential Management API; other browsers (Firefox, Safari) when the login goes
+        // into the form and it's submitted (into an empty frame: nothing is sent), as for any login
+        // form. The form is emptied and out of the page for a moment after, so it counts as done.
+        store: async (id, password) => {
+            if (typeof globalThis.PasswordCredential === "function" && navigator.credentials) {
+                try {
+                    await navigator.credentials.store(new PasswordCredential({ id, password, name: id }));
+                    return;
+                } catch { /* not allowed here: the form, below */ }
+            }
+
+            const login = form();
+            if (!login) return;
+            login.elements.username.value = id;
+            login.elements.password.value = password;
+            if (typeof login.requestSubmit === "function") login.requestSubmit(); else login.submit();
+            await new Promise(resolve => setTimeout(resolve, 150));
+            login.elements.password.value = "";
+            login.style.display = "none";
+            setTimeout(() => { login.style.display = ""; }, 1000);
+        },
+        // The saved login: Chromium's password manager through the Credential Management API (no
+        // account chooser unless it needs one); else what the browser filled into the form.
+        load: async () => {
+            if (typeof globalThis.PasswordCredential === "function" && navigator.credentials) {
+                try {
+                    const credential = await navigator.credentials.get({ password: true, mediation: "optional" });
+                    if (credential && credential.type === "password") {
+                        return JSON.stringify({ id: credential.id, password: credential.password });
+                    }
+                } catch { /* not available here: the form, below */ }
+            }
+
+            const login = form();
+            const id = login?.elements.username.value, password = login?.elements.password.value;
+            return id && password ? JSON.stringify({ id, password }) : null;
+        },
+    };
+})();
 
 // The on-screen keyboard on iOS (Safari, and any iOS browser): it only shows for an input focused
 // while handling a tap (a user gesture). Avalonia types into a hidden input (.avalonia-input-element)

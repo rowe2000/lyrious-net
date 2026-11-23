@@ -36,9 +36,13 @@ namespace Lyrious.UILib
 		private bool showing;
 		private CancellationTokenSource? reading;
 
+		/// <summary>Raised when the popup's ✕ is pressed (or Escape): whoever showed it closes it.</summary>
+		public event Action? CloseRequested;
+
 		/// <param name="lyrics">The song open (its sound is chosen here); null when none is.</param>
 		/// <param name="songName">The open song's name.</param>
-		public MidiSoundsView(LyricScrollView? lyrics, string? songName)
+		/// <param name="popup">In a popup from the MIDI button (a title and a scrolling body of a fixed size), not a page.</param>
+		public MidiSoundsView(LyricScrollView? lyrics, string? songName, bool popup = false)
 		{
 			this.lyrics = lyrics;
 			sounds = keyboard.Kept;
@@ -155,11 +159,47 @@ namespace Lyrious.UILib
 					list,
 				},
 			};
-			Content = PageLayout.Page(
-				L.T("MIDI"),
-				new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
-				closable: true,
-				icon: AppIcons.Midi);
+			var body = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
+			if (popup)
+			{
+				// A title with the MIDI icon and a ✕ at the right (Escape presses it), and the rest scrolling
+				// within a height that fits above the toolbar.
+				var icon = AppIcons.Create(AppIcons.Midi, 22);
+				icon.VerticalAlignment = VerticalAlignment.Center;
+				var close = EscapeKey.MarkAsClose(PageLayout.CancelButton(L.T("Close")));
+				close.VerticalAlignment = VerticalAlignment.Center;
+				close.Click += (_, _) => CloseRequested?.Invoke();
+				DockPanel.SetDock(close, Dock.Right);
+				// The focus in the popup once it shows, so Escape (and the keys) go to it, not the page under it.
+				AttachedToVisualTree += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() => close.Focus(), Avalonia.Threading.DispatcherPriority.Loaded);
+				body.MaxHeight = 520;
+				Width = 380;
+				Content = new StackPanel
+				{
+					Spacing = 12,
+					Children =
+					{
+						new DockPanel
+						{
+							Children =
+							{
+								close,
+								new StackPanel
+								{
+									Orientation = Orientation.Horizontal,
+									Spacing = 8,
+									Children = { icon, new TextBlock { Text = L.T("MIDI"), FontSize = 20, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center } },
+								},
+							},
+						},
+						body,
+					},
+				};
+			}
+			else
+			{
+				Content = PageLayout.Page(L.T("MIDI"), body, closable: true, icon: AppIcons.Midi);
+			}
 
 			ShowKeyboard();
 		}
