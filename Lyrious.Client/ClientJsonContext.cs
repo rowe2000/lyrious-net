@@ -88,7 +88,7 @@ internal sealed record PlayDto(
 /// <summary>A member's own settings for a song (their transpose and lyrics).</summary>
 internal sealed record SongSettingDto(
     System.Guid Id, System.Guid MemberId, System.Guid SongId, int Transpose, string? Lyrics,
-    System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum = 0, bool TransposeOff = false);
+    System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum = 0, bool TransposeOff = false, string? MidiSound = null);
 
 internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int MembershipStatusEnum, System.Guid GroupId, System.Guid MemberId, bool Removed);
 

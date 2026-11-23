@@ -59,6 +59,36 @@ globalThis.lyriousMidi = (() => {
                 access = null; // Asked again at the next send.
             });
         },
+        // Sends one message ("F0 43 …", hex bytes) on every output and gathers the System Exclusive
+        // messages that come back on the inputs, until one with lastValue at lastIndex (the last of the
+        // answer) or timeoutMs without it; they come back as sent ("F0 …;F0 …").
+        request: async (message, lastIndex, lastValue, timeoutMs) => {
+            if (!navigator.requestMIDIAccess) return "";
+            access ??= navigator.requestMIDIAccess({ sysex: true });
+            let midi;
+            try { midi = await access; } catch (e) { access = null; return ""; }
+            const bytes = message.trim().split(/\s+/).map(b => parseInt(b, 16));
+            const replies = [];
+            let finish;
+            const done = new Promise(resolve => { finish = resolve; setTimeout(resolve, timeoutMs); });
+            const onMessage = event => {
+                const data = event.data;
+                if (!data || data[0] !== 0xF0) return;
+                replies.push(Array.from(data, b => b.toString(16).padStart(2, "0")).join(" "));
+                if (data.length > lastIndex && data[lastIndex] === lastValue) finish();
+            };
+            const inputs = [...midi.inputs.values()];
+            inputs.forEach(input => input.addEventListener("midimessage", onMessage));
+            try {
+                for (const output of midi.outputs.values()) {
+                    try { output.send(bytes); } catch (e) { console.warn(`Couldn't send MIDI to ${output.name}`, e); }
+                }
+                await done;
+            } finally {
+                inputs.forEach(input => input.removeEventListener("midimessage", onMessage));
+            }
+            return replies.join(";");
+        },
     };
 })();
 

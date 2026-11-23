@@ -735,7 +735,7 @@ public sealed class HttpSetlistService : ISetlistService
 
         var current = await CacheAsync();
         return MySetting(current, memberId, songId) is { } setting
-            ? new MySongSetting(Math.Clamp(setting.Transpose, MySongSetting.MinTranspose, MySongSetting.MaxTranspose), setting.Lyrics ?? "", setting.TransposeOff)
+            ? new MySongSetting(Math.Clamp(setting.Transpose, MySongSetting.MinTranspose, MySongSetting.MaxTranspose), setting.Lyrics ?? "", setting.TransposeOff, setting.MidiSound ?? "")
             : MySongSetting.None;
     }
 
@@ -744,20 +744,28 @@ public sealed class HttpSetlistService : ISetlistService
         var memberId = auth.MemberId ?? throw new InvalidOperationException(L.T("You're not logged in."));
         var transpose = Math.Clamp(setting.Transpose, MySongSetting.MinTranspose, MySongSetting.MaxTranspose);
         var lyrics = setting.Lyrics ?? "";
+        var midiSound = setting.MidiSound ?? "";
         var current = await CacheAsync();
         if (MySetting(current, memberId, songId) is { } stored)
         {
-            if (stored.Transpose == transpose && (stored.Lyrics ?? "") == lyrics && stored.TransposeOff == setting.TransposeOff)
+            if (stored.Transpose == transpose && (stored.Lyrics ?? "") == lyrics && stored.TransposeOff == setting.TransposeOff && (stored.MidiSound ?? "") == midiSound)
             {
                 return;
             }
 
-            current.Update("songsetting", stored.Id, new JsonObject { ["transpose"] = transpose, ["lyrics"] = lyrics, ["transposeOff"] = setting.TransposeOff });
+            var fields = new JsonObject { ["transpose"] = transpose, ["lyrics"] = lyrics, ["transposeOff"] = setting.TransposeOff };
+            // Only when it changes: a server from before it ignores it, and then the rest still goes.
+            if ((stored.MidiSound ?? "") != midiSound)
+            {
+                fields["midiSound"] = midiSound;
+            }
+
+            current.Update("songsetting", stored.Id, fields);
         }
         else
         {
             var now = DateTime.Now;
-            current.Create("songsetting", Node(new SongSettingDto(Guid.NewGuid(), memberId, songId, transpose, lyrics, now, now, Removed: false, TransposeOff: setting.TransposeOff), ClientJsonContext.Default.SongSettingDto));
+            current.Create("songsetting", Node(new SongSettingDto(Guid.NewGuid(), memberId, songId, transpose, lyrics, now, now, Removed: false, TransposeOff: setting.TransposeOff, MidiSound: midiSound), ClientJsonContext.Default.SongSettingDto));
         }
 
         Queued(current);

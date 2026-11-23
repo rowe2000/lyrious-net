@@ -315,7 +315,8 @@ namespace Lyrious.UILib.Setlists
 	/// A member's own settings for a song, seen only by them: semitones the chords are moved by on
 	/// top of the song's own (−11 to +11), and their own lyrics (empty: the band's are shown).
 	/// </summary>
-	public sealed record MySongSetting(int Transpose, string Lyrics, bool TransposeOff = false)
+	/// <param name="MidiSound">The sound the member's keyboard plays the song with (see <see cref="Lyrious.UILib.MidiSound"/>); empty for none.</param>
+	public sealed record MySongSetting(int Transpose, string Lyrics, bool TransposeOff = false, string MidiSound = "")
 	{
 		/// <summary>The semitones the chords are moved by now: none while the transpose is turned off.</summary>
 		public int ActiveTranspose => TransposeOff ? 0 : Transpose;

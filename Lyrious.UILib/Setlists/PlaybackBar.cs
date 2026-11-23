@@ -56,9 +56,8 @@ namespace Lyrious.UILib.Setlists
 			VerticalAlignment = VerticalAlignment.Center,
 		};
 
-		// Who's there: the initials of the band's members that have joined it and are connected now.
-		private const int MostMembersShown = 5;
-		private readonly StackPanel members = new() { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 4, 0) };
+		// The MIDI page: the keyboard's sounds, to choose the song's (see MidiSoundsView); only while MIDI is on (see MidiModule).
+		private readonly Button midi = HomeView.IconButton(AppIcons.Midi, L.T("MIDI setup"));
 
 		// The media file playing: where it is (drag to move it), the time played and its length.
 		// A 4-pixel track filled up to where the sound is, without a handle; pressed or dragged anywhere
@@ -113,6 +112,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when the user presses play/pause.</summary>
 		public event Action? PlayPauseRequested;
 
+		/// <summary>Raised when the MIDI button is pressed: the MIDI setup is wanted.</summary>
+		public event Action? MidiRequested;
+
 		public PlaybackBar()
 		{
 			// The size of the app's other icon buttons.
@@ -141,7 +143,6 @@ namespace Lyrious.UILib.Setlists
 			next.Click += (_, _) => NextRequested?.Invoke();
 			playPause.Click += (_, _) => PlayPauseRequested?.Invoke();
 			SetNextSong(null);
-			SetMembers([]);
 
 			// Band sync: checked, it's filled with the highlight colour (the toggle's own checked look).
 			ToolbarSize(bandSync);
@@ -160,10 +161,25 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(playPause, Dock.Right);
 			DockPanel.SetDock(restart, Dock.Right);
 			DockPanel.SetDock(bandSync, Dock.Right);
-			// Who's there, just left of the band icon.
-			DockPanel.SetDock(members, Dock.Right);
+			// The MIDI setup, just left of the band icon (while MIDI is on, here or on another device).
+			DockPanel.SetDock(midi, Dock.Right);
+			midi.Margin = new Thickness(4, 0, 0, 0);
+			midi.Click += (_, _) => MidiRequested?.Invoke();
+			void ShowMidi() => Dispatcher.UIThread.Post(() => midi.IsVisible = MidiModule.Enabled);
+			ShowMidi();
+			midi.AttachedToVisualTree += (_, _) =>
+			{
+				MidiModule.EnabledChanged += ShowMidi;
+				UserSettings.Changed += ShowMidi;
+				ShowMidi();
+			};
+			midi.DetachedFromVisualTree += (_, _) =>
+			{
+				MidiModule.EnabledChanged -= ShowMidi;
+				UserSettings.Changed -= ShowMidi;
+			};
 			restart.Margin = new Thickness(4, 0);
-			var row = new DockPanel { Children = { playPause, restart, bandSync, members, new Panel { Children = { next, noMoreSongs } } } };
+			var row = new DockPanel { Children = { playPause, restart, bandSync, midi, new Panel { Children = { next, noMoreSongs } } } };
 
 			// The media file's progress above the buttons, while one plays: slower and faster at the left,
 			// lower and higher at the right, the time played and the length beside the bar.
@@ -481,65 +497,6 @@ namespace Lyrious.UILib.Setlists
 				button.Content = null;
 				button.Content = new Viewbox { Width = 24, Height = 24, Child = icon };
 			}
-		}
-
-		/// <summary>
-		/// Shows who's there: a small circle with the initials of each name (the full name as its tip).
-		/// More than a few end with "+N", which names the rest.
-		/// </summary>
-		public void SetMembers(IReadOnlyList<string> names)
-		{
-			members.Children.Clear();
-			var shown = names.Count > MostMembersShown ? MostMembersShown - 1 : names.Count;
-			for (var i = 0; i < shown; i++)
-			{
-				members.Children.Add(MemberBadge(Initials(names[i]), names[i]));
-			}
-
-			if (shown < names.Count)
-			{
-				members.Children.Add(MemberBadge($"+{names.Count - shown}", string.Join(", ", names.Skip(shown))));
-			}
-
-			members.IsVisible = names.Count > 0;
-			Avalonia.Automation.AutomationProperties.SetName(members, names.Count == 0 ? L.T("Nobody connected") : $"Connected: {string.Join(", ", names)}");
-		}
-
-		private static Control MemberBadge(string text, string tip)
-		{
-			var badge = new Border
-			{
-				Width = 28,
-				Height = 28,
-				CornerRadius = new CornerRadius(14),
-				BorderThickness = new Thickness(1.5),
-				VerticalAlignment = VerticalAlignment.Center,
-				Child = new TextBlock { Text = text, FontSize = 11, FontWeight = FontWeight.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-			};
-			badge.Bind(Border.BorderBrushProperty, badge.GetResourceObservable(LyriousTheme.ForegroundBrush));
-			ToolTip.SetTip(badge, tip);
-			return badge;
-		}
-
-		/// <summary>
-		/// A name's initials: the first letters of its first and last words ("Anna Maria Berg" → "AB");
-		/// of a single word, its first two letters ("Anna" → "An").
-		/// </summary>
-		public static string Initials(string name)
-		{
-			var words = name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-			if (words.Length == 0)
-			{
-				return "?";
-			}
-
-			if (words.Length == 1)
-			{
-				var word = words[0];
-				return word.Length == 1 ? word.ToUpperInvariant() : char.ToUpperInvariant(word[0]) + word.Substring(1, 1).ToLowerInvariant();
-			}
-
-			return $"{char.ToUpperInvariant(words[0][0])}{char.ToUpperInvariant(words[^1][0])}";
 		}
 
 		/// <summary>Shows whether band sync is on, without raising <see cref="BandSyncToggled"/>.</summary>

@@ -77,10 +77,14 @@ Requirements:
   the opened row scrolled into view. Actions sit right-aligned on the item's name line.
 - Editing in place: click a name to edit it; Enter or a ✓ button (shown only when the text
   changed) saves; losing focus cancels.
+- Settings take effect and are saved as soon as they're changed; Escape never puts a value back.
+  Dropdowns in settings are `SettingComboBox`.
+- A setting's explanation is the tooltip of its name (`SettingsView.Setting` / `SettingName`), not text
+  under it; a section's note is the tooltip of its heading.
 - Text buttons for actions, with a tooltip when an icon is used instead; tooltips on anything
   whose meaning isn't obvious.
-- Lyrics page: the first line starts below the toolbar; the lyrics can over-scroll so the top and
-  bottom reach the middle of the view.
+- Lyrics page: the first line starts below the toolbar; while playing (only then) the lyrics can
+  over-scroll so the top and bottom reach the middle of the view.
 - Touch: sideways swipes change song (the next slides in over, the current slides away to show
   the previous); a drag locks to scrolling or swiping by its first 5 px until released.
 - Works at phone width; nothing important only on hover.

@@ -12,8 +12,29 @@ namespace Lyrious.Web;
 /// has no Web MIDI, so nothing is sent there.
 /// </summary>
 [SupportedOSPlatform("browser")]
-internal sealed partial class BrowserMidiOutput : IMidiOutput
+internal sealed partial class BrowserMidiOutput : IMidiOutput, IMidiRequester
 {
+    /// <summary>Sends the request on every output and gathers the System Exclusive answers on the inputs (see <c>lyriousMidi.request</c>).</summary>
+    public async System.Threading.Tasks.Task<IReadOnlyList<byte[]>> RequestAsync(byte[] request, int lastIndex, byte lastValue, System.TimeSpan timeout)
+    {
+        try
+        {
+            // Messages as hex, split by ';' (as sent).
+            var replies = await Request(string.Join(' ', request.Select(b => b.ToString("X2"))), lastIndex, lastValue, (int)timeout.TotalMilliseconds);
+            return replies.Split(';', System.StringSplitOptions.RemoveEmptyEntries)
+                .Select(message => message.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Select(b => System.Convert.ToByte(b, 16)).ToArray())
+                .ToList();
+        }
+        catch (JSException ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Couldn't ask by MIDI: {ex.Message}");
+            return [];
+        }
+    }
+
+    [JSImport("globalThis.lyriousMidi.request")]
+    private static partial System.Threading.Tasks.Task<string> Request(string message, int lastIndex, int lastValue, int timeoutMs);
+
     public void Send(IReadOnlyList<byte[]> messages)
     {
         if (messages.Count == 0)

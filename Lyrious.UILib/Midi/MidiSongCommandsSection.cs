@@ -29,14 +29,12 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 8,
 				Children =
 				{
-					new TextBlock
-					{
-						Text = L.T("MIDI sent for every song to every MIDI output: when it's selected (before the song's own MIDI tags), when it starts playing and when it stops. ")
-						       + L.T("Written as in a MIDI tag, e.g. $LIGHT.1, PC0@10.")
-						       + (canEdit ? "" : L.T(" Only the band's admins change them.")),
-						TextWrapping = TextWrapping.Wrap,
-						Opacity = 0.75,
-					},
+					// Its explanation as the heading's tooltip.
+					SettingsView.SettingName(
+						L.T("MIDI for every song"),
+						L.T("MIDI sent for every song to every MIDI output: when it's selected (before the song's own MIDI tags), when it starts playing and when it stops. ")
+						+ L.T("Written as in a MIDI tag, e.g. $LIGHT.1, PC0@10.")
+						+ (canEdit ? "" : L.T(" Only the band's admins change them."))),
 				},
 			};
 			Content = panel;

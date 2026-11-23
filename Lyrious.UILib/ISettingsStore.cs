@@ -78,6 +78,12 @@ namespace Lyrious.UILib
 		public const string Theme = "theme";
 
 		/// <summary>
+		/// "true" shows the transpose button on the lyrics page (the member's own transpose or capo for
+		/// a song); off unless turned on. Kept with the user.
+		/// </summary>
+		public const string TransposeButton = "transpose-button";
+
+		/// <summary>
 		/// "true" counts the member's own transpose as a capo (in frets, −11 to +11, moving the chords
 		/// down: the transpose −n); none as a transpose in semitones (−11 to +11). Kept with the user.
 		/// </summary>
@@ -90,6 +96,12 @@ namespace Lyrious.UILib
 		/// (the same keyboards on all their devices).
 		/// </summary>
 		public const string SendYamahaTranspose = "send-yamaha-transpose";
+
+		/// <summary>
+		/// "true" turns the MIDI module on (see <see cref="MidiModule"/>): MIDI is sent and its settings
+		/// show; off unless turned on. Kept with the user.
+		/// </summary>
+		public const string Midi = "midi";
 
 		/// <summary>
 		/// The member's MIDI expressions (shortcuts in songs' MIDI tags), a JSON array (see <see cref="Midi"/>);

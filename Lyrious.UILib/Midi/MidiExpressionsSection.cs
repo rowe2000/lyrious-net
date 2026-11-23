@@ -34,15 +34,12 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 8,
 				Children =
 				{
-					new TextBlock { Text = L.T("MIDI expressions"), FontWeight = FontWeight.SemiBold },
-					new TextBlock
-					{
-						Text = L.T("Shortcuts for MIDI commands in the lyrics, e.g. [midi:$MODX.0.20]: the name, then the values of its parameters. ")
-						       + L.T("They're sent to every MIDI output when a song opens.")
-						       + (canEdit ? "" : L.T(" Only the band's admins change them.")),
-						TextWrapping = TextWrapping.Wrap,
-						Opacity = 0.75,
-					},
+					// Its explanation as the heading's tooltip.
+					SettingsView.SettingName(
+						L.T("MIDI expressions"),
+						L.T("Shortcuts for MIDI commands in the lyrics, e.g. [midi:$MODX.0.20]: the name, then the values of its parameters. ")
+						+ L.T("They're sent to every MIDI output when a song opens.")
+						+ (canEdit ? "" : L.T(" Only the band's admins change them."))),
 					rows,
 				},
 			};

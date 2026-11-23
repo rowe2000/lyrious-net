@@ -32,8 +32,10 @@ namespace Lyrious.UILib
 			SettingKeys.Language,
 			SettingKeys.Theme,
 			SettingKeys.CapoMode,
+			SettingKeys.TransposeButton,
 			SettingKeys.ChordGridButton,
 			SettingKeys.SendYamahaTranspose,
+			SettingKeys.Midi,
 			SettingKeys.MidiExpressions,
 			SettingKeys.MidiCommands,
 		];

@@ -127,10 +127,17 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The toolbar's height (its 40-high buttons) and a little more: where the lyrics' top is at the start.</summary>
 		private const double ToolbarRoom = 44;
 
-		// The room above and below the lyrics: half the view's height, so their first and last lines can
-		// be scrolled to the middle of the view (see UpdateOverscroll). Scroll offsets count it; the
-		// lyrics' own positions (content y, as the timeline and line tops are measured) don't.
+		// The room above the lyrics: while they play, half the view's height, so their first line can be
+		// scrolled to the middle of the view; else the toolbar's (see UpdateOverscroll). Scroll offsets
+		// count it; the lyrics' own positions (content y, as the timeline and line tops are measured) don't.
 		private double overscroll;
+
+		// The room below the lyrics: while they play, half the view's height, so their last line can be
+		// scrolled to the middle of the view; else none.
+		private double overscrollBottom;
+
+		// Whether the lyrics have been put at their start once they were first laid out (and show).
+		private bool positioned;
 
 		/// <summary>Where the lyrics start: their top just below the toolbar (scrolled up from there, the room above them shows).</summary>
 		private double StartOffset => Math.Max(0, overscroll - ToolbarRoom);
@@ -142,29 +149,39 @@ namespace Lyrious.UILib.Setlists
 		private double CenterAt(double offset) => offset - overscroll + (scroller?.Viewport.Height ?? 0) / 2;
 
 		/// <summary>
-		/// The room above and below the lyrics follows the view's height (half of it); what's shown
-		/// stays where it is. The first time, the lyrics go to their start (just below the toolbar).
+		/// The room above and below the lyrics: while they play (<paramref name="playing"/>, else whether
+		/// they scroll by themselves now), half the view's height each, so they can over-scroll until their
+		/// first and last lines are in the middle of the view; else only the toolbar's room above them, so
+		/// they don't scroll past their ends by hand. What's shown stays where it is (as far as it can).
+		/// The first time, the lyrics go to their start (just below the toolbar).
 		/// </summary>
-		private void UpdateOverscroll()
+		private void UpdateOverscroll(bool? playing = null)
 		{
 			if (scroller == null || zoomHost == null || scroller.Viewport.Height <= 0)
 			{
 				return;
 			}
 
-			var room = Math.Round(scroller.Viewport.Height / 2);
-			if (Math.Abs(room - overscroll) < 1 && zoomHost.Margin.Top == room)
+			var half = Math.Round(scroller.Viewport.Height / 2);
+			var over = playing ?? scrollTimer.IsEnabled;
+			var top = over ? half : Math.Min(ToolbarRoom, half);
+			var bottom = over ? half : 0;
+			if (positioned && Math.Abs(top - overscroll) < 1 && Math.Abs(bottom - overscrollBottom) < 1)
 			{
 				return;
 			}
 
-			var first = zoomHost.Margin.Top == 0;
-			var shift = room - overscroll;
-			overscroll = room;
-			zoomHost.Margin = new Thickness(0, room, 0, room);
+			var first = !positioned;
+			positioned = true;
+			var shift = top - overscroll;
+			overscroll = top;
+			overscrollBottom = bottom;
+			zoomHost.Margin = new Thickness(0, top, 0, bottom);
 			scroller.UpdateLayout();
 			scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(first ? StartOffset : scroller.Offset.Y + shift, 0, MaxOffset(scroller)));
 			timeline = null; // Its start depends on the view's height.
+			// Now at their start: they show (hidden until here, so they don't show at the top first and then jump).
+			zoomHost.Opacity = 1;
 		}
 		private List<Control> lines = [];
 		private List<double> lineOpacities = [];
@@ -522,6 +539,14 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(reset, Dock.Right);
 			var onAndReset = new DockPanel { Children = { reset, enabled } };
 
+			// The title, with ✕ at the right to close.
+			var close = HomeView.IconButton(CancelIcon, L.T("Close"));
+			close.Padding = new Thickness(4);
+			close.VerticalAlignment = VerticalAlignment.Center;
+			title.VerticalAlignment = VerticalAlignment.Center;
+			DockPanel.SetDock(close, Dock.Right);
+			var titleRow = new DockPanel { Children = { close, title } };
+
 			var flyout = new Flyout
 			{
 				Placement = PlacementMode.BottomEdgeAlignedRight,
@@ -531,7 +556,7 @@ namespace Lyrious.UILib.Setlists
 					MinWidth = 200,
 					Children =
 					{
-						title,
+						titleRow,
 						new TextBlock { Text = L.T("Only you see the chords moved."), FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, MaxWidth = 220 },
 						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, Children = { down, value, up } },
 						key,
@@ -545,7 +570,40 @@ namespace Lyrious.UILib.Setlists
 				flyout.Hide();
 				SettingsRequested?.Invoke();
 			};
+			close.Click += (_, _) => flyout.Hide();
+
+			// Escape closes it, wherever the keyboard is (the popup or the window under it), and does
+			// nothing else (e.g. not also close the page).
+			void OnEscape(object? sender, KeyEventArgs e)
+			{
+				if (e.Key == Key.Escape && e.KeyModifiers == KeyModifiers.None && flyout.IsOpen)
+				{
+					e.Handled = true;
+					flyout.Hide();
+				}
+			}
+
+			var window = TopLevel.GetTopLevel(this);
+			window?.AddHandler(KeyDownEvent, OnEscape, RoutingStrategies.Tunnel);
+			if (flyout.Content is Control popupContent)
+			{
+				popupContent.AddHandler(KeyDownEvent, OnEscape, RoutingStrategies.Tunnel);
+			}
+
+			flyout.Closed += (_, _) => window?.RemoveHandler(KeyDownEvent, OnEscape);
 			flyout.ShowAt(transposeButton);
+		}
+
+		/// <summary>The song's name.</summary>
+		public string SongName => song.Name;
+
+		/// <summary>Keeps the sound the member's keyboard plays the song with (see <see cref="MidiSound"/>; empty for none) in their own settings for it.</summary>
+		public void SetMidiSound(string sound)
+		{
+			if (SaveMySetting != null && sound != mySetting.MidiSound)
+			{
+				ApplyMySetting(mySetting with { MidiSound = sound });
+			}
 		}
 
 		/// <summary>Shows the lyrics with the member's changed settings, and stores them.</summary>
@@ -584,8 +642,9 @@ namespace Lyrious.UILib.Setlists
 			var t = mySetting.Transpose;
 			var on = t != 0 && !mySetting.TransposeOff;
 			var capo = CapoMode;
-			// In the editor always (the chords may be being added); else for lyrics with chords, or a transpose set.
-			transposeButton.IsVisible = SaveMySetting != null && (IsEditing || hasChords || t != 0);
+			// Only when turned on in Settings; then in the editor always (the chords may be being added),
+			// else for lyrics with chords, or a transpose set.
+			transposeButton.IsVisible = DisplaySettings.TransposeButton && SaveMySetting != null && (IsEditing || hasChords || t != 0);
 			// Its letters right in the middle, both ways (a plain text sits higher or lower, by its letters).
 			// The ♯♭ icon, or the value ("+2", bold); each with its own size and weight.
 			if (t == 0)
@@ -873,6 +932,7 @@ namespace Lyrious.UILib.Setlists
 			base.OnAttachedToVisualTree(e);
 			LyricsHeader.Changed += OnLyricsHeaderChanged;
 			DisplaySettings.CapoModeChanged += OnCapoModeChanged;
+			DisplaySettings.TransposeButtonChanged += OnCapoModeChanged;
 			UserSettings.Changed += OnCapoModeChanged;
 			DisplaySettings.ChordGridButtonChanged += OnChordGridButtonChanged;
 			UserSettings.Changed += OnChordGridButtonChanged;
@@ -938,12 +998,15 @@ namespace Lyrious.UILib.Setlists
 
 			StopNudge();
 
+			// Starting at the end begins again from the start.
+			var atEnd = on && scroller!.Offset.Y >= MaxOffset(scroller) - 1;
+			// Over-scrolling only while playing: the room above and below the lyrics for it, or no more.
+			UpdateOverscroll(on);
 			if (on)
 			{
-				// Starting at the end begins again from the start.
-				if (scroller!.Offset.Y >= MaxOffset(scroller) - 1)
+				if (atEnd)
 				{
-					scroller.Offset = new Vector(scroller.Offset.X, StartOffset);
+					scroller!.Offset = new Vector(scroller.Offset.X, StartOffset);
 				}
 
 				scrollPosition = null;
@@ -1639,7 +1702,8 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// The rows of the lyrics, headings included (a wrapped line has several), top to bottom: where
-		/// each starts and ends, and the middle of its words (below the chords on a chord line).
+		/// each starts and ends, and where its bar goes: the middle of its chords on a chord line, else of
+		/// its words.
 		/// </summary>
 		private List<(double Top, double Bottom, double TextY)> BarRows()
 		{
@@ -1676,7 +1740,9 @@ namespace Lyrious.UILib.Setlists
 					{
 						var top = place.Y + row.Min(child => child.Bounds.Top - child.Margin.Top);
 						var bottom = place.Y + row.Max(child => child.Bounds.Bottom);
-						rows.Add((top, bottom, bottom - LyricLineHeight / 2));
+						// The bar level with the chords (the room above the words); with no chords in the row, with the words.
+						var chordRoom = bottom - top - LyricLineHeight;
+						rows.Add((top, bottom, chordRoom > 1 ? top + chordRoom / 2 : bottom - LyricLineHeight / 2));
 					}
 				}
 			}
@@ -1694,6 +1760,7 @@ namespace Lyrious.UILib.Setlists
 			base.OnDetachedFromVisualTree(e);
 			LyricsHeader.Changed -= OnLyricsHeaderChanged;
 			DisplaySettings.CapoModeChanged -= OnCapoModeChanged;
+			DisplaySettings.TransposeButtonChanged -= OnCapoModeChanged;
 			UserSettings.Changed -= OnCapoModeChanged;
 			DisplaySettings.ChordGridButtonChanged -= OnChordGridButtonChanged;
 			UserSettings.Changed -= OnChordGridButtonChanged;
@@ -1805,52 +1872,75 @@ namespace Lyrious.UILib.Setlists
 				text.SizeChanged += (_, _) => ScheduleBars();
 			}
 
-			// Centred too (outside the zoom): the zoom lays its content out from the left, at the content's own size.
-			// Room above and below (outside the zoom, so the same at any zoom), half the view's height once
-			// laid out (see UpdateOverscroll): the first and last lines can scroll to the middle of the view.
-			// They start with the first line just below the toolbar (the song's title is hidden with lyrics).
-			overscroll = 0;
-			zoomHost = new LayoutTransformControl
+			// The song shown again in the same view (transposed, another header, the chord grid on or off…):
+			// in the same scroll view, where it was (no new view starting at the top, which would flicker).
+			if (scroller is { } shownIn && zoomHost != null && positioned && body.Content == shownIn)
 			{
-				LayoutTransform = new ScaleTransform(zoom, zoom),
-				Child = content,
-				HorizontalAlignment = grid ? HorizontalAlignment.Stretch : HorizontalAlignment.Center,
-			};
-			var scroller = new ScrollViewer
+				KeepPlace(shownIn, content, grid);
+			}
+			else
 			{
-				// Transparent, so a tap anywhere in the lyrics area counts, not only on the letters.
-				Background = Brushes.Transparent,
-				Content = zoomHost,
-			};
-			AddZoomGestures(scroller);
-			// Scrolled by hand (wheel or touchpad, a drag, the scroll bar): the song's sound file goes along.
-			scroller.AddHandler(PointerWheelChangedEvent, (_, _) =>
-			{
-				if (!wheelZooms)
+				// Centred too (outside the zoom): the zoom lays its content out from the left, at the content's own size.
+				// Room above and below (outside the zoom, so the same at any zoom), half the view's height once
+				// laid out (see UpdateOverscroll): the first and last lines can scroll to the middle of the view.
+				// They start with the first line just below the toolbar (the song's title is hidden with lyrics).
+				overscroll = 0;
+				overscrollBottom = 0;
+				positioned = false;
+				zoomHost = new LayoutTransformControl
 				{
-					ScrolledByHand();
-				}
-			}, RoutingStrategies.Bubble, handledEventsToo: true);
-			scroller.AddHandler(InputElement.ScrollGestureEvent, (_, _) => ScrolledByHand(), RoutingStrategies.Bubble, handledEventsToo: true);
-			scroller.AddHandler(Avalonia.Controls.Primitives.Thumb.DragDeltaEvent, (_, _) => ScrolledByHand(), RoutingStrategies.Bubble, handledEventsToo: true);
-			// The timeline depends on the view's height too, and so does the room above and below the lyrics.
-			scroller.SizeChanged += (_, _) => ScheduleBars();
-			scroller.PropertyChanged += (_, e) =>
-			{
-				if (e.Property == ScrollViewer.ViewportProperty)
+					LayoutTransform = new ScaleTransform(zoom, zoom),
+					Child = content,
+					HorizontalAlignment = grid ? HorizontalAlignment.Stretch : HorizontalAlignment.Center,
+					// Hidden until the room above them is known and they're at their start (see UpdateOverscroll),
+					// which is only after they've been laid out once: else they'd first show at the top.
+					Opacity = 0,
+				};
+				var scroller = new ScrollViewer
 				{
-					// Right after this layout pass (changing the room lays the view out again).
-					Dispatcher.UIThread.Post(UpdateOverscroll, DispatcherPriority.Loaded);
-				}
-			};
-			// A tap (not a drag to scroll) toggles focus mode.
-			scroller.Tapped += (_, e) =>
-			{
-				e.Handled = true;
-				FocusModeToggled?.Invoke();
-			};
-			body.Content = scroller;
-			this.scroller = scroller;
+					// Transparent, so a tap anywhere in the lyrics area counts, not only on the letters.
+					Background = Brushes.Transparent,
+					Content = zoomHost,
+				};
+				AddZoomGestures(scroller);
+				// Scrolled by hand (wheel or touchpad, a drag, the scroll bar): the song's sound file goes along.
+				scroller.AddHandler(PointerWheelChangedEvent, (_, _) =>
+				{
+					if (!wheelZooms)
+					{
+						ScrolledByHand();
+					}
+				}, RoutingStrategies.Bubble, handledEventsToo: true);
+				scroller.AddHandler(InputElement.ScrollGestureEvent, (_, _) => ScrolledByHand(), RoutingStrategies.Bubble, handledEventsToo: true);
+				scroller.AddHandler(Avalonia.Controls.Primitives.Thumb.DragDeltaEvent, (_, _) => ScrolledByHand(), RoutingStrategies.Bubble, handledEventsToo: true);
+				// The timeline depends on the view's height too, and so does the room above and below the lyrics.
+				scroller.SizeChanged += (_, e) =>
+				{
+					// Another width: the lyrics centred anew at their own width (see KeepPlace).
+					if (e.WidthChanged && zoomHost != null)
+					{
+						zoomHost.MinWidth = 0;
+					}
+
+					ScheduleBars();
+				};
+				scroller.PropertyChanged += (_, e) =>
+				{
+					if (e.Property == ScrollViewer.ViewportProperty)
+					{
+						// Right after this layout pass (changing the room lays the view out again).
+						Dispatcher.UIThread.Post(() => UpdateOverscroll(), DispatcherPriority.Loaded);
+					}
+				};
+				// A tap (not a drag to scroll) toggles focus mode.
+				scroller.Tapped += (_, e) =>
+				{
+					e.Handled = true;
+					FocusModeToggled?.Invoke();
+				};
+				body.Content = scroller;
+				this.scroller = scroller;
+			}
 			// The capo's button back in its place among the lyrics' tools (the editor had it).
 			if (!lyricsActions.Children.Contains(transposeButton))
 			{
@@ -1866,6 +1956,42 @@ namespace Lyrious.UILib.Setlists
 			addDroppedLink = addLinkBesidePencil;
 			editHeader = null;
 			ShowTitle();
+		}
+
+		/// <summary>
+		/// Shows the lyrics' new content in the scroll view they're in, where they were: at their start if
+		/// they were there, else with the same part of them in the middle of the view (as a share of their
+		/// height: the lines may wrap otherwise now). Playing in time, the song's clock places them anyway.
+		/// </summary>
+		private void KeepPlace(ScrollViewer viewer, Control content, bool grid)
+		{
+			var atStart = viewer.Offset.Y <= StartOffset + 1;
+			var anchor = viewer.Viewport.Height / 2;
+			var oldHeight = viewer.Extent.Height - overscroll - overscrollBottom;
+			var share = oldHeight > 0 ? (viewer.Offset.Y + anchor - overscroll) / oldHeight : 0;
+			// Not moving sideways either: centred at the widest they've been (moved chords make the lines a
+			// little wider or narrower, which would centre them anew each time), the lines at its left.
+			if (!grid)
+			{
+				zoomHost!.MinWidth = Math.Min(Math.Max(zoomHost.MinWidth, zoomHost.Bounds.Width), viewer.Viewport.Width);
+				content.HorizontalAlignment = HorizontalAlignment.Left;
+			}
+			else
+			{
+				zoomHost!.MinWidth = 0;
+			}
+
+			zoomHost.Child = content;
+			zoomHost.HorizontalAlignment = grid ? HorizontalAlignment.Stretch : HorizontalAlignment.Center;
+			viewer.UpdateLayout();
+			if (scrollTimer.IsEnabled && IsTimed)
+			{
+				return;
+			}
+
+			var newHeight = viewer.Extent.Height - overscroll - overscrollBottom;
+			var offset = atStart ? StartOffset : Math.Round(share * newHeight + overscroll - anchor);
+			viewer.Offset = new Vector(viewer.Offset.X, Math.Clamp(offset, 0, MaxOffset(viewer)));
 		}
 
 		/// <summary>
@@ -1967,15 +2093,17 @@ namespace Lyrious.UILib.Setlists
 			// same words there better than scaling the offset.
 			var anchor = Math.Clamp(pendingZoomAnchor, 0, scroller.Viewport.Height);
 			// (Of the lyrics themselves: the room above and below them doesn't zoom.)
-			var lyricsHeight = scroller.Extent.Height - 2 * overscroll;
+			var lyricsHeight = scroller.Extent.Height - overscroll - overscrollBottom;
 			var share = lyricsHeight > 0 ? (scroller.Offset.Y + anchor - overscroll) / lyricsHeight : 0;
 			zoom = value;
 			LyricsZoom = value;
+			// Another size: centred anew at their own width (see KeepPlace).
+			zoomHost.MinWidth = 0;
 			zoomHost.LayoutTransform = new ScaleTransform(zoom, zoom);
 			scroller.UpdateLayout();
 			if (!scrollTimer.IsEnabled || !IsTimed)
 			{
-				scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(Math.Round(share * (scroller.Extent.Height - 2 * overscroll) + overscroll - anchor), 0, MaxOffset(scroller)));
+				scroller.Offset = new Vector(scroller.Offset.X, Math.Clamp(Math.Round(share * (scroller.Extent.Height - overscroll - overscrollBottom) + overscroll - anchor), 0, MaxOffset(scroller)));
 			}
 
 			ScheduleBars();
@@ -2845,7 +2973,8 @@ namespace Lyrious.UILib.Setlists
 			midiNotes.Bind(TextBlock.ForegroundProperty, midiNotes.GetResourceObservable(LyriousTheme.WarningBrush));
 			void ShowMidiNotes()
 			{
-				var problems = Midi.Problems(editor.Text, MidiExpressions);
+				// Only with MIDI on (else the tags are only text, sent nowhere).
+				var problems = MidiModule.Enabled ? Midi.Problems(editor.Text, MidiExpressions) : [];
 				midiNotes.Text = string.Join("\n", problems.Select(problem => "MIDI: " + problem));
 				midiNotes.IsVisible = problems.Count > 0;
 			}

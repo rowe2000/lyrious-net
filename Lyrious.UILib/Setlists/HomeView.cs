@@ -155,10 +155,12 @@ namespace Lyrious.UILib.Setlists
 
 		/// <param name="offerForgetSavedPassword">Shows "Forget saved password" on the profile page (when a password is saved and the app can remove it).</param>
 		/// <param name="skipOnboarding">Leaves out the screen of what's new (the view is made anew, e.g. in another language).</param>
-		public HomeView(AuthenticatedUser user, ISetlistService service, bool offerForgetSavedPassword = false, bool skipOnboarding = false)
+		/// <param name="openSettings">Opens the settings page after the start page (made anew from Settings, e.g. after choosing another language there).</param>
+		public HomeView(AuthenticatedUser user, ISetlistService service, bool offerForgetSavedPassword = false, bool skipOnboarding = false, bool openSettings = false)
 		{
 			this.service = service;
 			this.user = user;
+			this.openSettings = openSettings;
 			this.skipOnboarding = skipOnboarding;
 			this.offerForgetSavedPassword = offerForgetSavedPassword;
 			memberName.Text = user.DisplayName;
@@ -256,6 +258,14 @@ namespace Lyrious.UILib.Setlists
 			playbackBar.PlayPauseRequested += () => PlayPause();
 			playbackBar.RestartRequested += () => (page.Content as LyricScrollView)?.ScrollToStart();
 			playbackBar.NextRequested += NextSong;
+			// The MIDI setup page (the button shows while MIDI is on), with the band's MIDI as the start.
+			// The MIDI page (the button shows while MIDI is on): the keyboard's sounds, to choose the open song's.
+			playbackBar.MidiRequested += () =>
+			{
+				var lyrics = page.Content as LyricScrollView;
+				var open = lyrics is { IsEditing: false } ? lyrics : null;
+				page.Content = new MidiSoundsView(open, open?.SongName);
+			};
 			playbackBar.SetBandSync(bandSync);
 			// Longclick on the globe: band sync on, with this member's setlist and song sent to the band.
 			playbackBar.BandSyncSendRequested += () =>
@@ -1055,19 +1065,23 @@ namespace Lyrious.UILib.Setlists
 
 		private int presentMembersLoad;
 
+		// The current band's members, in the menu drawer's header (see ShowPresentMembersAsync).
+		private readonly MemberBadges bandMembers = new() { HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(8, 0, 4, 0) };
+
 		/// <summary>
-		/// Shows, in the playback toolbar, the initials of who's there: the current band's members that
-		/// have joined it and are connected right now (this member too). Nobody while offline.
+		/// Shows, in the menu drawer's header, the current band's members (this member too) by their
+		/// initials, coloured by whether they're playing with the band now, online, or offline. None
+		/// without a band.
 		/// </summary>
 		private async Task ShowPresentMembersAsync()
 		{
 			var load = ++presentMembersLoad;
-			IReadOnlyList<string> names = [];
+			IReadOnlyList<GroupMember> shown = [];
 			try
 			{
 				if (currentGroup is { } group && (await service.GetGroupMembersAsync()).TryGetValue(group.Id, out var members))
 				{
-					names = members.Where(member => member.Approved && member.Joined && member.Connected).Select(member => member.Name).ToArray();
+					shown = members.Where(member => member.Approved).ToArray();
 				}
 			}
 			catch (Exception ex)
@@ -1078,7 +1092,7 @@ namespace Lyrious.UILib.Setlists
 			// A newer one is on its way.
 			if (load == presentMembersLoad)
 			{
-				playbackBar.SetMembers(names);
+				bandMembers.Show(shown);
 			}
 		}
 
@@ -1469,8 +1483,9 @@ namespace Lyrious.UILib.Setlists
 				Spacing = 4,
 				Children =
 				{
-					// The drawer's buttons (✕ and pin) at the left, 4px above the first item (the panel's spacing).
-					new DockPanel { Children = { buttons } },
+					// The drawer's buttons (✕ and pin) at the left, 4px above the first item (the panel's spacing);
+					// the band's members at the right, coloured by whether they're with the band now.
+					new DockPanel { Children = { buttons, bandMembers } },
 					chooseGroupButton,
 					chooseSetlistButton,
 					chooseSongButton,
@@ -2414,6 +2429,11 @@ namespace Lyrious.UILib.Setlists
 			return RunAsync(async () =>
 			{
 				await OpenStartPageAsync();
+				if (openSettings)
+				{
+					ShowSettings(); // Back where it was made anew from (its ✕ goes to the start page).
+				}
+
 				if (!skipOnboarding)
 				{
 					await ShowOnboardingAsync();
@@ -2423,6 +2443,12 @@ namespace Lyrious.UILib.Setlists
 
 		// Made anew (e.g. in another language): no screen of what's new.
 		private readonly bool skipOnboarding;
+
+		// Made anew from Settings: Settings again after the start page.
+		private readonly bool openSettings;
+
+		/// <summary>Whether the settings page is showing (so it can be shown again when the view is made anew).</summary>
+		public bool IsShowingSettings => page.Content is SettingsView;
 
 		/// <summary>Whether the lyrics are playing now (so the screens aren't made anew under them).</summary>
 		public bool IsPlayingLyrics => IsPlaying;
@@ -2810,7 +2836,7 @@ namespace Lyrious.UILib.Setlists
 			ShowMidiProblems(view, group.Id);
 			ShowLyricsPage(view, group.Id);
 			// The song's MIDI tags set the instruments, effects and lights for it.
-			SendSongSelectMidi(group.Id, entry.Song.Lyrics);
+			SendSongSelectMidi(group.Id, entry.Song.Id, entry.Song.Lyrics);
 			RefreshSetlistDrawer(reload: setlistChanged);
 		}
 
@@ -3117,7 +3143,7 @@ namespace Lyrious.UILib.Setlists
 			ShowLyricsPage(view, group.Id);
 			if (!startEditing)
 			{
-				SendSongSelectMidi(group.Id, song.Lyrics);
+				SendSongSelectMidi(group.Id, song.Id, song.Lyrics);
 			}
 			RefreshSetlistDrawer();
 		}
@@ -3144,24 +3170,25 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// A song is selected: sends the band's commands for that, then the MIDI tags at the start of
-		/// the song's lyrics.
+		/// the song's lyrics, then the sound the member chose for it on their keyboard (see MidiSoundsView).
 		/// </summary>
-		private void SendSongSelectMidi(Guid groupId, string lyrics)
-			=> SendMidi(groupId, (expressions, commands) => Midi.Parse(commands.Select, expressions).Concat(Midi.SongStart(lyrics, expressions)).ToList());
+		private void SendSongSelectMidi(Guid groupId, Guid songId, string lyrics)
+			=> SendMidi(groupId, (expressions, commands) => Midi.Parse(commands.Select, expressions).Concat(Midi.SongStart(lyrics, expressions)).ToList(), soundOf: songId);
 
 		/// <summary>
 		/// Queues MIDI to send: <paramref name="build"/> makes it from the band's MIDI expressions and
 		/// commands as they are now (read from the band, so a change shows at once).
 		/// </summary>
-		private void SendMidi(Guid groupId, Func<IReadOnlyList<MidiExpression>, MidiSongCommands, IReadOnlyList<byte[]>> build)
+		/// <param name="soundOf">A song whose sound (the member's own choice for it) goes last.</param>
+		private void SendMidi(Guid groupId, Func<IReadOnlyList<MidiExpression>, MidiSongCommands, IReadOnlyList<byte[]>> build, Guid? soundOf = null)
 		{
-			if (App.Midi != null)
+			if (MidiModule.Output != null)
 			{
-				midiSends = SendMidiAfterAsync(midiSends, groupId, build);
+				midiSends = SendMidiAfterAsync(midiSends, groupId, build, soundOf);
 			}
 		}
 
-		private async Task SendMidiAfterAsync(Task before, Guid groupId, Func<IReadOnlyList<MidiExpression>, MidiSongCommands, IReadOnlyList<byte[]>> build)
+		private async Task SendMidiAfterAsync(Task before, Guid groupId, Func<IReadOnlyList<MidiExpression>, MidiSongCommands, IReadOnlyList<byte[]>> build, Guid? soundOf)
 		{
 			await before;
 			IReadOnlyList<MidiExpression> expressions = [];
@@ -3178,11 +3205,25 @@ namespace Lyrious.UILib.Setlists
 				System.Diagnostics.Debug.WriteLine($"Couldn't read the band's MIDI settings: {ex.Message}");
 			}
 
+			// The member's own sound for the song (kept in their settings for it), after the band's MIDI.
+			IReadOnlyList<byte[]> sound = [];
+			if (soundOf is { } songId)
+			{
+				try
+				{
+					sound = MidiSound.Parse((await service.GetMySongSettingAsync(songId)).MidiSound)?.Messages() ?? [];
+				}
+				catch (Exception ex)
+				{
+					System.Diagnostics.Debug.WriteLine($"Couldn't read the song's sound: {ex.Message}");
+				}
+			}
+
 			try
 			{
-				if (build(expressions, commands) is { Count: > 0 } messages)
+				if (build(expressions, commands).Concat(sound).ToList() is { Count: > 0 } messages)
 				{
-					App.Midi?.Send(messages);
+					MidiModule.Output?.Send(messages);
 				}
 			}
 			catch (Exception ex)

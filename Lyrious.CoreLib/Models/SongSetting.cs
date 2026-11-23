@@ -5,13 +5,15 @@ namespace Lyrious.CoreLib.Models;
 
 /// <summary>
 /// A member's own settings for a song, seen only by them (on all their devices): a transpose of
-/// the chords, and their own version of the lyrics. One per member and song.
+/// the chords, their own version of the lyrics, and the sound their keyboard plays it with. One per
+/// member and song.
 /// </summary>
 public sealed class SongSetting : Entity
 {
 	public const int MinTranspose = -11;
 	public const int MaxTranspose = 11;
 	public const int MaxLyricsLength = 5000;
+	public const int MaxMidiSoundLength = 100;
 
 	[DataMember] public Guid MemberId { get; set; }
 	[DataMember] public Guid SongId { get; set; }
@@ -25,4 +27,11 @@ public sealed class SongSetting : Entity
 	/// <summary>The member's own lyrics, shown instead of the band's; empty to use the band's.</summary>
 	[MaxLength(MaxLyricsLength)]
 	[DataMember] public string Lyrics { get; set; } = "";
+
+	/// <summary>
+	/// The sound the member's keyboard plays the song with, sent when the song is chosen: its MIDI
+	/// channel, bank (MSB, LSB) and program, and its name ("1,63,0,5,Rock Organ"); empty for none.
+	/// </summary>
+	[MaxLength(MaxMidiSoundLength)]
+	[DataMember] public string MidiSound { get; set; } = "";
 }

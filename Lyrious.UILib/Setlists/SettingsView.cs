@@ -28,6 +28,17 @@ namespace Lyrious.UILib.Setlists
 				OffContent = L.T("Off"),
 			};
 			capoMode.IsCheckedChanged += (_, _) => DisplaySettings.CapoMode = capoMode.IsChecked == true;
+			var transposeButton = new ToggleSwitch
+			{
+				IsChecked = DisplaySettings.TransposeButton,
+				OnContent = L.T("On"),
+				OffContent = L.T("Off"),
+			};
+			transposeButton.IsCheckedChanged += (_, _) =>
+			{
+				DisplaySettings.TransposeButton = transposeButton.IsChecked == true;
+				capoRow!.IsVisible = DisplaySettings.TransposeButton;
+			};
 			var chordGridButton = new ToggleSwitch
 			{
 				IsChecked = DisplaySettings.ChordGridButton,
@@ -46,7 +57,7 @@ namespace Lyrious.UILib.Setlists
 			dynamicZoom.IsCheckedChanged += (_, _) => DisplaySettings.DynamicZoom = dynamicZoom.IsChecked == true;
 
 			// The language: the device's, or one chosen; the screens are made anew in it at once.
-			var language = new ComboBox { MinWidth = 100 };
+			var language = new SettingComboBox { MinWidth = 100 };
 			foreach (var choice in Localization.Language.Choices)
 			{
 				language.Items.Add(new ComboBoxItem { Content = choice.Code == "" ? Localization.L.T(choice.Name) : choice.Name, Tag = choice.Code });
@@ -66,7 +77,7 @@ namespace Lyrious.UILib.Setlists
 
 			// The theme: dark (the default), light, or the computer's; applied at once.
 			var themes = new (string Value, string Name)[] { (ThemeSettings.Dark, L.T("Dark")), (ThemeSettings.Light, L.T("Light")), (ThemeSettings.System, L.T("Same as the computer")) };
-			var theme = new ComboBox { MinWidth = 100 };
+			var theme = new SettingComboBox { MinWidth = 100 };
 			foreach (var (value, name) in themes)
 			{
 				theme.Items.Add(new ComboBoxItem { Content = name, Tag = value });
@@ -82,6 +93,7 @@ namespace Lyrious.UILib.Setlists
 			};
 
 			var colorsSection = Section(L.T("Colors"));
+			ToolTip.SetTip(colorsSection, Explained(L.T("Yours on all your devices.")));
 			var form = new StackPanel
 			{
 				Spacing = 16,
@@ -109,12 +121,20 @@ namespace Lyrious.UILib.Setlists
 						L.T("Sizes the whole app, lyrics included, to the window: the smaller of its width and height sets the zoom, where 500 px is 100 %. The interface size above and the lyrics' own zoom apply on top."),
 						dynamicZoom)),
 					Section(L.T("Playback")),
-					Scoped(SettingScope.User, capoRow = Setting(
-						L.T("Count my transpose as a capo"),
-						L.T("On: + in the transpose dialog puts the capo a fret higher, which moves the chords down (capo +1 makes G F#). Off: a transpose in semitones, which moves them up. Yours on all your devices."),
-						capoMode)),
+					Scoped(SettingScope.User, Setting(
+						L.T("Transpose button"),
+						L.T("Shows the button on the lyrics page that moves a song's chords for you only (a transpose or a capo). Yours on all your devices."),
+						transposeButton)),
+					// Only with the transpose button (where it counts); in a panel of its own, as the filter
+					// above shows and hides the rows of the form itself.
+					Scoped(SettingScope.User, new Border
+					{
+						Child = capoRow = Setting(
+							L.T("Count my transpose as a capo"),
+							L.T("On: + in the transpose dialog puts the capo a fret higher, which moves the chords down (capo +1 makes G F#). Off: a transpose in semitones, which moves them up. Yours on all your devices."),
+							capoMode),
+					}),
 					colorsSection,
-					Scoped(SettingScope.User, new TextBlock { Text = L.T("Yours on all your devices."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap }),
 					ColorSetting(
 						L.T("Highlight"),
 						L.T("The current song, setlist and band, the selected row's outline, and the main buttons."),
@@ -157,8 +177,9 @@ namespace Lyrious.UILib.Setlists
 			// songbook and clearing it are on the songbook page.)
 			if (bandName != null && bandSettings != null)
 			{
-				form.Children.Add(Section(L.T("Band settings · {0}", bandName)));
-				form.Children.Add(Scoped(SettingScope.Band, new TextBlock { Text = L.T("Saved with the band: the same for all its members."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap }));
+				var bandSection = Section(L.T("Band settings · {0}", bandName));
+				ToolTip.SetTip(bandSection, Explained(L.T("Saved with the band: the same for all its members.")));
+				form.Children.Add(bandSection);
 				form.Children.Add(Scoped(SettingScope.Band, bandSettings));
 			}
 
@@ -173,30 +194,15 @@ namespace Lyrious.UILib.Setlists
 					fullScreen)));
 			}
 
-			// The member's MIDI settings (kept with the user; the band's until they save their own), before
-			// the colours: the expressions used in songs' MIDI tags, and the MIDI sent for every song.
-			var expressions = MidiSettings.Expressions(bandMidiExpressions);
+			capoRow.IsVisible = DisplaySettings.TransposeButton;
+
+			// The MIDI module (see MidiSetup), before the colours: whether it's on, and while it is, its settings.
+			var (useMidi, midiSettings) = MidiSetup.Create(bandMidiExpressions, bandMidiCommands);
 			var midiAt = form.Children.IndexOf(colorsSection);
 			form.Children.Insert(midiAt, Section("MIDI"));
-			form.Children.Insert(midiAt + 1, Scoped(SettingScope.User, new MidiExpressionsSection(expressions, canEdit: true, MidiSettings.SaveExpressions)));
-			form.Children.Insert(midiAt + 2, Scoped(SettingScope.User, new MidiSongCommandsSection(
-				MidiSettings.Commands(bandMidiCommands),
-				expressions,
-				canEdit: true,
-				commands =>
-				{
-					MidiSettings.SaveCommands(commands);
-					return Task.CompletedTask;
-				})));
-
-			// Where MIDI can be sent: which Yamaha keyboards get the member's transpose (at the end of Playback).
-			if (App.Midi != null)
-			{
-				form.Children.Insert(form.Children.IndexOf(colorsSection), Scoped(SettingScope.User, Setting(
-					L.T("Transpose to Yamaha keyboards"),
-					L.T("Sets the keyboard transpose of the chosen keyboards on the MIDI outputs to your transpose or capo for each song (by MIDI System Exclusive). Yours on all your devices."),
-					YamahaTransposeChoice())));
-			}
+			form.Children.Insert(midiAt + 1, Scoped(SettingScope.User, useMidi));
+			// (In a panel of its own: the filter above shows and hides the rows of the form itself.)
+			form.Children.Insert(midiAt + 2, Scoped(SettingScope.User, new Border { Child = midiSettings }));
 
 			// Scrolls when the settings don't fit (a short window or a large interface size).
 			form.Margin = new Thickness(0, 0, 0, 16);
@@ -221,8 +227,8 @@ namespace Lyrious.UILib.Setlists
 		{
 			void OnLayout(object? sender, EventArgs e)
 			{
-				// Hidden (the user's settings aren't shown, see ScopeFilter): nothing to scroll to.
-				if (!capoRow.IsVisible)
+				// Hidden (the user's settings aren't shown, see ScopeFilter, or no transpose button): nothing to scroll to.
+				if (!capoRow.IsEffectivelyVisible)
 				{
 					scroller.LayoutUpdated -= OnLayout;
 					return;
@@ -754,15 +760,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					// The colour's button at the right, as the other settings have their control.
 					Dock(button),
-					new StackPanel
-					{
-						Spacing = 4,
-						Children =
-						{
-							new TextBlock { Text = name, FontSize = 16, TextWrapping = TextWrapping.Wrap },
-							new TextBlock { Text = explanation, Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
-						},
-					},
+					SettingName(name, explanation),
 				},
 			};
 
@@ -783,7 +781,7 @@ namespace Lyrious.UILib.Setlists
 		private static ComboBox InterfaceSizeChoice()
 		{
 			const int least = 30, most = 300;
-			var scale = new ComboBox
+			var scale = new SettingComboBox
 			{
 				IsEditable = true,
 				Width = 110,
@@ -873,7 +871,7 @@ namespace Lyrious.UILib.Setlists
 		/// a drop-down of check boxes, one per model, saved at once; the button says which are chosen.
 		/// A keyboard taken off the list gets its transpose back to 0, so it isn't left transposed.
 		/// </summary>
-		private static Control YamahaTransposeChoice()
+		internal static Control YamahaTransposeChoice()
 		{
 			var button = new DropDownButton { MinWidth = 100 };
 			void ShowChosen()
@@ -912,29 +910,25 @@ namespace Lyrious.UILib.Setlists
 			return button;
 		}
 
-		/// <summary>One setting: its name and an explanation, with its control at the right.</summary>
+		/// <summary>One setting: its name (its explanation the name's tooltip), with its control at the right.</summary>
 		internal static Control Setting(string name, string explanation, Control control)
 		{
 			control.VerticalAlignment = VerticalAlignment.Center;
 			control.Margin = new Thickness(16, 0, 0, 0);
 			DockPanel.SetDock(control, Dock.Right);
-			return new DockPanel
-			{
-				Children =
-				{
-					control,
-					new StackPanel
-					{
-						Spacing = 4,
-						Children =
-						{
-							new TextBlock { Text = name, FontSize = 16, TextWrapping = TextWrapping.Wrap },
-							new TextBlock { Text = explanation, Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
-						},
-					},
-				},
-			};
+			return new DockPanel { Children = { control, SettingName(name, explanation) } };
 		}
+
+		/// <summary>A setting's name, its explanation shown when it's hovered (or held).</summary>
+		internal static TextBlock SettingName(string name, string explanation)
+		{
+			var text = new TextBlock { Text = name, FontSize = 16, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+			ToolTip.SetTip(text, Explained(explanation));
+			return text;
+		}
+
+		/// <summary>An explanation as a tooltip: wrapped, not as wide as the window.</summary>
+		internal static TextBlock Explained(string explanation) => new() { Text = explanation, TextWrapping = TextWrapping.Wrap, MaxWidth = 360 };
 	}
 
 	/// <summary>Display settings, read from and saved to <see cref="App.Settings"/>.</summary>
@@ -960,6 +954,24 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Raised when <see cref="CapoMode"/> is changed here (a change from another device raises <see cref="UserSettings.Changed"/>).</summary>
 		public static event Action? CapoModeChanged;
+
+		/// <summary>
+		/// Whether the lyrics page has the transpose button (see <see cref="SettingKeys.TransposeButton"/>),
+		/// for the member's own transpose or capo of a song. Kept with the user; off unless turned on.
+		/// </summary>
+		public static bool TransposeButton
+		{
+			get => App.Settings.Get(SettingKeys.TransposeButton) == "true";
+			set
+			{
+				App.Settings.Set(SettingKeys.TransposeButton, value ? "true" : null);
+				UserSettings.ChangedHere();
+				TransposeButtonChanged?.Invoke();
+			}
+		}
+
+		/// <summary>Raised when <see cref="TransposeButton"/> is changed here (a change from another device raises <see cref="UserSettings.Changed"/>).</summary>
+		public static event Action? TransposeButtonChanged;
 
 		/// <summary>
 		/// Whether the lyrics page has the chord grid button (see <see cref="SettingKeys.ChordGridButton"/>);

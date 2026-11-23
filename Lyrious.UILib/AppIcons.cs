@@ -21,6 +21,8 @@ namespace Lyrious.UILib
 		public const string Sync = "M20,12 A8,8 0 0 1 6,17.3 M4,12 A8,8 0 0 1 18,6.7 M18,3 V7 H14 M6,21 V17 H10";
 		public const string About = "M12,3 A9,9 0 1 0 12,21 A9,9 0 1 0 12,3 M12,11 V16 M12,8 H12.01";
 		public const string Profile = "M12,12 A4,4 0 1 0 12,4 A4,4 0 1 0 12,12 M4,21 C4,17 7.6,14.5 12,14.5 C16.4,14.5 20,17 20,21";
+		/// <summary>A MIDI (DIN) socket: a circle with a notch at the top and five pins in an arc.</summary>
+		public const string Midi = "M12,3 A9,9 0 1 0 12,21 A9,9 0 1 0 12,3 M10.5,3.2 V5.5 H13.5 V3.2 M7,12 H7.01 M8.5,15.5 H8.51 M12,17 H12.01 M15.5,15.5 H15.51 M17,12 H17.01";
 		public const string Exit = "M10,4 H5 V20 H10 M14,8 L18,12 L14,16 M8,12 H18";
 		// Logging out: an arrow out of a door (Exit's, the other way round).
 		public const string LogOut = "M14,4 H19 V20 H14 M10,8 L6,12 L10,16 M6,12 H16";

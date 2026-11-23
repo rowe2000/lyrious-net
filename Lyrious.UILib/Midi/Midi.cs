@@ -66,10 +66,10 @@ namespace Lyrious.UILib
 		/// <summary>How deep expressions may use other expressions; deeper is taken to be a loop.</summary>
 		public const int MaxDepth = 4;
 
-		/// <summary>Sends the MIDI tags at the start of the lyrics, if there are any and MIDI can be sent here.</summary>
+		/// <summary>Sends the MIDI tags at the start of the lyrics, if there are any and MIDI is on and can be sent here.</summary>
 		public static void SendSongStart(string? lyrics, IReadOnlyList<MidiExpression>? expressions = null)
 		{
-			if (App.Midi is { } output && SongStart(lyrics, expressions) is { Count: > 0 } messages)
+			if (MidiModule.Output is { } output && SongStart(lyrics, expressions) is { Count: > 0 } messages)
 			{
 				output.Send(messages);
 			}
@@ -99,13 +99,13 @@ namespace Lyrious.UILib
 			}
 		}
 
-		/// <summary>Sends <see cref="YamahaTranspose"/> to the chosen keyboards (or <paramref name="models"/>), if MIDI can be sent here.</summary>
+		/// <summary>Sends <see cref="YamahaTranspose"/> to the chosen keyboards (or <paramref name="models"/>), if MIDI is on and can be sent here.</summary>
 		public static void SendYamahaTranspose(int semitones, IReadOnlyList<string>? models = null)
 		{
 			models ??= YamahaTransposeModels;
 			if (models.Count > 0)
 			{
-				App.Midi?.Send(YamahaTranspose(semitones, models));
+				MidiModule.Output?.Send(YamahaTranspose(semitones, models));
 			}
 		}
 

@@ -51,6 +51,7 @@ public class LyriousContext : LocalContext<Member, Role>
 			AddColumnIfMissing(nameof(Groups), nameof(Group.NextSongOnStopAtEnd), sqlite ? "INTEGER NULL" : "bit NULL");
 			CreateSongSettingsIfMissing(sqlite);
 			AddColumnIfMissing(nameof(SongSettings), nameof(SongSetting.TransposeOff), sqlite ? "INTEGER NOT NULL DEFAULT 0" : "bit NOT NULL DEFAULT 0");
+			AddColumnIfMissing(nameof(SongSettings), nameof(SongSetting.MidiSound), sqlite ? "TEXT NOT NULL DEFAULT ''" : $"{NVarChar(SongSetting.MaxMidiSoundLength)} NOT NULL DEFAULT ''");
 			AddColumnIfMissing(nameof(Members), nameof(Member.Settings), sqlite ? "TEXT NULL" : $"{NVarChar(Member.MaxSettingsLength)} NULL");
 			CreateReleaseNotesIfMissing(sqlite);
 		}

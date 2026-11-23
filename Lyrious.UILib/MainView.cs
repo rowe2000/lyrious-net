@@ -54,8 +54,10 @@ namespace Lyrious.UILib
 			relocalizeTimer?.Stop();
 			if (Content is Setlists.HomeView home && loggedIn is { } session)
 			{
+				// From Settings (where the language is chosen): back in Settings, in the new language.
+				var inSettings = home.IsShowingSettings;
 				home.Close();
-				ShowHome(session.User, session.Credential, skipOnboarding: true);
+				ShowHome(session.User, session.Credential, skipOnboarding: true, openSettings: inSettings);
 			}
 			else if (loggedIn == null)
 			{
@@ -253,11 +255,11 @@ namespace Lyrious.UILib
 			Content = view;
 		}
 
-		private void ShowHome(AuthenticatedUser user, SavedCredential credential, bool skipOnboarding = false)
+		private void ShowHome(AuthenticatedUser user, SavedCredential credential, bool skipOnboarding = false, bool openSettings = false)
 		{
 			loggedIn = (user, credential);
 			var store = App.CredentialStore;
-			var home = new HomeView(user, App.SetlistService, offerForgetSavedPassword: store.CanForget && IsSavedFor(credential.UserName), skipOnboarding);
+			var home = new HomeView(user, App.SetlistService, offerForgetSavedPassword: store.CanForget && IsSavedFor(credential.UserName), skipOnboarding, openSettings);
 			// Keep a saved password working: replace it with the new one.
 			home.PasswordChanged += newPassword =>
 			{
