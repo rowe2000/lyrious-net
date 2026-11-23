@@ -905,7 +905,8 @@ namespace Lyrious.UILib.Setlists
 		/// member's own transpose, with its value beside it, see <see cref="SongInfoLine"/>). When the room
 		/// is too narrow for all of them, the tags wrap onto more lines.
 		/// </summary>
-		public static StackPanel SongCard(SongDetails song, double nameSize, double detailsSize, double tagSize)
+		/// <param name="tagsOnOneLine">The tags on one line, those that don't fit cut off (e.g. in the play toolbar, which keeps its height); else they wrap.</param>
+		public static StackPanel SongCard(SongDetails song, double nameSize, double detailsSize, double tagSize, bool tagsOnOneLine = false)
 		{
 			// The name and the line under it close together (the second line keeps its own room small too).
 			var card = new StackPanel { Spacing = 0 };
@@ -916,7 +917,18 @@ namespace Lyrious.UILib.Setlists
 			{
 				var details = new SongInfoLine(song, fontSize: detailsSize);
 				DockPanel.SetDock(details, Dock.Right);
-				var chips = TagChips(tags, tagSize);
+				var wrapping = TagChips(tags, tagSize);
+				Control chips = wrapping;
+				if (tagsOnOneLine)
+				{
+					// In a row that doesn't wrap, clipped where the room ends.
+					var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = wrapping.ItemSpacing };
+					var each = System.Linq.Enumerable.ToList(wrapping.Children);
+					wrapping.Children.Clear();
+					row.Children.AddRange(each);
+					chips = new Border { ClipToBounds = true, Child = row };
+				}
+
 				chips.Margin = new Thickness(0, 0, hasDetails && tags.Count > 0 ? 8 : 0, 0);
 				chips.VerticalAlignment = VerticalAlignment.Center;
 				chips.HorizontalAlignment = HorizontalAlignment.Left;

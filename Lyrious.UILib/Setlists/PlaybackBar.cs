@@ -35,8 +35,14 @@ namespace Lyrious.UILib.Setlists
 		// Where the next song would be, after the last song of a setlist.
 		private readonly TextBlock noMoreSongs = new() { Text = L.T("No more songs"), FontSize = 14, Opacity = 0.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0), IsVisible = false };
 		// The next song as the right drawer shows it (see PageLayout.SongCard), smaller.
-		private readonly ContentControl nextCard = new() { VerticalAlignment = VerticalAlignment.Center };
+		// With the button's room above and below inside it, so the NEXT label beside it fills the button's height.
+		private readonly ContentControl nextCard = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4) };
 		private readonly Button next;
+		// The next button's width, the same for every song (a long name is cut short with "…").
+		private const double NextWidth = 232;
+		// Whether there's a next song to show, and whether the button fits beside the tools at the right.
+		private bool hasNext;
+		private bool nextFits = true;
 		private readonly LongClickToggleButton bandSync = new()
 		{
 			Content = new Path
@@ -124,8 +130,9 @@ namespace Lyrious.UILib.Setlists
 			{
 				// "NEXT" standing up at the left in the highlight colour, then the next song as in the right
 				// drawer (see SetNextSong), smaller.
-				Content = new DockPanel { Children = { NextLabel(nextCard), nextCard } },
+				Content = NextContent(),
 				MinHeight = 40,
+				Width = NextWidth,
 				// No room at the left: the NEXT label starts at the edge.
 				Padding = new Thickness(0, 0, 8, 0),
 				HorizontalAlignment = HorizontalAlignment.Left,
@@ -184,7 +191,14 @@ namespace Lyrious.UILib.Setlists
 				UserSettings.Changed -= ShowMidi;
 			};
 			restart.Margin = new Thickness(4, 0);
-			var row = new DockPanel { Children = { playPause, restart, bandSync, midi, new Panel { Children = { next, noMoreSongs } } } };
+			// The next button only where it fits whole (else it's left out: the tools come first).
+			var nextSlot = new Panel { Children = { next, noMoreSongs } };
+			nextSlot.SizeChanged += (_, e) =>
+			{
+				nextFits = e.NewSize.Width >= NextWidth;
+				ShowNext();
+			};
+			var row = new DockPanel { Children = { playPause, restart, bandSync, midi, nextSlot } };
 
 			// The media file's progress above the buttons, while one plays: slower and faster at the left,
 			// lower and higher at the right, the time played and the length beside the bar.
@@ -537,10 +551,16 @@ namespace Lyrious.UILib.Setlists
 			Avalonia.Automation.AutomationProperties.SetName(playPause, description);
 		}
 
+		/// <summary>The next button's content: the NEXT label, the button's whole height, and the next song beside it.</summary>
+		private Control NextContent()
+		{
+			return new DockPanel { Children = { NextLabel(nextCard), nextCard } };
+		}
+
 		/// <summary>
 		/// "NEXT", read from the bottom up, bold in the details colour (the text colour, dimmed) on the
-		/// highlight colour: what the button is. As tall as the song beside it (both its lines), the
-		/// text scaled to fill that height.
+		/// highlight colour: what the button is. The button's whole height: the song's two lines with the
+		/// room above and below them (<paramref name="song"/>'s margin), the text scaled to fill it.
 		/// </summary>
 		private static Control NextLabel(Control song)
 		{
@@ -564,17 +584,20 @@ namespace Lyrious.UILib.Setlists
 				Margin = new Thickness(0, 0, 6, 0),
 			};
 			label.Bind(Border.BackgroundProperty, label.GetResourceObservable("AccentButtonBackground"));
-			// The song's height (it's laid out first, as the panel's last child fills the rest).
+			// From the song (not the button, which grows with the label): a set height, so the text is scaled up to it.
 			song.SizeChanged += (_, e) =>
 			{
 				if (e.HeightChanged && e.NewSize.Height > 0)
 				{
-					label.Height = e.NewSize.Height;
+					label.Height = e.NewSize.Height + song.Margin.Top + song.Margin.Bottom;
 				}
 			};
 			DockPanel.SetDock(label, Dock.Left);
 			return label;
 		}
+
+		/// <summary>The next button shows when there's a next song and it fits whole.</summary>
+		private void ShowNext() => next.IsVisible = hasNext && nextFits;
 
 		/// <summary>Greys out the next song while playing: the song can't be changed then.</summary>
 		public void SetNextAllowed(bool allowed)
@@ -592,9 +615,10 @@ namespace Lyrious.UILib.Setlists
 		public void SetNextSong(SongDetails? nextSong, bool lastInSetlist = false)
 		{
 			var nextSongName = nextSong?.Name;
-			next.IsVisible = nextSong != null;
+			hasNext = nextSong != null;
+			ShowNext();
 			noMoreSongs.IsVisible = nextSong == null && lastInSetlist;
-			nextCard.Content = nextSong == null ? null : PageLayout.SongCard(nextSong, 14, 11, 9);
+			nextCard.Content = nextSong == null ? null : PageLayout.SongCard(nextSong, 14, 11, 9, tagsOnOneLine: true);
 			// No tooltip (the button shows it all); its name for screen readers.
 			var description = nextSongName == null ? L.T("Next song") : L.T("Next song: {0}", nextSongName);
 			Avalonia.Automation.AutomationProperties.SetName(next, description);
