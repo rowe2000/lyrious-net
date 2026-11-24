@@ -20,11 +20,11 @@
 </head>
 
 <body style="margin: 0; overflow: hidden">
-<!-- The login as a real form, out of sight, for the browser's own password manager (main.js,
-     lyriousCredentials): it fills it in, and offers to save the login when it's submitted after
-     logging in. It's submitted into the empty frame below, so nothing is sent anywhere. -->
-<form id="lyrious-login" method="post" action="about:blank" target="lyrious-login-frame" autocomplete="on" aria-hidden="true"
-      style="position: fixed; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none">
+<!-- The login as a real form, for the browser's own password manager (main.js, lyriousLogin and
+     lyriousCredentials): out of sight, except on the login page, where its fields lie over the ones
+     the app draws. The member types into them, so the browser offers to save the login when they
+     log in, and fills it in. It's submitted into the empty frame below, so nothing is sent anywhere. -->
+<form id="lyrious-login" method="post" action="about:blank" target="lyrious-login-frame" autocomplete="on" aria-hidden="true">
     <input type="text" name="username" autocomplete="username" tabindex="-1">
     <input type="password" name="password" autocomplete="current-password" tabindex="-1">
     <button type="submit" tabindex="-1">Log in</button>

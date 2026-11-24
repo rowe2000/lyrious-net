@@ -9,7 +9,7 @@
 #   branding/lyrious-icon-square.svg     the singer on a full white square, with room around it, for
 #                                        systems that round or cut the corners themselves
 #   installers/icons/Lyrious.icns, .ico  macOS and Windows (the installers and the program)
-#   Lyrious.Webapp/wwwroot/favicon.ico   the singer alone (transparent), 16 to 256 px
+#   Lyrious.Webapp/wwwroot/favicon.ico   the app icon (lyrious-icon.svg), 16 to 256 px
 #   Lyrious.Webapp/wwwroot/icons/        icon-192/512 (installed web app), icon-maskable-512,
 #                                        apple-touch-icon (iPhone home screen), singer.svg (the page's splash)
 #   Lyrious.Website/wwwroot/             the product site's favicon.ico (the web app's) and site/singer.svg
@@ -79,8 +79,6 @@ icon_svg 1024 0 224 "#6918B4" 0.78 "#FFFFFF" > "$brand/lyrious-icon.svg"
 icon_svg 1024 0 0 "#ffffff" 0.64 > "$brand/lyrious-icon-square.svg"
 # macOS: the plate inside Apple's margins (824 of 1024), as other apps' icons are.
 icon_svg 1024 100 185 "#ffffff" 0.78 > "$work/macos.svg"
-# The favicon: the singer alone, as big as it fits.
-icon_svg 1024 0 0 none 0.96 > "$work/favicon.svg"
 
 # macOS
 mkdir -p "$work/Lyrious.iconset"
@@ -107,7 +105,8 @@ open(out, "wb").write(struct.pack("<HHH", 0, 1, len(sizes)) + entries + data)
 PY
 }
 ico "$brand/lyrious-icon.svg" "$root/installers/icons/Lyrious.ico" 16 24 32 48 64 128 256
-ico "$work/favicon.svg" "$root/Lyrious.Webapp/wwwroot/favicon.ico" 16 24 32 48 64 128 256
+# The favicon: the app icon too (the browser tab and bookmarks show it as the app).
+ico "$brand/lyrious-icon.svg" "$root/Lyrious.Webapp/wwwroot/favicon.ico" 16 24 32 48 64 128 256
 
 # The web app
 icons="$root/Lyrious.Webapp/wwwroot/icons"

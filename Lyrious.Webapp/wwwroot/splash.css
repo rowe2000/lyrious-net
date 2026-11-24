@@ -89,3 +89,74 @@ html, body {
 .avalonia-input-element {
     font-size: 16px;
 }
+
+/*
+ * The real login form (index.html, main.js lyriousLogin): out of sight (yet there for the browser to
+ * fill in), except on the login page (.shown), where each of its fields lies over the field the app
+ * draws (placed by BrowserLoginForm.cs). They're see-through, so the app's frames show: only the
+ * text, the caret and the focus outline are the web fields' own. Log in is see-through altogether
+ * (the app's button shows) but takes the tap.
+ */
+#lyrious-login {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+#lyrious-login.shown {
+    width: 0;
+    height: 0;
+    overflow: visible;
+    opacity: 1;
+    z-index: 10;
+}
+
+#lyrious-login.shown input,
+#lyrious-login.shown button {
+    position: fixed;
+    box-sizing: border-box;
+    margin: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    pointer-events: auto;
+}
+
+#lyrious-login.shown input {
+    color: var(--lyrious-foreground);
+    caret-color: var(--lyrious-foreground);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+#lyrious-login.shown input::placeholder {
+    color: var(--lyrious-placeholder);
+    opacity: 1;
+}
+
+#lyrious-login.shown input:focus {
+    box-shadow: inset 0 0 0 2px var(--lyrious-accent);
+}
+
+/* The browser's own autofill colours would cover the app's frame. */
+#lyrious-login.shown input:-webkit-autofill {
+    -webkit-text-fill-color: var(--lyrious-foreground);
+    transition: background-color 100000s;
+}
+
+#lyrious-login.shown button {
+    color: transparent;
+    cursor: pointer;
+}
+
+/* iPhone and iPad zoom into a field whose text is smaller than 16 px when it's tapped, which would
+   move the page under the fields. */
+@supports (-webkit-touch-callout: none) {
+    #lyrious-login.shown input {
+        font-size: max(16px, 1em) !important;
+    }
+}

@@ -43,6 +43,8 @@ internal sealed partial class Program
         // The other tabs on this address share the offline cache: they keep each other up to date.
         App.SetlistService = new HttpSetlistService(auth, offline, new BrowserInstanceLink());
         App.CredentialStore = new BrowserCredentialStore();
+        // The login page's fields as a real login form, for the browser's password manager.
+        App.LoginForm = new BrowserLoginForm();
         App.SoundStore = new BrowserSoundStore();
         // The MIDI tags in songs go to every MIDI output the browser offers.
         App.Midi = new BrowserMidiOutput();

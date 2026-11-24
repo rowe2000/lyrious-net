@@ -7,10 +7,12 @@ using Lyrious.UILib.Login;
 namespace Lyrious.Webapp;
 
 /// <summary>
-/// Leaves the login (username and password) to the browser's own password manager, in every browser
-/// (functions in wwwroot/main.js): Chromium's through the Credential Management API, the others
-/// through a hidden login form in index.html that they fill in and offer to save. The browser asks
-/// the user itself before saving, and only the browser's settings can remove a saved password.
+/// Leaves the login (username and password) to the browser's own password manager, in every browser:
+/// the login page's fields are a real login form (see BrowserLoginForm), so the browser offers to
+/// save the login when the member logs in, and fills it in. Here it's only read, to log in by itself
+/// at start (functions in wwwroot/main.js): from Chromium's password manager (the Credential
+/// Management API), else from what the browser filled into the form. The browser asks the user
+/// itself before saving, and only the browser's settings can remove a saved password.
 /// </summary>
 [SupportedOSPlatform("browser")]
 internal sealed partial class BrowserCredentialStore : ICredentialStore
@@ -39,16 +41,13 @@ internal sealed partial class BrowserCredentialStore : ICredentialStore
         return string.IsNullOrEmpty(id) || password == null ? null : new SavedCredential(id, password);
     }
 
-    public Task SaveAsync(SavedCredential credential)
-        => IsSupported ? Store(credential.UserName, credential.Password) : Task.CompletedTask;
+    /// <summary>Nothing to do: the browser offers to save the login itself, when it's submitted in the login form.</summary>
+    public Task SaveAsync(SavedCredential credential) => Task.CompletedTask;
 
     public Task ForgetAsync() => Task.CompletedTask;
 
     [JSImport("globalThis.lyriousCredentials.isSupported")]
     private static partial bool IsAvailable();
-
-    [JSImport("globalThis.lyriousCredentials.store")]
-    private static partial Task Store(string userName, string password);
 
     /// <summary>The saved login as JSON (<c>{"id","password"}</c>), or null.</summary>
     [JSImport("globalThis.lyriousCredentials.load")]

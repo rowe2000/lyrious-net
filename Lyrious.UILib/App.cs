@@ -28,6 +28,12 @@ namespace Lyrious.UILib
 		public static ICredentialStore CredentialStore { get; set; } = new NoCredentialStore();
 
 		/// <summary>
+		/// The platform's own login form over the login page's fields (the web app's real web fields, for
+		/// the browser's password manager); none by default (the page's own fields).
+		/// </summary>
+		public static ILoginForm? LoginForm { get; set; }
+
+		/// <summary>
 		/// Settings kept on this device (e.g. the API host). Hosts set this before starting the app;
 		/// by default settings last only while the app runs.
 		/// </summary>

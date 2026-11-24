@@ -126,6 +126,9 @@ namespace Lyrious.UILib.Login
 			return link;
 		}
 
+		/// <summary>The form's main button (Log in, Create account, …).</summary>
+		protected Button SubmitButton => submitButton;
+
 		/// <summary>Changes what the submit button says (e.g. for the form's next step).</summary>
 		protected void SetSubmitText(string text) => submitButton.Content = text;
 

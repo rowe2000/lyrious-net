@@ -3,40 +3,19 @@ import { dotnet } from './_framework/dotnet.js'
 const is_browser = typeof window != "undefined";
 if (!is_browser) throw new Error(`Expected to be running in a browser`);
 
-// The browser's password manager (Credential Management API), used by BrowserCredentialStore.cs.
-// Only Chromium browsers have PasswordCredential; elsewhere nothing is offered.
-// The login is kept by the browser's own password manager, in every browser, through the hidden
-// login form in index.html (BrowserCredentialStore.cs): the app draws its own fields, which the
-// browser can't see.
+// The login is kept by the browser's own password manager, in every browser, through the real login
+// form in index.html: on the login page its fields lie over the ones the app draws (lyriousLogin,
+// BrowserLoginForm.cs), so the member types into them, and the browser offers to save the login
+// when they press Log in, and fills it in from then on. (A browser only does that for a password
+// typed into a real form and submitted by the user; Safari, on iPhone too, has no other way.)
 globalThis.lyriousCredentials = (() => {
     const form = () => document.getElementById("lyrious-login");
 
     return {
         isSupported: () => !!form(),
-        // After logging in, the browser offers to save the login with its own prompt: Chromium's
-        // through the Credential Management API; other browsers (Firefox, Safari) when the login goes
-        // into the form and it's submitted (into an empty frame: nothing is sent), as for any login
-        // form. The form is emptied and out of the page for a moment after, so it counts as done.
-        store: async (id, password) => {
-            if (typeof globalThis.PasswordCredential === "function" && navigator.credentials) {
-                try {
-                    await navigator.credentials.store(new PasswordCredential({ id, password, name: id }));
-                    return;
-                } catch { /* not allowed here: the form, below */ }
-            }
-
-            const login = form();
-            if (!login) return;
-            login.elements.username.value = id;
-            login.elements.password.value = password;
-            if (typeof login.requestSubmit === "function") login.requestSubmit(); else login.submit();
-            await new Promise(resolve => setTimeout(resolve, 150));
-            login.elements.password.value = "";
-            login.style.display = "none";
-            setTimeout(() => { login.style.display = ""; }, 1000);
-        },
-        // The saved login: Chromium's password manager through the Credential Management API (no
-        // account chooser unless it needs one); else what the browser filled into the form.
+        // The saved login, for logging in by itself at start: Chromium's password manager through
+        // the Credential Management API (no account chooser unless it needs one); else what the
+        // browser filled into the form (Firefox does at load).
         load: async () => {
             if (typeof globalThis.PasswordCredential === "function" && navigator.credentials) {
                 try {
@@ -50,6 +29,99 @@ globalThis.lyriousCredentials = (() => {
             const login = form();
             const id = login?.elements.username.value, password = login?.elements.password.value;
             return id && password ? JSON.stringify({ id, password }) : null;
+        },
+    };
+})();
+
+// The login page's fields as the real login form (BrowserLoginForm.cs): its username, password and
+// Log in, each laid over the field the app draws (place), in the theme's colours. What's typed (or
+// filled in by the browser) is reported as it changes; Log in (or Enter) submits the form into the
+// empty frame next to it, so nothing is sent anywhere, but the browser sees a login and offers to
+// save it. The app logs in from what was reported.
+globalThis.lyriousLogin = (() => {
+    const form = () => document.getElementById("lyrious-login");
+    let onInput = null, onSubmit = null, listening = false;
+
+    function report() {
+        const login = form();
+        if (login && onInput) onInput(login.elements.username.value, login.elements.password.value);
+    }
+
+    function listen(login) {
+        if (listening) return;
+        listening = true;
+        login.addEventListener("input", report);
+        // A login the browser fills in may come as a change only.
+        login.addEventListener("change", report);
+        // Not prevented: the submission (into the empty frame) is what the browser offers to save.
+        login.addEventListener("submit", () => {
+            report();
+            onSubmit?.();
+        });
+    }
+
+    return {
+        show: (userPlaceholder, passwordPlaceholder, submitText, foreground, placeholder, accent, userName, password, inputCallback, submitCallback) => {
+            const login = form();
+            if (!login) return;
+            listen(login);
+            onInput = inputCallback;
+            onSubmit = submitCallback;
+            login.elements.username.placeholder = userPlaceholder;
+            login.elements.password.placeholder = passwordPlaceholder;
+            login.elements.username.value = userName;
+            login.elements.password.value = password;
+            const button = login.querySelector("button");
+            button.textContent = submitText;
+            login.style.setProperty("--lyrious-foreground", foreground);
+            login.style.setProperty("--lyrious-placeholder", placeholder);
+            login.style.setProperty("--lyrious-accent", accent);
+            for (const element of [login.elements.username, login.elements.password, button]) element.style.display = "none";
+            login.classList.add("shown");
+            login.removeAttribute("aria-hidden");
+            // With a mouse, ready to type (a touch screen shows its keyboard only on a tap).
+            if (matchMedia("(pointer: fine)").matches) {
+                setTimeout(() => (userName ? login.elements.password : login.elements.username).focus({ preventScroll: true }), 50);
+            }
+            // What the browser filled in already (e.g. Firefox at load).
+            report();
+        },
+        // A field ("username", "password" or "button") over the app's, in page pixels; none when its width is 0.
+        place: (field, x, y, width, height, fontSize, padding, radius) => {
+            const login = form();
+            if (!login) return;
+            const element = field === "button" ? login.querySelector("button") : login.elements[field];
+            if (!(width > 0 && height > 0)) {
+                element.style.display = "none";
+                return;
+            }
+            element.style.display = "";
+            element.style.left = x + "px";
+            element.style.top = y + "px";
+            element.style.width = width + "px";
+            element.style.height = height + "px";
+            element.style.borderRadius = radius + "px";
+            if (field !== "button") {
+                element.style.fontSize = fontSize + "px";
+                element.style.paddingLeft = padding + "px";
+                element.style.paddingRight = padding + "px";
+            }
+        },
+        setValues: (userName, password) => {
+            const login = form();
+            if (!login) return;
+            login.elements.username.value = userName;
+            login.elements.password.value = password;
+        },
+        hide: () => {
+            const login = form();
+            onInput = onSubmit = null;
+            if (!login) return;
+            login.classList.remove("shown");
+            login.setAttribute("aria-hidden", "true");
+            login.elements.password.value = "";
+            login.elements.username.blur();
+            login.elements.password.blur();
         },
     };
 })();
