@@ -11,9 +11,9 @@ namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
 	/// The band's members as small circles with their initials (the name and status as the tip), coloured
-	/// by status: green while connected, in the text colour when joined to the band but not connected,
-	/// else gray. Those connected first, then those joined, then the rest; more than fit end with "+N",
-	/// which names the rest.
+	/// by status: green while connected with this band joined, yellow while connected with another band
+	/// joined, in the text colour when this band is joined but they're not connected, else gray. In that
+	/// order; more than fit end with "+N", which names the rest.
 	/// </summary>
 	public sealed class MemberBadges : StackPanel
 	{
@@ -51,8 +51,9 @@ namespace Lyrious.UILib.Setlists
 			Avalonia.Automation.AutomationProperties.SetName(this, string.Join(", ", ordered.Select(Tip)));
 		}
 
-		// 0: connected (green); 1: joined to the band, not connected (text colour); 2: the rest (gray).
-		private static int Rank(GroupMember member) => member.Connected ? 0 : member.Joined ? 1 : 2;
+		// 0: connected, this band joined (green); 1: connected, another band joined (yellow); 2: this band
+		// joined, not connected (text colour); 3: the rest (gray).
+		private static int Rank(GroupMember member) => member.Connected ? member.Joined ? 0 : 1 : member.Joined ? 2 : 3;
 
 		private static string Tip(GroupMember member) => member.Connected
 			? member.Joined ? L.T("{0}: playing with the band now", member.Name) : L.T("{0}: online, not with the band right now", member.Name)
@@ -66,13 +67,14 @@ namespace Lyrious.UILib.Setlists
 				Width = 28,
 				Height = 28,
 				CornerRadius = new CornerRadius(14),
-				BorderThickness = new Thickness(rank == 2 ? 1 : 2),
+				BorderThickness = new Thickness(rank == 3 ? 1 : 2),
 				VerticalAlignment = VerticalAlignment.Center,
-				Opacity = rank == 2 ? 0.45 : 1,
+				Opacity = rank == 3 ? 0.45 : 1,
 				Child = label,
 			};
-			// Gray is the text colour dimmed (above), so it works in both themes.
-			var brush = rank == 0 ? LyriousTheme.SuccessBrush : LyriousTheme.ForegroundBrush;
+			// Yellow is the theme's warning colour (darker in the light theme, so it reads on white); gray
+			// is the text colour dimmed (above), so it works in both themes.
+			var brush = rank switch { 0 => LyriousTheme.SuccessBrush, 1 => LyriousTheme.WarningBrush, _ => LyriousTheme.ForegroundBrush };
 			badge.Bind(Border.BorderBrushProperty, badge.GetResourceObservable(brush));
 			label.Bind(TextBlock.ForegroundProperty, label.GetResourceObservable(brush));
 			ToolTip.SetTip(badge, tip);

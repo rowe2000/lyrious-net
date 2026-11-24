@@ -1079,7 +1079,7 @@ namespace Lyrious.UILib.Setlists
 				scrollPosition = null;
 				timedPoints = null;
 				// Timed: pick up the song's timeline where the lyrics are now (0:00 at the top).
-				playbackStart = IsTimed && scroller.Offset.Y > StartOffset + 1 && Timeline() is { } points
+				playbackStart = IsTimed && scroller!.Offset.Y > StartOffset + 1 && Timeline() is { } points
 					? TimeAt(points, CenterAt(scroller.Offset.Y))
 					: 0;
 				scrollClock.Restart();

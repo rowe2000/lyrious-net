@@ -63,7 +63,12 @@ namespace Lyrious.UILib
 			}
 
 			// The text drawn so that its letters' box is in the middle of the room.
-			text.SetForegroundBrush(TextElement.GetForeground(this));
+			// In the inherited text colour (when there's one; else the text's own).
+			if (TextElement.GetForeground(this) is { } foreground)
+			{
+				text.SetForegroundBrush(foreground);
+			}
+
 			var origin = new Point((Bounds.Width - ink.Width) / 2 - ink.X, (Bounds.Height - ink.Height) / 2 - ink.Y);
 			context.DrawText(text, origin);
 		}
