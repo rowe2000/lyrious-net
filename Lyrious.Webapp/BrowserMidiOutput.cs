@@ -4,7 +4,7 @@ using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 using Lyrious.UILib;
 
-namespace Lyrious.Web;
+namespace Lyrious.Webapp;
 
 /// <summary>
 /// Sends MIDI on every MIDI output the browser offers, through the Web MIDI API (<c>lyriousMidi</c>

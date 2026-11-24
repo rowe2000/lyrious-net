@@ -2,7 +2,7 @@ using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 using Lyrious.UILib;
 
-namespace Lyrious.Web;
+namespace Lyrious.Webapp;
 
 /// <summary>
 /// Settings in the browser's IndexedDB (functions in wwwroot/main.js), so they last between visits.

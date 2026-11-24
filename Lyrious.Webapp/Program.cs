@@ -7,7 +7,7 @@ using Avalonia.Browser;
 using Lyrious.Client;
 using Lyrious.UILib;
 
-namespace Lyrious.Web;
+namespace Lyrious.Webapp;
 
 /// <summary>
 /// Hosts the Lyrious.UILib app in the browser (WebAssembly). All UI lives in Lyrious.UILib;

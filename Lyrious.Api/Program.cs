@@ -43,8 +43,9 @@ internal class Program
 				options.ListenLocalhost(5180);
 			}
 		});
-		// The web app's files come from the Lyrious.Web project while running from a build
-		// (Development does this by itself; a publish copies them into wwwroot instead).
+		// The web app's and the website's files come from the Lyrious.Webapp and Lyrious.Website
+		// projects while running from a build (Development does this by itself; a publish copies
+		// them into wwwroot instead).
 		builder.WebHost.UseStaticWebAssets();
 
 		// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -150,7 +151,7 @@ internal class Program
 		builder.Services.AddAuthorization();
 
 		// The web app served here (see below) is on the API's own origin and needs no CORS. Browser
-		// clients served from elsewhere (e.g. Lyrious.Web's own dev server) do: the browser needs CORS
+		// clients served from elsewhere (e.g. Lyrious.Webapp's own dev server) do: the browser needs CORS
 		// permission to call the API. Only the configured origins are allowed. Credentials are
 		// allowed because SignalR's browser client sends them when connecting to the hub.
 		var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
@@ -198,7 +199,7 @@ internal class Program
 		app.MapControllers();
 		app.MapHub<LyriousHub>(LyriousHub.Path);
 
-		// The product site (this project's wwwroot) at the root, and the web app (Lyrious.Web,
+		// The product site (Lyrious.Website) at the root, and the web app (Lyrious.Webapp,
 		// WebAssembly) on the same address as the API, under /app/: its files, and its page at /app/,
 		// where the site's "Log in" leads. /app without the slash (which the page's relative paths
 		// need) forwards there, keeping the query (e.g. ?api=...). Only those pages: an unknown api/

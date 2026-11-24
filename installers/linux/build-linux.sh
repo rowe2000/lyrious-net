@@ -66,7 +66,7 @@ for arch in "${archs[@]}"; do
   folder="$work/$arch/Lyrious-$version"
   mkdir -p "$folder"
   cp -R "$publish/." "$folder/"
-  cp "$root/Lyrious.Web/wwwroot/icons/icon-512.png" "$folder/lyrious.png"
+  cp "$root/Lyrious.Webapp/wwwroot/icons/icon-512.png" "$folder/lyrious.png"
   printf '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/Lyrious.Desktop" "$@"\n' > "$folder/lyrious"
   chmod +x "$folder/lyrious"
   desktop_entry "lyrious" > "$folder/$entry_name"
@@ -82,7 +82,7 @@ for arch in "${archs[@]}"; do
     cp -R "$publish/." "$pkg/opt/lyrious/"
     ln -s /opt/lyrious/Lyrious.Desktop "$pkg/usr/bin/lyrious"
     desktop_entry "/opt/lyrious/Lyrious.Desktop" > "$pkg/usr/share/applications/$entry_name"
-    cp "$root/Lyrious.Web/wwwroot/icons/icon-512.png" "$pkg/usr/share/icons/hicolor/512x512/apps/lyrious.png"
+    cp "$root/Lyrious.Webapp/wwwroot/icons/icon-512.png" "$pkg/usr/share/icons/hicolor/512x512/apps/lyrious.png"
     cat > "$pkg/DEBIAN/control" <<CONTROL
 Package: lyrious
 Version: $version
@@ -111,7 +111,7 @@ CONTROL
     printf '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/usr/bin/Lyrious.Desktop" "$@"\n' > "$appdir/AppRun"
     chmod +x "$appdir/AppRun"
     desktop_entry "Lyrious.Desktop" > "$appdir/$entry_name"
-    cp "$root/Lyrious.Web/wwwroot/icons/icon-512.png" "$appdir/lyrious.png"
+    cp "$root/Lyrious.Webapp/wwwroot/icons/icon-512.png" "$appdir/lyrious.png"
     image="$out/Lyrious-$version-linux-x86_64.AppImage"
     ARCH=x86_64 "$appimagetool" "$appdir" "$image" >/dev/null
     echo "   $image"

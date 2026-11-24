@@ -9,8 +9,8 @@
 #   branding/lyrious-icon-square.svg     the singer on a full white square, with room around it, for
 #                                        systems that round or cut the corners themselves
 #   installers/icons/Lyrious.icns, .ico  macOS and Windows (the installers and the program)
-#   Lyrious.Web/wwwroot/favicon.ico      the singer alone (transparent), 16 to 256 px
-#   Lyrious.Web/wwwroot/icons/           icon-192/512 (installed web app), icon-maskable-512,
+#   Lyrious.Webapp/wwwroot/favicon.ico   the singer alone (transparent), 16 to 256 px
+#   Lyrious.Webapp/wwwroot/icons/        icon-192/512 (installed web app), icon-maskable-512,
 #                                        apple-touch-icon (iPhone home screen), singer.svg (the page's splash)
 #   Lyrious.Api/wwwroot/                 the product site's favicon.ico (the web app's) and site/singer.svg
 #   Lyrious.UILib/AppLogo.cs             the singer drawn in the app (its path)
@@ -103,10 +103,10 @@ open(out, "wb").write(struct.pack("<HHH", 0, 1, len(sizes)) + entries + data)
 PY
 }
 ico "$brand/lyrious-icon.svg" "$root/installers/icons/Lyrious.ico" 16 24 32 48 64 128 256
-ico "$work/favicon.svg" "$root/Lyrious.Web/wwwroot/favicon.ico" 16 24 32 48 64 128 256
+ico "$work/favicon.svg" "$root/Lyrious.Webapp/wwwroot/favicon.ico" 16 24 32 48 64 128 256
 
 # The web app
-icons="$root/Lyrious.Web/wwwroot/icons"
+icons="$root/Lyrious.Webapp/wwwroot/icons"
 png "$brand/lyrious-icon.svg" 192 "$icons/icon-192.png"
 png "$brand/lyrious-icon.svg" 512 "$icons/icon-512.png"
 png "$brand/lyrious-icon-square.svg" 512 "$icons/icon-maskable-512.png"
@@ -114,7 +114,7 @@ png "$brand/lyrious-icon-square.svg" 180 "$icons/apple-touch-icon.png"
 cp "$logo" "$icons/singer.svg"
 
 # The product site (Lyrious.Api serves it at the root): the same favicon and singer.
-cp "$root/Lyrious.Web/wwwroot/favicon.ico" "$root/Lyrious.Api/wwwroot/favicon.ico"
+cp "$root/Lyrious.Webapp/wwwroot/favicon.ico" "$root/Lyrious.Website/wwwroot/favicon.ico"
 cp "$logo" "$root/Lyrious.Api/wwwroot/site/singer.svg"
 
 # The app's own singer (AppLogo.cs): the path's data.

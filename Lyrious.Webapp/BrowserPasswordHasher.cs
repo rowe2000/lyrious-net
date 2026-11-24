@@ -4,7 +4,7 @@ using System.Runtime.Versioning;
 using System.Threading.Tasks;
 using Lyrious.Client;
 
-namespace Lyrious.Web;
+namespace Lyrious.Webapp;
 
 /// <summary>
 /// PBKDF2 through the browser's Web Crypto (<c>crypto.subtle</c>, function in wwwroot/main.js): native

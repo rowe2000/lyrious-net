@@ -1,4 +1,5 @@
-# Lyrious on one address: Lyrious.Api, which also serves the web app (Lyrious.Web, WebAssembly).
+# Lyrious on one address: Lyrious.Api, which also serves the web app (Lyrious.Webapp, WebAssembly)
+# and the product website (Lyrious.Website).
 # Used by Railway, which builds this file from the repository root and sets PORT at run time.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src

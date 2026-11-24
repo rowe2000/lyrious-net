@@ -8,7 +8,7 @@ using System.Runtime.Versioning;
 using System.Threading.Tasks;
 using Lyrious.UILib;
 
-namespace Lyrious.Web;
+namespace Lyrious.Webapp;
 
 /// <summary>
 /// Sound files for songs' media links in the browser's own storage (IndexedDB, functions in

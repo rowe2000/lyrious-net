@@ -1,6 +1,6 @@
 {
     "profiles": {
-    "Lyrious.Web": {
+    "Lyrious.Webapp": {
         "commandName": "Project",
         "launchBrowser": true,
         "environmentVariables": {

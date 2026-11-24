@@ -3,7 +3,7 @@ using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 using Lyrious.UILib;
 
-namespace Lyrious.Web;
+namespace Lyrious.Webapp;
 
 /// <summary>
 /// Shows the app full screen in the browser (the Fullscreen API, through <c>lyriousFullScreen</c> in

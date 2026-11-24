@@ -12,18 +12,20 @@ Requirements:
 ## Projects
 
 - `Lyrious.UILib`: the whole UI (Avalonia, shared by every platform). Pages in `Setlists/`.
-- `Lyrious.Desktop`, `Lyrious.Web` (WebAssembly), `Lyrious.Android`, `Lyrious.iOS`: thin platform
+- `Lyrious.Desktop`, `Lyrious.Webapp` (WebAssembly), `Lyrious.Android`, `Lyrious.iOS`: thin platform
   hosts; they only plug in platform services (settings store, sound, MIDI, credentials).
 - `Lyrious.Client`: the app's API client, offline cache and sync (`HttpSetlistService`,
   `HttpAuthService`, `Offline/`).
 - `Lyrious.CoreLib`: models, `LyriousContext` (EF Core, SQLite), `LyriousRepository`, API models.
+- `Lyrious.Webapp`: the web app's host (WebAssembly), served under `/app/`.
+- `Lyrious.Website`: the product site (`wwwroot/index.html`, `wwwroot/site/`), served at the root.
 - `Lyrious.Api`: the server (ASP.NET Core, controllers, SignalR hub `LyriousHub`). It also serves
-  the web app under `/app/` and the product site (`wwwroot/index.html`) at the root.
+  the web app (`Lyrious.Webapp`) and the product site (`Lyrious.Website`) on its own address.
 
 ## Build and run
 
 - dotnet is `/usr/local/share/dotnet/dotnet` (.NET 10).
-- Build what was changed: `dotnet build Lyrious.Desktop` (UI), `dotnet build Lyrious.Web`,
+- Build what was changed: `dotnet build Lyrious.Desktop` (UI), `dotnet build Lyrious.Webapp`,
   `dotnet build Lyrious.Api`. A change in UILib must build for both desktop and web.
 - "Run desktop": stop the running desktop app, then `dotnet run --project Lyrious.Desktop`.
 - "Run web": the AOT Release build, never the Debug WASM interpreter (too slow):

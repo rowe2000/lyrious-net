@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Lyrious.UILib.Login;
 
-namespace Lyrious.Web;
+namespace Lyrious.Webapp;
 
 /// <summary>
 /// Leaves the login (username and password) to the browser's own password manager, in every browser

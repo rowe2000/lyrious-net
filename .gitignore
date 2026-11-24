@@ -462,8 +462,8 @@ Lyrious.Api/media/
 # Logs of locally started services
 .claude-run/
 
-# Copies of Avalonia's scripts, made by the build (see Lyrious.Web.csproj)
-Lyrious.Web/wwwroot/_framework/
+# Copies of Avalonia's scripts, made by the build (see Lyrious.Webapp.csproj)
+Lyrious.Webapp/wwwroot/_framework/
 
 # Installers built by installers/ (see installers/README.md)
 installers/out/

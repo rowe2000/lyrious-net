@@ -18,9 +18,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Lyrious.CoreLib\Lyrious.CoreLib.csproj" />
-    <!-- The web client (WebAssembly): not code this project uses, but its files (index.html, the
-         compiled app) are served by the API, so the web app and the API share one address. -->
-    <ProjectReference Include="..\Lyrious.Web\Lyrious.Web.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
+    <!-- The web app (WebAssembly) and the product website: not code this project uses, but their
+         files (the compiled app under /app/, the site at the root) are served by the API, so the
+         website, the web app and the API share one address. -->
+    <ProjectReference Include="..\Lyrious.Webapp\Lyrious.Webapp.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
+    <!-- (Its files only: not its own program, which would otherwise be copied along.) -->
+    <ProjectReference Include="..\Lyrious.Website\Lyrious.Website.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
 
 </Project>

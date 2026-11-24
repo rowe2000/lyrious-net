@@ -3,7 +3,7 @@ using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 using Lyrious.Client;
 
-namespace Lyrious.Web;
+namespace Lyrious.Webapp;
 
 /// <summary>
 /// The app's other tabs and windows on the same address, which share its stored settings and cache (functions

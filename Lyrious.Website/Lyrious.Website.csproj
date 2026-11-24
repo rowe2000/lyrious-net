@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- The product website (www.lyrious.se): index.html, its images and the favicon, in wwwroot.
+       Lyrious.Api serves these files at the root of its address (the web app, Lyrious.Webapp, under
+       /app/), so the site, the web app and the API share one address. Run by itself (dotnet run), it
+       serves just the site, for working on it (see Program.cs). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- At the root ("/index.html", "/site/..."), also when Lyrious.Api serves them. -->
+    <StaticWebAssetBasePath>/</StaticWebAssetBasePath>
+  </PropertyGroup>
+</Project>
