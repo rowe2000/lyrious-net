@@ -333,8 +333,8 @@ internal sealed class SyncEngine
         }
     }
 
-    /// <summary>The server's stored copy after a write, for the cache; null if it can't be had right now.</summary>
-    private async Task<JsonObject?> TryGetAsync(string type, Guid id)
+    /// <summary>The server's stored copy of an entity (e.g. after a write, for the cache); null if it can't be had right now.</summary>
+    internal async Task<JsonObject?> TryGetAsync(string type, Guid id)
     {
         try
         {

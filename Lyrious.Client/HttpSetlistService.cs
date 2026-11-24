@@ -545,6 +545,19 @@ public sealed class HttpSetlistService : ISetlistService
             return joined;
         }
 
+        // Joined one this app hasn't heard of yet (e.g. a band just made on another device): ask the
+        // server, rather than joining another and pulling every device of the member away from it.
+        if (auth.JoinedGroupId is { } joinedId
+            && await engine.TryGetAsync("group", joinedId) is { } fetched
+            && !EntityCache.IsRemoved(fetched))
+        {
+            var current = await CacheAsync();
+            if (current.Merge("group", [fetched]).FirstOrDefault() is { } shown)
+            {
+                return ToSummary(As(shown, ClientJsonContext.Default.GroupDto));
+            }
+        }
+
         // Not joined to any (existing) group: join the first, so the band shown is the one followed live.
         if (groups.FirstOrDefault() is not { } first)
         {

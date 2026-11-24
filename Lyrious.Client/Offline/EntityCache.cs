@@ -135,17 +135,34 @@ internal sealed class EntityCache
         }
     }
 
-    /// <summary>The server has the change: forget it, keeping the server's stored copy if there is one.</summary>
+    /// <summary>
+    /// The server has the change: forget it, keeping the server's stored copy if there is one, else
+    /// the change as sent (so what was made here stays shown until the server sends its copy).
+    /// </summary>
     public void Complete(PendingChange change, JsonObject? stored)
     {
         lock (gate)
         {
             outbox.Remove(change);
+            snapshot[change.Type].TryGetValue(change.Id, out var existing);
             if (stored != null)
             {
                 Put(snapshot, change.Type, stored);
             }
-            else if (change.Kind == "delete" && snapshot[change.Type].TryGetValue(change.Id, out var existing))
+            // The server may not show it yet: a new band, say, until the creator's membership (sent
+            // next) arrives. Dropping it here would hide it until the next full download.
+            else if (change.Kind == "create" && change.Fields != null)
+            {
+                Put(snapshot, change.Type, (JsonObject)change.Fields.DeepClone());
+            }
+            else if (change.Kind == "update" && change.Fields != null && existing != null)
+            {
+                foreach (var (field, value) in change.Fields)
+                {
+                    existing[field] = value?.DeepClone();
+                }
+            }
+            else if (change.Kind == "delete" && existing != null)
             {
                 existing["removed"] = true;
             }

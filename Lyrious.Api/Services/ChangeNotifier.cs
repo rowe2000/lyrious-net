@@ -57,6 +57,16 @@ public sealed class ChangeNotifier(IHubContext<LyriousHub> hub, LyriousRepositor
 					{
 						await hub.Clients.User(membership.MemberId.ToString()).SendAsync(method, new[] { payload });
 					}
+					// A new member's open apps never saw the band itself (it was announced before they were in
+					// it, e.g. a band its creator just made on another device): send it to them now.
+					else if (repo.FindGroup(membership.GroupId) is { } group)
+					{
+						var others = registry.GetConnections(membership.MemberId.ToString()).Except(excluded).ToArray();
+						if (others.Length > 0)
+						{
+							await hub.Clients.Clients(others).SendAsync(LyriousHub.UpdateMethodName<Group>(), new[] { group });
+						}
+					}
 				}
 			}
 

@@ -44,6 +44,9 @@ namespace Lyrious.UILib
 		/// <summary>The artists typed for the SongbookPro import whose songs get their name as a tag (see SongbookProImportOptions.TaggedArtists); kept on this device.</summary>
 		public const string ImportTaggedArtists = "import-tagged-artists";
 
+		/// <summary>The pedals learned on this device and what each does: "PageDown:PageForward,PageUp:PageBack" (see PedalSettings).</summary>
+		public const string Pedals = "pedals";
+
 		/// <summary>The highlight colour, "#RRGGBB"; none for the system's accent colour.</summary>
 		public const string HighlightColor = "highlight-color";
 

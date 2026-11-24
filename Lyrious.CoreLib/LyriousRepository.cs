@@ -82,6 +82,9 @@ public class LyriousRepository(LyriousContext context)
 	}
 
 	/// <summary>Whether the group is someone's private band (which only the server makes and changes).</summary>
+	/// <summary>The band, unless it's deleted: for telling a new member's open apps about it.</summary>
+	public Group? FindGroup(Guid groupId) => context.Groups.FirstOrDefault(g => g.Id == groupId && !g.Removed);
+
 	private bool IsPrivateGroup(Guid? groupId) => groupId != null && context.Groups.Any(g => g.Id == groupId && g.IsPrivate);
 
 	public async Task<Song?> CreateSongAsync(string songName, string key, float tempo = 120, TimeSpan? length = null)

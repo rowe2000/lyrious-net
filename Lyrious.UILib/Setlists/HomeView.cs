@@ -863,7 +863,8 @@ namespace Lyrious.UILib.Setlists
 		/// Keys on the lyrics page (not while editing or typing in a box): the space bar plays and stops,
 		/// as the play/stop button does; up and down nudge the lyrics (4 bars for timed songs, else a
 		/// line); Home, End, Page Up and Page Down go to the start, the end, and a page back and on;
-		/// and, when not playing, left and right go to the previous and next song in the setlist.
+		/// and, when not playing, left and right go to the previous and next song in the setlist. A
+		/// learned pedal (see PedalSettings, e.g. an AirTurn) does what's chosen for it instead.
 		/// Handled before the focused control sees them, so a focused button isn't also pressed by the
 		/// space bar (the play button would undo it).
 		/// </summary>
@@ -885,6 +886,41 @@ namespace Lyrious.UILib.Setlists
 			if (e.KeyModifiers != Avalonia.Input.KeyModifiers.None || page.Content is not LyricScrollView { IsEditing: false } lyrics
 			    || (e.Source is TextBox box && !(upOrDown && box == setlistSearchBox)))
 			{
+				return;
+			}
+
+			// A learned pedal's key does what's chosen for it.
+			if (PedalSettings.ActionFor(e.Key) is { } pedal)
+			{
+				e.Handled = true;
+				switch (pedal)
+				{
+					case PedalAction.PageForward:
+						lyrics.ScrollPage(1);
+						break;
+					case PedalAction.PageBack:
+						lyrics.ScrollPage(-1);
+						break;
+					case PedalAction.NextSong:
+						StepSong(1);
+						break;
+					case PedalAction.PreviousSong:
+						StepSong(-1);
+						break;
+					case PedalAction.PlayStop:
+						PlayPause();
+						break;
+					case PedalAction.NudgeForward:
+						lyrics.Nudge(1);
+						break;
+					case PedalAction.NudgeBack:
+						lyrics.Nudge(-1);
+						break;
+					case PedalAction.StartOfSong:
+						lyrics.ScrollHome();
+						break;
+				}
+
 				return;
 			}
 

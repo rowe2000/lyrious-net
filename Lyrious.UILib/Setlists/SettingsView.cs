@@ -163,6 +163,8 @@ namespace Lyrious.UILib.Setlists
 						L.T("Follow the place in the song"),
 						L.T("When another member presses play or stop, or goes back to the start, your lyrics go to the same place in the song. Yours on all your devices."),
 						FollowSwitch(() => PlaybackSettings.FollowPosition, on => PlaybackSettings.FollowPosition = on))),
+					PedalsSection(),
+					Scoped(SettingScope.Device, PedalSettingsPanel()),
 					colorsSection,
 					ColorSetting(
 						L.T("Highlight"),
@@ -956,6 +958,110 @@ namespace Lyrious.UILib.Setlists
 			button.Flyout = new Flyout { Content = list, Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedRight };
 			ShowChosen();
 			return button;
+		}
+
+		/// <summary>"Pedals", with what they are as its tooltip.</summary>
+		private static TextBlock PedalsSection()
+		{
+			var section = Section(L.T("Pedals"));
+			ToolTip.SetTip(section, Explained(L.T("Page turners such as AirTurn, which connect as a keyboard. Learn a pedal by pressing it, then choose what it does on the lyrics page. Unlearned, Page Down and Page Up turn a page, the arrows move a line or change song, and Space plays and stops. On this device.")));
+			return section;
+		}
+
+		/// <summary>
+		/// The learned pedals (see <see cref="PedalSettings"/>), each with what it does and a ✕ to forget
+		/// it, then "Learn a pedal…": the next key pressed (a pedal) is learned. Escape stops learning.
+		/// Each change is saved at once.
+		/// </summary>
+		private static Control PedalSettingsPanel()
+		{
+			var rows = new StackPanel { Spacing = 8 };
+			var learn = new Button { Content = L.T("Learn a pedal…"), HorizontalAlignment = HorizontalAlignment.Left };
+			ToolTip.SetTip(learn, L.T("Then press the pedal: the key it sends is learned"));
+			var status = new TextBlock { Opacity = 0.7, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
+			var panel = new StackPanel { Spacing = 8, Children = { rows, new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 12, Children = { learn, status } } } };
+
+			void ShowRows()
+			{
+				rows.Children.Clear();
+				foreach (var pedal in PedalSettings.Keys)
+				{
+					var actions = Enum.GetValues<PedalAction>();
+					var choice = new SettingComboBox
+					{
+						ItemsSource = actions.Select(PedalSettings.Name).ToList(),
+						SelectedIndex = Array.IndexOf(actions, pedal.Action),
+						MinWidth = 170,
+					};
+					var key = pedal.Key;
+					choice.SelectionChanged += (_, _) =>
+					{
+						if (choice.SelectedIndex >= 0)
+						{
+							PedalSettings.SetAction(key, actions[choice.SelectedIndex]);
+						}
+					};
+					var forget = PageLayout.CancelButton(L.T("Forget this pedal"));
+					forget.Click += (_, _) =>
+					{
+						PedalSettings.Forget(key);
+						ShowRows();
+					};
+					rows.Children.Add(Setting(
+						L.T("Pedal: {0}", PedalSettings.KeyName(key)),
+						L.T("The pedal that sends {0}, and what it does on the lyrics page.", PedalSettings.KeyName(key)),
+						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { choice, forget } }));
+				}
+
+				rows.IsVisible = rows.Children.Count > 0;
+			}
+
+			// Learning: the next key pressed anywhere in the window, before anything else sees it.
+			TopLevel? window = null;
+			void Stop()
+			{
+				window?.RemoveHandler(InputElement.KeyDownEvent, OnKey);
+				window = null;
+				learn.IsEnabled = true;
+			}
+
+			void OnKey(object? sender, KeyEventArgs e)
+			{
+				// A modifier on its own isn't a pedal; wait for the key.
+				if (e.Key is Key.LeftShift or Key.RightShift or Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin)
+				{
+					return;
+				}
+
+				e.Handled = true;
+				Stop();
+				if (e.Key == Key.Escape)
+				{
+					status.Text = L.T("Stopped learning.");
+					return;
+				}
+
+				PedalSettings.Learn(e.Key);
+				status.Text = L.T("Learned the pedal that sends {0}.", PedalSettings.KeyName(e.Key));
+				ShowRows();
+			}
+
+			learn.Click += (_, _) =>
+			{
+				window = TopLevel.GetTopLevel(learn);
+				if (window == null)
+				{
+					return;
+				}
+
+				learn.IsEnabled = false;
+				status.IsVisible = true;
+				status.Text = L.T("Press the pedal now (Escape stops)…");
+				window.AddHandler(InputElement.KeyDownEvent, OnKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+			};
+			panel.DetachedFromVisualTree += (_, _) => Stop();
+			ShowRows();
+			return panel;
 		}
 
 		/// <summary>One setting: its name (its explanation the name's tooltip), with its control at the right.</summary>
