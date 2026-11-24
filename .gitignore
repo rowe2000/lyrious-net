@@ -469,3 +469,5 @@ Lyrious.Webapp/wwwroot/_framework/
 installers/out/
 installers/macos/.work/
 installers/linux/.work/
+songs.db
+message.txt
