@@ -175,7 +175,7 @@
 
         .actions .button { padding: 13px 26px; font-size: 1.05rem; }
 
-        /* The lyrics on stage, as the app shows them. */
+        /* The app on stage: a recording of it playing a song. */
         .stage {
             background: #000;
             color: #f3f3f3;
@@ -186,119 +186,8 @@
             position: relative;
         }
 
-        .stage-top {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px 16px;
-            font-size: 0.8rem;
-            color: #9aa3b2;
-            border-bottom: 1px solid #1d222b;
-        }
-
-        .stage-title { font-size: 1.05rem; color: #fff; font-weight: 600; }
-
-        .dots { display: flex; gap: 6px; }
-
-        .dots span {
-            width: 26px;
-            height: 26px;
-            border-radius: 50%;
-            background: #1b2a4e;
-            color: #cfd8ee;
-            font-size: 0.7rem;
-            display: grid;
-            place-items: center;
-            font-weight: 600;
-        }
-
-        .lyrics {
-            padding: 18px 22px 26px;
-            font-size: 1.05rem;
-            height: 290px;
-            overflow: hidden;
-            mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 80%, transparent 100%);
-            -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 80%, transparent 100%);
-        }
-
-        .scroller { animation: scroll 16s linear infinite; }
-
-        @keyframes scroll {
-            from { transform: translateY(0); }
-            to { transform: translateY(-50%); }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .scroller { animation: none; }
-        }
-
-        .section-name {
-            color: #8fb3ff;
-            font-weight: 600;
-            font-size: 0.85rem;
-            margin: 14px 0 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-        }
-
-        .line { margin: 0 0 6px; white-space: pre; }
-
-        .line b {
-            display: block;
-            color: var(--chord);
-            font-weight: 700;
-            font-size: 0.9rem;
-            line-height: 1.2;
-        }
-
-        .now {
-            position: absolute;
-            left: 0;
-            right: 0;
-            top: 47%;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, rgba(242, 181, 68, 0.55), transparent);
-        }
-
-        .stage-bottom {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 12px 16px;
-            border-top: 1px solid #1d222b;
-            font-size: 0.8rem;
-            color: #9aa3b2;
-        }
-
-        .play {
-            width: 34px;
-            height: 34px;
-            border-radius: 50%;
-            background: var(--chord);
-            display: grid;
-            place-items: center;
-        }
-
-        .progress {
-            flex: 1;
-            height: 4px;
-            border-radius: 2px;
-            background: #232a36;
-            overflow: hidden;
-        }
-
-        .progress i {
-            display: block;
-            height: 100%;
-            width: 40%;
-            background: var(--chord);
-            animation: progress 16s linear infinite;
-        }
-
-        @keyframes progress {
-            from { width: 5%; }
-            to { width: 95%; }
-        }
+        /* A recording of the app playing (animated WebP); a still for those who'd rather have less motion. */
+        .stage img { display: block; width: 100%; height: auto; }
 
         /* Sections */
         section { padding: 64px 0; }
@@ -466,44 +355,11 @@
             </div>
         </div>
 
-        <div class="stage" aria-hidden="true">
-            <div class="stage-top">
-                <div>
-                    <div class="stage-title">Northern Lights</div>
-                    Key G · 96 bpm · 4/4
-                </div>
-                <div class="dots"><span>AL</span><span>JK</span><span>MS</span></div>
-            </div>
-            <div class="lyrics">
-                <div class="scroller">
-                    <div class="section-name">Verse</div>
-                    <p class="line"><b>G               D</b>Out on the road where the city ends</p>
-                    <p class="line"><b>Em              C</b>Headlights fading, calling old friends</p>
-                    <p class="line"><b>G                D</b>We sing it louder every time</p>
-                    <p class="line"><b>C          D        G</b>Under the northern lights tonight</p>
-                    <div class="section-name">Chorus</div>
-                    <p class="line"><b>C        G</b>Hold on, hold on</p>
-                    <p class="line"><b>Em           D</b>The song goes on and on</p>
-                    <p class="line"><b>C          G         D</b>Every voice in time, every line</p>
-                    <div class="section-name">Verse</div>
-                    <p class="line"><b>G               D</b>Out on the road where the city ends</p>
-                    <p class="line"><b>Em              C</b>Headlights fading, calling old friends</p>
-                    <p class="line"><b>G                D</b>We sing it louder every time</p>
-                    <p class="line"><b>C          D        G</b>Under the northern lights tonight</p>
-                    <div class="section-name">Chorus</div>
-                    <p class="line"><b>C        G</b>Hold on, hold on</p>
-                    <p class="line"><b>Em           D</b>The song goes on and on</p>
-                    <p class="line"><b>C          G         D</b>Every voice in time, every line</p>
-                </div>
-            </div>
-            <div class="now"></div>
-            <div class="stage-bottom">
-                <div class="play">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#000"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
-                </div>
-                <div class="progress"><i></i></div>
-                <span>Next: Long Way Home</span>
-            </div>
+        <div class="stage">
+            <picture>
+                <source srcset="/site/play.png" media="(prefers-reduced-motion: reduce)">
+                <img src="/site/play.webp" width="484" height="420" alt="Lyrious playing Amazing Grace: the lyrics and chords scroll by, with the next song in the toolbar below.">
+            </picture>
         </div>
     </div>
 
