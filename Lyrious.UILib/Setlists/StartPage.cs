@@ -24,12 +24,10 @@ namespace Lyrious.UILib.Setlists
 		SetlistEntry? Entry = null,
 		IReadOnlyList<SetlistSummary>? Setlists = null)
 	{
-		public const string DefaultSetlistName = "Setlist 1";
-
 		/// <summary>
 		/// Decides where to start: the last selected song's lyrics; else the current setlist; else the
-		/// list of setlists, creating "Setlist 1" first if the group has none. A current song or setlist
-		/// that no longer exists counts as not selected.
+		/// list of setlists (none, for a band that has made none yet: it adds them there with +). A
+		/// current song or setlist that no longer exists counts as not selected.
 		/// </summary>
 		public static async Task<StartPage> DetermineAsync(ISetlistService service, CancellationToken cancellationToken = default)
 		{
@@ -53,11 +51,6 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var setlists = await service.GetSetlistsAsync(group.Id, cancellationToken);
-			if (setlists.Count == 0)
-			{
-				setlists = [await service.CreateSetlistAsync(group.Id, DefaultSetlistName, cancellationToken)];
-			}
-
 			return new StartPage(StartPageKind.Setlists, group, Setlists: setlists);
 		}
 	}

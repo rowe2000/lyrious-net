@@ -109,7 +109,7 @@ namespace Lyrious.UILib.Setlists
 
 		/// <param name="songbooks">The songbooks to choose between (e.g. the private one and the joined band's), shown as buttons above the list; none hides them.</param>
 		/// <param name="playingSongbookId">The songbook (its band's id) whose songs are played as the setlist now; null if none.</param>
-		/// <summary>Raised by "Import SongbookPro backup…" under the page's "more" button (offered only when handled): the import page.</summary>
+		/// <summary>Raised by "Import from SongbookPro…" under the page's "more" button (offered only when handled): the import page.</summary>
 		public event Action? ImportRequested;
 
 		/// <summary>Deletes every song in the songbook, returning what happened; offered under the "more" button. None: not offered.</summary>
@@ -416,7 +416,7 @@ namespace Lyrious.UILib.Setlists
 				if (ImportRequested != null)
 				{
 					// The import has a page of its own (its checklist of what to do).
-					var import = new Button { Content = L.T("Import SongbookPro backup…") };
+					var import = new Button { Content = L.T("Import from SongbookPro…") };
 					import.Click += (_, _) =>
 					{
 						flyout?.Hide();

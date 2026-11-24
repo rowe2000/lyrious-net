@@ -280,7 +280,7 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// "Import SongbookPro backup…": a checklist of what the import does (all checked at first:
+		/// "Import from SongbookPro…": a checklist of what the import does (all checked at first:
 		/// overwriting songs of the same name, the sets as setlists and replacing those of the same name,
 		/// and each conversion to Lyrious' format), then a button that picks the backup and imports it
 		/// so; what happened (or why it couldn't) shows below it.
@@ -298,14 +298,32 @@ namespace Lyrious.UILib.Setlists
 				return box;
 			}
 
-			var lettersOnlyNames = Task(L.T("Remove everything but letters and spaces from the song names (digits, punctuation, symbols)"), L.T("e.g. \"01. Go Your Own Way (live) ✓\" becomes \"Go Your Own Way live\""));
-			lettersOnlyNames.IsChecked = false;
+			var lettersOnlyNames = Task(L.T("Remove everything but letters, digits and spaces from the song names (punctuation, symbols)"), L.T("e.g. \"01. Go Your Own Way (live) ✓\" becomes \"01 Go Your Own Way live\""));
 			var overwriteSongs = Task(L.T("Overwrite songs with the same name"), L.T("Names are compared by their letters only: case, spaces, digits and punctuation don't count. Unchecked, those songs are kept as they are."));
 			var importSetlists = Task(L.T("Import the sets as setlists"));
 			var replaceSetlists = Task(L.T("Replace the songs of setlists with the same name"), L.T("Unchecked, a set with the name of an existing setlist is left out."));
 			var commentsAsHeadings = Task(L.T("Comments such as {c: Verse 1} become headings (## Verse 1)"));
 			var headingChords = Task(L.T("A chord first in a heading is capitalised and put on its text (# [d] Intro becomes # [D]Intro)"));
-			var artistTags = Task(L.T("Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist"));
+			// The artists whose songs get their name as a tag, typed (kept on this device for the next import).
+			var artistNames = new TextBox
+			{
+				Text = App.Settings.Get(SettingKeys.ImportTaggedArtists) ?? "",
+				PlaceholderText = L.T("e.g. Maria, Tobbe"),
+				MinWidth = 200,
+				HorizontalAlignment = HorizontalAlignment.Left,
+			};
+			artistNames.TextChanged += (_, _) => App.Settings.Set(SettingKeys.ImportTaggedArtists, string.IsNullOrWhiteSpace(artistNames.Text) ? null : artistNames.Text.Trim());
+			// "Tags", with what it does as the tooltip of the label and the box.
+			var artistTagsLabel = new TextBlock { Text = L.T("Tags:"), TextWrapping = TextWrapping.Wrap };
+			var artistTagsTip = L.T("Songs by these artists get the name as a tag instead of as the artist. Names separated by spaces or commas; empty, no artist becomes a tag.");
+			ToolTip.SetTip(artistTagsLabel, artistTagsTip);
+			ToolTip.SetTip(artistNames, artistTagsTip);
+			var artistTags = new StackPanel
+			{
+				Spacing = 4,
+				Margin = new Thickness(0, 4, 0, 4),
+				Children = { artistTagsLabel, artistNames },
+			};
 			var checkTags = Task(L.T("A ✓ in a name or the lyrics becomes the tag ✓"));
 			// Replacing setlists only matters when the sets come along.
 			replaceSetlists.Margin = new Thickness(24, 0, 0, 0);
@@ -332,7 +350,7 @@ namespace Lyrious.UILib.Setlists
 				},
 			};
 
-			var button = new Button { Content = L.T("Import SongbookPro backup…"), Classes = { "accent" } };
+			var button = new Button { Content = L.T("Import from SongbookPro…"), Classes = { "accent" } };
 			var status = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false, Opacity = 0.85 };
 			button.Click += async (_, _) =>
 			{
@@ -342,7 +360,7 @@ namespace Lyrious.UILib.Setlists
 					ReplaceSetlists: replaceSetlists.IsChecked == true,
 					CommentsAsHeadings: commentsAsHeadings.IsChecked == true,
 					HeadingChords: headingChords.IsChecked == true,
-					ArtistTags: artistTags.IsChecked == true,
+					TaggedArtists: SongbookProImport.ArtistNames(artistNames.Text),
 					CheckTags: checkTags.IsChecked == true,
 					LettersOnlyNames: lettersOnlyNames.IsChecked == true);
 				button.IsEnabled = false;
@@ -371,7 +389,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					new TextBlock
 					{
-						Text = L.T("Adds the songs and sets of a SongbookPro backup (\"SongbookPro Backup.zip\" or .sbpbackup) to your band's songbook and setlists, doing what's checked:"),
+						Text = L.T("Adds the songs and sets of a SongbookPro backup (\"SongbookPro Backup.zip\" or .sbpbackup) to your band's songbook and setlists, doing what's checked. SongbookPro's own songs.db works too: its songs go into your private songbook, and each of its bands' into your band of that name (made if you're not in one):"),
 						TextWrapping = TextWrapping.Wrap,
 						Opacity = 0.7,
 					},

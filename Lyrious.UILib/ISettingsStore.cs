@@ -41,6 +41,9 @@ namespace Lyrious.UILib
 		/// <summary>"false": band sync doesn't move this member's lyrics to where the others are in the song (on unless turned off; kept with the user).</summary>
 		public const string BandSyncPosition = "band-sync-position";
 
+		/// <summary>The artists typed for the SongbookPro import whose songs get their name as a tag (see SongbookProImportOptions.TaggedArtists); kept on this device.</summary>
+		public const string ImportTaggedArtists = "import-tagged-artists";
+
 		/// <summary>The highlight colour, "#RRGGBB"; none for the system's accent colour.</summary>
 		public const string HighlightColor = "highlight-color";
 

@@ -4345,7 +4345,9 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// Picks a SongbookPro backup and imports its songs and sets into the band; returns what was
-		/// imported and what was left out (null when no file was picked).
+		/// imported and what was left out (null when no file was picked). SongbookPro's own database
+		/// (songs.db) can be picked too: its own songs and sets go into the member's private songbook,
+		/// and each of its bands' into the band of that name (made when the member is in none).
 		/// </summary>
 		private async Task<string?> ImportSongbookProAsync(Control anchor, GroupSummary group, SongbookProImportOptions options)
 		{
@@ -4360,7 +4362,7 @@ namespace Lyrious.UILib.Setlists
 				AllowMultiple = false,
 				FileTypeFilter =
 				[
-					new Avalonia.Platform.Storage.FilePickerFileType(L.T("SongbookPro backup")) { Patterns = ["*.zip", "*.sbpbackup"] },
+					new Avalonia.Platform.Storage.FilePickerFileType(L.T("SongbookPro backup or database")) { Patterns = ["*.zip", "*.sbpbackup", "*.db"] },
 					Avalonia.Platform.Storage.FilePickerFileTypes.All,
 				],
 			});
@@ -4381,14 +4383,34 @@ namespace Lyrious.UILib.Setlists
 				throw new InvalidOperationException(L.T("Couldn't read the file. {0}", ex.Message), ex);
 			}
 
+			// SongbookPro's database (songs.db): the member's own songs and its bands' (see SongbookProImport.ReadDatabase).
+			if (SongbookProImport.IsDatabase(data.ToArray()))
+			{
+				var database = SongbookProImport.ReadDatabase(data.ToArray(), options);
+				var imported = await SongbookProImport.ImportDatabaseAsync(service, database, options);
+				RefreshSetlistDrawer(reload: true);
+				var lines = new List<string> { ImportResultText(imported.Private, L.T("your private songbook")) };
+				foreach (var (band, created, bandResult) in imported.Bands)
+				{
+					lines.Add((created ? L.T("New band {0}: ", band) : "") + ImportResultText(bandResult, band));
+				}
+
+				return string.Join("\n", lines);
+			}
+
 			data.Position = 0;
 			var backup = SongbookProImport.Read(data, options);
 			var result = await SongbookProImport.ImportAsync(service, group.Id, backup, options);
 
 			// The drawer's setlists and songs may include the new ones.
 			RefreshSetlistDrawer(reload: true);
+			return ImportResultText(result, group.Name);
+		}
 
-			var text = L.Plural(result.Songs, "Imported {0} song", "Imported {0} songs") + " " + L.Plural(result.Setlists, "and {0} setlist into {1}.", "and {0} setlists into {1}.", group.Name);
+		/// <summary>What an import added to a songbook (named <paramref name="into"/>), and what it left out.</summary>
+		private static string ImportResultText(SongbookProImportResult result, string into)
+		{
+			var text = L.Plural(result.Songs, "Imported {0} song", "Imported {0} songs") + " " + L.Plural(result.Setlists, "and {0} setlist into {1}.", "and {0} setlists into {1}.", into);
 			if (result.Replaced > 0)
 			{
 				text += L.T(" {0} of the songs overwrote one of the same name.", result.Replaced);

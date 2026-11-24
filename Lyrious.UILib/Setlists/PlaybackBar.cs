@@ -136,7 +136,8 @@ namespace Lyrious.UILib.Setlists
 				// No room at the left: the NEXT label starts at the edge.
 				Padding = new Thickness(0, 0, 8, 0),
 				HorizontalAlignment = HorizontalAlignment.Left,
-				HorizontalContentAlignment = HorizontalAlignment.Left,
+				// The song the button's whole width: tempo, beat, key and transpose at its right edge.
+				HorizontalContentAlignment = HorizontalAlignment.Stretch,
 				VerticalContentAlignment = VerticalAlignment.Center,
 				Background = Brushes.Transparent,
 				BorderThickness = new Thickness(0),

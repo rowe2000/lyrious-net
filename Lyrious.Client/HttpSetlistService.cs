@@ -846,13 +846,10 @@ public sealed class HttpSetlistService : ISetlistService
         current.Create("group", Node(group, ClientJsonContext.Default.GroupDto));
         current.Create("membership", Node(new MembershipDto(Guid.NewGuid(), admin, approved, group.Id, memberId, Removed: false), ClientJsonContext.Default.MembershipDto));
         current.Create("songbook", Node(new SongbookDto(Guid.NewGuid(), "Default", group.Id, Removed: false), ClientJsonContext.Default.SongbookDto));
-
-        var setlist = new SetlistDto(Guid.NewGuid(), StartPage.DefaultSetlistName, group.Id, now, now, Removed: false, Checksum: 0);
-        current.Create("setlist", Node(setlist, ClientJsonContext.Default.SetlistDto));
-        current.Update("group", group.Id, new JsonObject { ["currentSetlistId"] = setlist.Id.ToString() });
+        // No setlist to start with: the band makes its own (+ on the Setlists page).
         Queued(current);
 
-        return new GroupSummary(group.Id, group.Name, setlist.Id, null);
+        return new GroupSummary(group.Id, group.Name, null, null);
     }
 
     /// <summary>Joins the group by changing the member's joined group.</summary>

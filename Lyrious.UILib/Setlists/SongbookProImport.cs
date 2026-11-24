@@ -31,16 +31,16 @@ namespace Lyrious.UILib.Setlists
 	/// <param name="ReplaceSetlists">A set of the same name as a setlist replaces that setlist's songs; else it's left out.</param>
 	/// <param name="CommentsAsHeadings">A comment line "{c: Verse 1}" becomes the heading "## Verse 1".</param>
 	/// <param name="HeadingChords">A heading that starts with a chord, "# [d] Intro", becomes "# [D]Intro".</param>
-	/// <param name="ArtistTags">Songs by Maria, Tobbe or Robert get the name as a tag instead of as the artist.</param>
+	/// <param name="TaggedArtists">Songs by these artists get the name as a tag instead of as the artist; none, nothing changes.</param>
 	/// <param name="CheckTags">A ✓ in a song's name or lyrics becomes the tag ✓.</param>
-	/// <param name="LettersOnlyNames">Song names keep only their letters and spaces: digits, punctuation and symbols are taken out.</param>
+	/// <param name="LettersOnlyNames">Song names keep only their letters, digits and spaces: punctuation and symbols are taken out.</param>
 	public sealed record SongbookProImportOptions(
 		bool OverwriteSongs = true,
 		bool ImportSetlists = true,
 		bool ReplaceSetlists = true,
 		bool CommentsAsHeadings = true,
 		bool HeadingChords = true,
-		bool ArtistTags = true,
+		IReadOnlyList<string>? TaggedArtists = null,
 		bool CheckTags = true,
 		bool LettersOnlyNames = false);
 
@@ -68,7 +68,7 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="options">How the songs are converted to Lyrious' format (see <see cref="Lyrics"/>); none: kept as they are.</param>
 		public static SongbookProBackup Read(Stream zip, SongbookProImportOptions? options = null)
 		{
-			options ??= new SongbookProImportOptions(CommentsAsHeadings: false, HeadingChords: false, ArtistTags: false, CheckTags: false);
+			options ??= new SongbookProImportOptions(CommentsAsHeadings: false, HeadingChords: false, CheckTags: false);
 			string data;
 			try
 			{
@@ -95,6 +95,16 @@ namespace Lyrious.UILib.Setlists
 				throw new InvalidOperationException(L.T("The backup's data couldn't be read. {0}", ex.Message), ex);
 			}
 
+			return FromJson(json, options);
+		}
+
+		/// <summary>
+		/// The songs and sets in SongbookPro's data, as a backup holds it (and as <see cref="ReadDatabase"/>
+		/// makes it of songs.db): "songs", each with SongbookPro's song fields, and "sets", each with its
+		/// "details" and "contents" (its items). A song may also have "sbpTags", its SongbookPro tags.
+		/// </summary>
+		private static SongbookProBackup FromJson(JsonObject json, SongbookProImportOptions options)
+		{
 			var skipped = new List<string>();
 			var songs = new List<SongbookProSong>();
 			foreach (var song in (json["songs"] as JsonArray ?? []).OfType<JsonObject>())
@@ -112,7 +122,16 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				var lyrics = Lyrics(song, options);
-				var tags = options.ArtistTags ? Tags(song) : "";
+				var tags = Tags(song, options.TaggedArtists ?? []);
+				// SongbookPro's own tags (from songs.db), a tag of several words joined with dashes, as
+				// Lyrious' tags are separated by spaces.
+				if (song["sbpTags"] is JsonArray own)
+				{
+					var words = own.OfType<JsonValue>()
+						.Select(tag => tag.TryGetValue<string>(out var text) ? string.Join("-", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)) : "")
+						.Where(tag => tag.Length > 0);
+					tags = SongTags.Tidy($"{tags} {string.Join(" ", words)}");
+				}
 				// Chosen, a ✓ in the name or the lyrics becomes the tag "✓": it's taken out of both
 				// (with the space before it), so "Go Your Own Way ✓" is "Go Your Own Way", tagged ✓.
 				if (options.CheckTags && (name.Contains(Check) || lyrics.Contains(Check)))
@@ -124,7 +143,7 @@ namespace Lyrious.UILib.Setlists
 
 				if (options.LettersOnlyNames)
 				{
-					name = LettersOnly(name);
+					name = LettersAndDigitsOnly(name);
 				}
 
 				if (lyrics.Length > MaxLyricsLength)
@@ -146,7 +165,7 @@ namespace Lyrious.UILib.Setlists
 					link.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? link : "",
 					TimeSpan.FromSeconds(Math.Max(0, Int(song, "Duration"))),
 					tags,
-					Artist(song, options.ArtistTags)));
+					Artist(song, options.TaggedArtists ?? [])));
 			}
 
 			var sets = new List<SongbookProSet>();
@@ -367,17 +386,17 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// A name with only its letters and spaces (one between words): "01. Go Your Own Way (live) ✓" is
-		/// "Go Your Own Way live". Spaces, dashes, slashes, underscores and dots part words; anything else
-		/// (digits, apostrophes, brackets, marks) is simply left out, so "Don't" is "Dont". A name without
-		/// letters stays as it is.
+		/// A name with only its letters, digits and spaces (one between words): "01. Go Your Own Way
+		/// (live) ✓" is "01 Go Your Own Way live". Spaces, dashes, slashes, underscores and dots part words;
+		/// anything else (apostrophes, brackets, marks) is simply left out, so "Don't" is "Dont". A name
+		/// with neither letters nor digits stays as it is.
 		/// </summary>
-		internal static string LettersOnly(string name)
+		internal static string LettersAndDigitsOnly(string name)
 		{
 			var kept = new System.Text.StringBuilder(name.Length);
 			foreach (var c in name)
 			{
-				if (char.IsLetter(c))
+				if (char.IsLetterOrDigit(c))
 				{
 					kept.Append(c);
 				}
@@ -397,34 +416,45 @@ namespace Lyrious.UILib.Setlists
 		[System.Text.RegularExpressions.GeneratedRegex(@"[ \t]?✓")]
 		private static partial System.Text.RegularExpressions.Regex CheckMark();
 
-		/// <summary>Artists whose songs get their name as a tag when the import converts.</summary>
-		private static readonly string[] TaggedArtists = ["Maria", "Tobbe", "Robert"];
+		/// <summary>
+		/// The artists' names typed for the import (see <see cref="SongbookProImportOptions.TaggedArtists"/>):
+		/// separated by spaces or commas, each once ("Maria, Tobbe Robert" is the three).
+		/// </summary>
+		public static IReadOnlyList<string> ArtistNames(string? text)
+			=> (text ?? "").Split([' ', ',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+				.Distinct(StringComparer.OrdinalIgnoreCase)
+				.ToArray();
 
 		/// <summary>
-		/// The tags a converted song gets: the artist's name when it's one of <see cref="TaggedArtists"/>
-		/// (ignoring case; an artist like "Maria & Tobbe" gives both).
+		/// The tags a converted song gets: the artist's name when it's one of <paramref name="tagged"/>
+		/// (ignoring case; an artist like "Maria & Tobbe" gives both), written as typed.
 		/// </summary>
-		private static string Tags(JsonObject song)
+		private static string Tags(JsonObject song, IReadOnlyList<string> tagged)
 		{
-			var artists = AuthorNames(Text(song, "author"));
-			return SongTags.Join(TaggedArtists.Where(name => artists.Contains(name, StringComparer.OrdinalIgnoreCase)));
+			if (tagged.Count == 0)
+			{
+				return "";
+			}
+
+			var artists = AuthorNames(Text(song, "author"), tagged);
+			return SongTags.Join(tagged.Where(name => artists.Contains(name, StringComparer.OrdinalIgnoreCase)));
 		}
 
 		/// <summary>
-		/// The song's artist: its author in the backup. With artist tags, Maria, Tobbe and Robert are tags
-		/// instead (see <see cref="Tags"/>), so they're left out: "Maria" gives no artist, and
-		/// "Maria &amp; Elvis Presley" gives "Elvis Presley".
+		/// The song's artist: its author in the backup. The <paramref name="tagged"/> artists are tags
+		/// instead (see <see cref="Tags"/>), so they're left out: with Maria tagged, "Maria" gives no
+		/// artist, and "Maria &amp; Elvis Presley" gives "Elvis Presley".
 		/// </summary>
-		private static string Artist(JsonObject song, bool artistTags)
+		private static string Artist(JsonObject song, IReadOnlyList<string> tagged)
 		{
 			var author = Text(song, "author").Trim();
-			if (!artistTags)
+			if (tagged.Count == 0)
 			{
 				return author;
 			}
 
-			var names = AuthorNames(author);
-			var others = names.Where(name => !TaggedArtists.Contains(name, StringComparer.OrdinalIgnoreCase)).ToArray();
+			var names = AuthorNames(author, tagged);
+			var others = names.Where(name => !tagged.Contains(name, StringComparer.OrdinalIgnoreCase)).ToArray();
 			// Nothing of the author is a tag: kept as written (e.g. "Simon & Garfunkel").
 			return others.Length == names.Length ? author : string.Join(" & ", others);
 		}
@@ -433,10 +463,10 @@ namespace Lyrious.UILib.Setlists
 		/// The names in an author: split at commas, "&amp;", "/" and "+"; a part made only of the tagged
 		/// names ("Maria Tobbe") is those names.
 		/// </summary>
-		private static string[] AuthorNames(string author)
+		private static string[] AuthorNames(string author, IReadOnlyList<string> tagged)
 			=> author.Split([',', '&', '/', '+'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
 				.SelectMany(part => part.Split(' ', StringSplitOptions.RemoveEmptyEntries) is { Length: > 1 } words
-				                    && words.All(word => TaggedArtists.Contains(word, StringComparer.OrdinalIgnoreCase))
+				                    && words.All(word => tagged.Contains(word, StringComparer.OrdinalIgnoreCase))
 					? words
 					: [part])
 				.ToArray();

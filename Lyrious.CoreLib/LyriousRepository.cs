@@ -36,15 +36,7 @@ public class LyriousRepository(LyriousContext context)
 
 		var songbook = group.CreateSongbook("Default");
 		songbook = Update(songbook);
-
-		// Now update group with reference to setlist
-		var setlist = group.CreateSetlist("Setlist 1");
-		setlist = Update(setlist);
-
-		group.CurrentSetlistId = setlist?.Id;
-		group.CurrentSetlist = setlist;
-
-		group = Update(group) ?? group;
+		// No setlist to start with: the band makes its own.
 
 		await JoinGroupAsync(group);
 
@@ -78,14 +70,6 @@ public class LyriousRepository(LyriousContext context)
 		if (!context.Songbooks.Any(b => b.GroupId == groupId && !b.Removed))
 		{
 			Update(new Songbook { Name = "Default", GroupId = groupId });
-		}
-
-		// The setlist can only be the band's current one once both exist.
-		if (!context.Setlists.Any(s => s.GroupId == groupId && !s.Removed))
-		{
-			var setlist = Update(new Setlist { Name = "Setlist 1", GroupId = groupId })!;
-			group.CurrentSetlistId = setlist.Id;
-			group = Update(group) ?? group;
 		}
 
 		if (Me.JoinedGroupId == null)
