@@ -82,6 +82,9 @@ public class LyriousRepository(LyriousContext context)
 	}
 
 	/// <summary>Whether the group is someone's private band (which only the server makes and changes).</summary>
+	/// <summary>The member, unless removed: for telling a band who's just been invited to it.</summary>
+	public Member? FindMember(Guid memberId) => context.Members.FirstOrDefault(m => m.Id == memberId && !m.Removed);
+
 	/// <summary>The band, unless it's deleted: for telling a new member's open apps about it.</summary>
 	public Group? FindGroup(Guid groupId) => context.Groups.FirstOrDefault(g => g.Id == groupId && !g.Removed);
 

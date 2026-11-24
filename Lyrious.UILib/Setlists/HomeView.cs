@@ -2853,6 +2853,22 @@ namespace Lyrious.UILib.Setlists
 					return ex.Message;
 				}
 			};
+			// A new account for someone new, then invited as any member; they're emailed how to start.
+			view.CreateMemberRequested = async (group, userName, name, email) =>
+			{
+				try
+				{
+					var created = await service.CreateMemberAsync(group.Id, userName, name, email);
+					await service.InviteMemberAsync(group.Id, created.Id);
+					ShowNotice(L.T("Made an account for {0} and invited them to {1}: they're emailed how to set their password", created.Name, group.Name));
+					await refresh(group.Id);
+					return null;
+				}
+				catch (Exception ex)
+				{
+					return ex.Message;
+				}
+			};
 			// A new band becomes the current one straight away.
 			view.GroupCreateRequested += name => _ = run(async () =>
 			{

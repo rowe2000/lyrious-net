@@ -274,6 +274,82 @@ public class AuthController(
 		return BadRequest(errors);
 	}
 
+	/// <summary>
+	/// A band's admin makes an account for someone new: no password (they set their own, with "Forgot
+	/// my password?" and the code emailed to them, so the admin never knows it), emailed their
+	/// username and how to start. The admin's app then invites the account to the band, as any member.
+	/// Answers the new member's public profile.
+	/// </summary>
+	[Authorize]
+	[HttpPost("create-member")]
+	public async Task<IActionResult> CreateMember([FromBody] CreateMemberModel model, CancellationToken cancellationToken)
+	{
+		repo.SetIdentity(User.Identity);
+		if (!repo.IsAdminOf(model.GroupId) || repo.FindGroup(model.GroupId) is not { IsPrivate: false } group)
+		{
+			return StatusCode(StatusCodes.Status403Forbidden, "Only the band's admins can make accounts for it.");
+		}
+
+		var userName = model.UserName.Trim();
+		var name = model.Name.Trim();
+		if (userName.Length == 0 || name.Length == 0)
+		{
+			return Problem("Enter their name and a username.");
+		}
+
+		if (CleanEmail(model.Email) is not { } email)
+		{
+			return Problem("That isn't an email address.");
+		}
+
+		if (await EmailTakenAsync(email, exceptMemberId: null))
+		{
+			return Problem("That email address belongs to an account already: invite them with it instead.");
+		}
+
+		if (await userManager.FindByNameAsync(userName) != null)
+		{
+			return Problem("That username is taken. Choose another.");
+		}
+
+		// Without the email they couldn't set a password, and the account would be of no use.
+		if (!emailSender.CanSend)
+		{
+			return Problem("The server isn't set up to send email, so it can't tell them about the account.");
+		}
+
+		var member = Member.Create(userName, name, email, phone: null);
+		var result = await userManager.CreateAsync(member);
+		if (!result.Succeeded)
+		{
+			return BadRequest(result.Errors);
+		}
+
+		var inviter = !string.IsNullOrWhiteSpace(repo.Me?.Name) ? repo.Me.Name : repo.Me?.UserName ?? "A band admin";
+		// Where the caller reached the API is where the web app is, too.
+		var appUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/app/";
+		try
+		{
+			await emailSender.SendAsync(
+				email,
+				$"{inviter} invites you to {group.Name} on Lyrious",
+				$"Hi {name},\n\n{inviter} has made you an account on Lyrious and invites you to the band {group.Name}, where the band keeps its setlists and lyrics.\n\n"
+				+ $"Your username: {userName}\n\n"
+				+ $"To start, set your password: open {appUrl}, choose \"Forgot my password?\" and enter your username or this email address. You'll be emailed a code to set it with. Then log in and join {group.Name}.\n\n"
+				+ "If you don't know who this is from, you can ignore this email.",
+				cancellationToken);
+		}
+		catch (Exception ex)
+		{
+			// They'd never hear of an account they can't use: take it away again, so the admin can try once more.
+			logger.LogError(ex, "Couldn't email a new member about their account; the account was removed again");
+			await userManager.DeleteAsync(member);
+			return Problem("The email to them couldn't be sent, so no account was made. Try again in a while.");
+		}
+		logger.LogInformation("An admin made an account for a new member of a band");
+		return Ok(PublicProfile(member));
+	}
+
 	/// <summary>The address trimmed, if it's an email address; else null.</summary>
 	private static string? CleanEmail(string? value)
 	{

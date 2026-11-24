@@ -65,6 +65,12 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		public Func<GroupSummary, string, Task<string?>>? InviteRequested { get; set; }
 
+		/// <summary>
+		/// Makes an account for someone new (username, name, email) and invites them to the band;
+		/// returns why it couldn't (e.g. the username is taken), or null when it's done.
+		/// </summary>
+		public Func<GroupSummary, string, string, string, Task<string?>>? CreateMemberRequested { get; set; }
+
 		/// <param name="members">Each band's members, keyed by group id.</param>
 		/// <param name="selectedGroupId">The band to show selected (e.g. the one just managed); else the joined one.</param>
 		/// <param name="singleBand">Only the selected band: no list of the other bands, and no adding one.</param>
@@ -241,7 +247,9 @@ namespace Lyrious.UILib.Setlists
 
 			if (isAdmin)
 			{
-				membersTab.Children.Add(InviteRow(group));
+				var inviteRow = InviteRow(group);
+				membersTab.Children.Add(inviteRow);
+				membersTab.Children.Add(CreateMemberRow(group, inviteRow));
 			}
 
 			if (embedded)
@@ -501,6 +509,130 @@ namespace Lyrious.UILib.Setlists
 					problem,
 				},
 			};
+		}
+
+		/// <summary>
+		/// "+ Create a member…" for someone who has no account yet: opens their name, a username (made
+		/// from the name until it's changed) and their email, with "Create and invite" and a ✕ (or
+		/// Escape) that closes it; the invite box is hidden meanwhile. They're emailed their username
+		/// and how to set their own password. Problems show below it.
+		/// </summary>
+		/// <param name="inviteRow">The invite box, hidden while a member is being created.</param>
+		private Control CreateMemberRow(GroupSummary group, Control inviteRow)
+		{
+			var open = new Button
+			{
+				Content = new StackPanel
+				{
+					Orientation = Orientation.Horizontal,
+					Spacing = 6,
+					Children = { SongsView.LineIcon(PageLayout.AddIcon, 16), new TextBlock { Text = L.T("Create a member…"), VerticalAlignment = VerticalAlignment.Center } },
+				},
+				HorizontalAlignment = HorizontalAlignment.Left,
+			};
+			ToolTip.SetTip(open, L.T("Makes an account for someone who has none yet, and invites them to the band. They're emailed their username and how to set their own password."));
+			var name = new TextBox { PlaceholderText = L.T("Their name") };
+			var userName = new TextBox { PlaceholderText = L.T("Username") };
+			var email = new TextBox { PlaceholderText = L.T("Their email") };
+			var create = new Button { Content = L.T("Create and invite"), Classes = { "accent" }, IsEnabled = false, HorizontalAlignment = HorizontalAlignment.Left };
+			// The ✕ at the heading's right; Escape (once out of the boxes) closes it too, before the page's ✕.
+			var close = EscapeKey.MarkAsClose(PageLayout.CancelButton(L.T("Close")), first: true);
+			close.VerticalAlignment = VerticalAlignment.Center;
+			DockPanel.SetDock(close, Dock.Right);
+			var problem = new TextBlock { IsVisible = false, TextWrapping = TextWrapping.Wrap };
+			problem.Bind(TextBlock.ForegroundProperty, problem.GetResourceObservable(LyriousTheme.ErrorBrush));
+			var form = new StackPanel
+			{
+				Spacing = 6,
+				IsVisible = false,
+				Children =
+				{
+					new DockPanel { Children = { close, new TextBlock { Text = L.T("Create a member"), FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center } } },
+					name,
+					userName,
+					email,
+					create,
+					problem,
+				},
+			};
+
+			// The username follows the name (its letters and digits, in lower case) until it's typed in itself.
+			var userNameTyped = false;
+			var suggesting = false;
+			name.TextChanged += (_, _) =>
+			{
+				if (!userNameTyped)
+				{
+					suggesting = true;
+					userName.Text = new string((name.Text ?? "").ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+					suggesting = false;
+				}
+			};
+			userName.TextChanged += (_, _) => userNameTyped |= !suggesting;
+
+			void Check() => create.IsEnabled = !string.IsNullOrWhiteSpace(name.Text) && !string.IsNullOrWhiteSpace(userName.Text) && (email.Text ?? "").Contains('@');
+			name.TextChanged += (_, _) => Check();
+			userName.TextChanged += (_, _) => Check();
+			email.TextChanged += (_, _) => Check();
+
+			void Show(bool shown)
+			{
+				form.IsVisible = shown;
+				open.IsVisible = inviteRow.IsVisible = !shown;
+				problem.IsVisible = false;
+				if (shown)
+				{
+					name.Focus();
+				}
+				else
+				{
+					// Closed: the next one starts empty, the username following the name again.
+					name.Text = userName.Text = email.Text = "";
+					userNameTyped = false;
+				}
+			}
+
+			async void Create()
+			{
+				if (!create.IsEnabled || CreateMemberRequested == null)
+				{
+					return;
+				}
+
+				create.IsEnabled = name.IsEnabled = userName.IsEnabled = email.IsEnabled = false;
+				problem.IsVisible = false;
+				try
+				{
+					// On success the page is shown again, with the new member in the list as invited.
+					if (await CreateMemberRequested(group, userName.Text!.Trim(), name.Text!.Trim(), email.Text!.Trim()) is { } why)
+					{
+						problem.Text = why;
+						problem.IsVisible = true;
+					}
+				}
+				finally
+				{
+					name.IsEnabled = userName.IsEnabled = email.IsEnabled = true;
+					Check();
+				}
+			}
+
+			open.Click += (_, _) => Show(true);
+			close.Click += (_, _) => Show(false);
+			create.Click += (_, _) => Create();
+			foreach (var box in new[] { name, userName, email })
+			{
+				box.KeyDown += (_, e) =>
+				{
+					if (e.Key == Avalonia.Input.Key.Enter)
+					{
+						e.Handled = true;
+						Create();
+					}
+				};
+			}
+
+			return new StackPanel { Spacing = 6, Children = { open, form } };
 		}
 
 		/// <summary>

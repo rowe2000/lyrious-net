@@ -61,6 +61,13 @@ public sealed class ChangeNotifier(IHubContext<LyriousHub> hub, LyriousRepositor
 					// it, e.g. a band its creator just made on another device): send it to them now.
 					else if (repo.FindGroup(membership.GroupId) is { } group)
 					{
+						// The band (the inviter too) learns who they are: else an invited member shows as
+						// "Unknown" until they do something.
+						if (repo.FindMember(membership.MemberId) is { } invited)
+						{
+							await hub.Clients.Group(LyriousHub.GroupName(membership.GroupId)).SendAsync(LyriousHub.UpdateMethodName<Member>(), new[] { ToPayload(invited) });
+						}
+
 						var others = registry.GetConnections(membership.MemberId.ToString()).Except(excluded).ToArray();
 						if (others.Length > 0)
 						{

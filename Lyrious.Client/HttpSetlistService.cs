@@ -950,6 +950,27 @@ public sealed class HttpSetlistService : ISetlistService
         }
     }
 
+    public async Task<FoundMember> CreateMemberAsync(Guid groupId, string userName, string name, string email, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(auth.AccessToken))
+        {
+            throw new InvalidOperationException(L.T("Making an account needs a connection to the server."));
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/auth/create-member");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", auth.AccessToken);
+        request.Content = JsonContent.Create(new CreateMemberRequest(groupId, userName.Trim(), name.Trim(), email.Trim()), ClientJsonContext.Default.CreateMemberRequest);
+        using var response = await auth.Http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(await HttpAuthService.ReadErrorAsync(response, cancellationToken));
+        }
+
+        var member = await response.Content.ReadFromJsonAsync(ClientJsonContext.Default.MemberDto, cancellationToken)
+                     ?? throw new InvalidOperationException(L.T("The server sent an unexpected answer."));
+        return new FoundMember(member.Id, !string.IsNullOrWhiteSpace(member.Name) ? member.Name : member.UserName ?? "", member.UserName ?? "");
+    }
+
     public async Task UploadSoundAsync(Guid songId, string soundId, Stream content, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(auth.AccessToken))

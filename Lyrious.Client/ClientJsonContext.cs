@@ -31,6 +31,8 @@ internal sealed record ResetPasswordRequest(string UserNameOrEmail, string Code,
 
 internal sealed record EmailInvitationRequest(System.Guid GroupId, string Email);
 
+internal sealed record CreateMemberRequest(System.Guid GroupId, string UserName, string Name, string Email);
+
 /// <summary>
 /// A group as the API sends it. Every field the API stores is included, because updates post the
 /// whole record back and the API overwrites all fields.
@@ -109,6 +111,7 @@ internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int Membershi
 [JsonSerializable(typeof(ForgotPasswordRequest))]
 [JsonSerializable(typeof(ResetPasswordRequest))]
 [JsonSerializable(typeof(EmailInvitationRequest))]
+[JsonSerializable(typeof(CreateMemberRequest))]
 [JsonSerializable(typeof(GroupDto))]
 [JsonSerializable(typeof(GroupDto[]))]
 [JsonSerializable(typeof(SetlistDto))]

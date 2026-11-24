@@ -301,7 +301,7 @@ namespace Lyrious.UILib.Setlists
 			});
 		}
 
-		private const string AddIcon = "M12,5 V19 M5,12 H19";
+		internal const string AddIcon = "M12,5 V19 M5,12 H19";
 
 		/// <summary>
 		/// A "+" button for a page title and the row it reveals: a name box with Add and Cancel.
