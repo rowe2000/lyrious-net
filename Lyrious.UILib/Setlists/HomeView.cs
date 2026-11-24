@@ -2635,7 +2635,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					if (members.TryGetValue(group.Id, out var list) && list.FirstOrDefault(m => m.IsMe) is { Approved: false })
 					{
-						invitations.Add(new OnboardingView.Invitation(group, list.Where(m => m.Approved && !m.IsMe).Select(m => m.Name).ToList()));
+						invitations.Add(new OnboardingView.Invitation(group, list.Where(m => m.Approved && !m.IsMe).Select(m => m.Name).ToList(), list.First(m => m.IsMe).Name));
 					}
 				}
 			}

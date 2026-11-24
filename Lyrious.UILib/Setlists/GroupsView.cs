@@ -280,7 +280,7 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private Control MemberRow(GroupSummary group, GroupMember member, bool isAdmin, bool lastAdmin)
 		{
-			var name = member.IsMe ? $"{member.Name} (you)" : member.Name;
+			var name = member.IsMe ? L.T("{0} (you)", member.Name) : member.Name;
 			var info = new StackPanel
 			{
 				Spacing = 0,

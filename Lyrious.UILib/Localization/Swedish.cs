@@ -177,6 +177,7 @@ namespace Lyrious.UILib.Localization
 			["Username, email or phone"] = "Användarnamn, e-post eller telefon",
 			["Invite"] = "Bjud in",
 			["Invite a member"] = "Bjud in en medlem",
+			["{0} (you)"] = "{0} (du)",
 			["Create a member…"] = "Skapa en medlem…",
 			["Create a member"] = "Skapa en medlem",
 			["Makes an account for someone who has none yet, and invites them to the band. They're emailed their username and how to set their own password."] = "Skapar ett konto åt någon som inte har något än och bjuder in hen till bandet. Hen får ett mejl med sitt användarnamn och hur hen väljer sitt eget lösenord.",

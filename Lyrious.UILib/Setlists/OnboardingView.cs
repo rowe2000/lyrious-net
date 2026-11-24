@@ -21,8 +21,8 @@ namespace Lyrious.UILib.Setlists
 	/// </summary>
 	public sealed class OnboardingView : UserControl
 	{
-		/// <summary>A band the member is invited to, and the names of its members.</summary>
-		public sealed record Invitation(GroupSummary Band, IReadOnlyList<string> MemberNames);
+		/// <summary>A band the member is invited to, the names of its members, and the member's own name in it (added to them once accepted).</summary>
+		public sealed record Invitation(GroupSummary Band, IReadOnlyList<string> MemberNames, string MyName);
 
 		/// <summary>Raised when the member goes on (Continue).</summary>
 		public event Action? Continued;
@@ -111,7 +111,8 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// A band the member is invited to: its name, its members, and Accept (large, highlighted), which
-		/// joins it; after that, that they're in the band. What went wrong shows below Accept.
+		/// joins it; after that, that they're in the band, with themselves among its members. What went
+		/// wrong shows below Accept.
 		/// </summary>
 		private static Control InvitationCard(Invitation invitation, Func<GroupSummary, System.Threading.Tasks.Task> accept)
 		{
@@ -143,6 +144,8 @@ namespace Lyrious.UILib.Setlists
 				{
 					await accept(invitation.Band);
 					heading.Text = L.T("You're now in {0}", invitation.Band.Name);
+					// Now one of them: the member is in the list too.
+					members.Text = L.T("Members: {0}", string.Join(", ", invitation.MemberNames.Append(L.T("{0} (you)", invitation.MyName))));
 					acceptButton.IsVisible = false;
 				}
 				catch (Exception ex)
