@@ -139,7 +139,9 @@ namespace Lyrious.UILib.Setlists
 				// The song the button's whole width: tempo, beat, key and transpose at its right edge.
 				HorizontalContentAlignment = HorizontalAlignment.Stretch,
 				VerticalContentAlignment = VerticalAlignment.Center,
-				Background = Brushes.Transparent,
+				// A little darker than the toolbar (a shade of black over it, in both themes), so it
+				// stands out as a button.
+				Background = new SolidColorBrush(Color.FromArgb(0x28, 0, 0, 0)),
 				BorderThickness = new Thickness(0),
 			};
 			// Pointed at (and pressed): black in the dark theme, white in the light one.

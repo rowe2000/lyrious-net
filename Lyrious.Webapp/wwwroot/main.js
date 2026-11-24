@@ -69,8 +69,11 @@ globalThis.lyriousLogin = (() => {
             onSubmit = submitCallback;
             login.elements.username.placeholder = userPlaceholder;
             login.elements.password.placeholder = passwordPlaceholder;
-            login.elements.username.value = userName;
-            login.elements.password.value = password;
+            // What the app has (e.g. the saved login, after it failed); else what the browser filled in stays.
+            if (userName || password) {
+                login.elements.username.value = userName;
+                login.elements.password.value = password;
+            }
             const button = login.querySelector("button");
             button.textContent = submitText;
             login.style.setProperty("--lyrious-foreground", foreground);
@@ -83,8 +86,9 @@ globalThis.lyriousLogin = (() => {
             if (matchMedia("(pointer: fine)").matches) {
                 setTimeout(() => (userName ? login.elements.password : login.elements.username).focus({ preventScroll: true }), 50);
             }
-            // What the browser filled in already (e.g. Firefox at load).
-            report();
+            // What the browser filled in already (e.g. Firefox at load), for the app; empty fields aren't
+            // reported, as that would clear what the app fills in just after.
+            if (!userName && !password && (login.elements.username.value || login.elements.password.value)) report();
         },
         // A field ("username", "password" or "button") over the app's, in page pixels; none when its width is 0.
         place: (field, x, y, width, height, fontSize, padding, radius) => {

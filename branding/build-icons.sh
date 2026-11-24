@@ -6,7 +6,7 @@
 #
 # Writes:
 #   branding/lyrious-icon.svg            the singer in white on a purple (#6918B4) rounded square (the app icon)
-#   branding/lyrious-icon-square.svg     the singer on a full white square, with room around it, for
+#   branding/lyrious-icon-square.svg     the singer in white on a full purple square, with room around it, for
 #                                        systems that round or cut the corners themselves
 #   installers/icons/Lyrious.icns, .ico  macOS and Windows (the installers and the program)
 #   Lyrious.Webapp/wwwroot/favicon.ico   the app icon (lyrious-icon.svg), 16 to 256 px
@@ -76,9 +76,9 @@ png() { rsvg-convert -w "$2" -h "$2" "$1" -o "$3"; }
 
 # The icons' own SVGs: rounded (the app icon) and square (rounded by the system).
 icon_svg 1024 0 224 "#6918B4" 0.78 "#FFFFFF" > "$brand/lyrious-icon.svg"
-icon_svg 1024 0 0 "#ffffff" 0.64 > "$brand/lyrious-icon-square.svg"
+icon_svg 1024 0 0 "#6918B4" 0.64 "#FFFFFF" > "$brand/lyrious-icon-square.svg"
 # macOS: the plate inside Apple's margins (824 of 1024), as other apps' icons are.
-icon_svg 1024 100 185 "#ffffff" 0.78 > "$work/macos.svg"
+icon_svg 1024 100 185 "#6918B4" 0.78 "#FFFFFF" > "$work/macos.svg"
 
 # macOS
 mkdir -p "$work/Lyrious.iconset"
