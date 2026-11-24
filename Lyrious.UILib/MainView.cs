@@ -59,6 +59,11 @@ namespace Lyrious.UILib
 				home.Close();
 				ShowHome(session.User, session.Credential, skipOnboarding: true, openSettings: inSettings);
 			}
+			else if (loggedIn == null && Content is Login.RegisterView register)
+			{
+				// Its language chosen while creating an account: the same form, in it, with what was typed.
+				ShowRegister(register.ViewModel);
+			}
 			else if (loggedIn == null)
 			{
 				ShowLogin();
@@ -140,7 +145,7 @@ namespace Lyrious.UILib
 			}
 
 			var view = new LoginView(login);
-			view.RegisterRequested += ShowRegister;
+			view.RegisterRequested += () => ShowRegister();
 			view.ForgotPasswordRequested += () => ShowForgotPassword(login.UserName);
 			Content = view;
 
@@ -245,10 +250,15 @@ namespace Lyrious.UILib
 			Content = view;
 		}
 
-		private void ShowRegister()
+		/// <param name="register">What was typed in already (the form shown anew in another language); else a new form.</param>
+		private void ShowRegister(RegisterViewModel? register = null)
 		{
-			var register = new RegisterViewModel(App.AuthService);
-			register.LoggedIn += (user, credential) => _ = AfterLoginAsync(user, credential);
+			if (register == null)
+			{
+				register = new RegisterViewModel(App.AuthService);
+				register.LoggedIn += (user, credential) => _ = AfterLoginAsync(user, credential);
+			}
+
 			var view = new RegisterView(register);
 			view.LoginRequested += ShowLogin;
 			Content = view;

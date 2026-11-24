@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -314,6 +315,49 @@ namespace Lyrious.UILib.Setlists
 			var (row, show) = NameRow(placeholder, add);
 			addButton.Click += (_, _) => show();
 			return (addButton, row);
+		}
+
+		/// <summary>
+		/// What a new password must have (the server's rules: ASP.NET Identity's own), as a small note
+		/// under the box for it.
+		/// </summary>
+		public static TextBlock PasswordRules() => new()
+		{
+			Text = L.T("At least 6 characters, with an uppercase and a lowercase letter, a digit and a symbol (such as ! or #)."),
+			FontSize = 12,
+			Opacity = 0.7,
+			TextWrapping = TextWrapping.Wrap,
+			MaxWidth = 360,
+			HorizontalAlignment = HorizontalAlignment.Left,
+		};
+
+		/// <summary>
+		/// "Language" with a dropdown of the app's languages (English, Svenska), starting at
+		/// <paramref name="code"/>: for a new account, whose language setting it becomes (the app's, and
+		/// the emails' and texts' sent to them).
+		/// </summary>
+		/// <param name="chosen">Called with the code ("en" or "sv") whenever another is chosen.</param>
+		public static Control LanguageChoice(string code, Action<string> chosen)
+		{
+			var languages = Localization.Language.Choices.Where(choice => choice.Code.Length > 0).ToList();
+			var dropdown = new ComboBox
+			{
+				ItemsSource = languages.Select(choice => choice.Name).ToList(),
+				SelectedIndex = Math.Max(0, languages.FindIndex(choice => choice.Code == code)),
+				MinWidth = 140,
+				VerticalAlignment = VerticalAlignment.Center,
+			};
+			dropdown.SelectionChanged += (_, _) =>
+			{
+				if (dropdown.SelectedIndex >= 0)
+				{
+					chosen(languages[dropdown.SelectedIndex].Code);
+				}
+			};
+			DockPanel.SetDock(dropdown, Dock.Right);
+			var label = new TextBlock { Text = L.T("Language"), VerticalAlignment = VerticalAlignment.Center };
+			ToolTip.SetTip(label, L.T("The language of the app, and of the emails and texts Lyrious sends"));
+			return new DockPanel { Children = { dropdown, label } };
 		}
 
 		/// <summary>A "+" button for a page title (e.g. to open a menu of ways to add something).</summary>

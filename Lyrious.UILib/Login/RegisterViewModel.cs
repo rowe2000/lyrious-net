@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Lyrious.UILib.Localization;
 
@@ -34,7 +35,10 @@ namespace Lyrious.UILib.Login
 			set => Set(ref displayName, value);
 		}
 
-		/// <summary>Required: the code is sent there. Changed after a code was sent, a new one is needed.</summary>
+		/// <summary>
+		/// Required: the email address, or the phone number (see <see cref="IsPhone"/>), the code is sent
+		/// to. Changed after a code was sent, a new one is needed.
+		/// </summary>
 		public string Email
 		{
 			get => email;
@@ -50,7 +54,7 @@ namespace Lyrious.UILib.Login
 			}
 		}
 
-		/// <summary>The code emailed to <see cref="Email"/>.</summary>
+		/// <summary>The code emailed (or texted) to <see cref="Email"/>.</summary>
 		public string Code
 		{
 			get => code;
@@ -64,11 +68,25 @@ namespace Lyrious.UILib.Login
 			private set => Set(ref codeSent, value);
 		}
 
+		/// <summary>
+		/// Whether <see cref="Email"/> is a phone number: only digits, spaces, + and - (at least one
+		/// digit). The code is then texted to it, and the account is made with the number instead of an
+		/// email address.
+		/// </summary>
+		public bool IsPhone => email.Any(char.IsDigit) && email.Trim().All(c => char.IsDigit(c) || c is ' ' or '+' or '-');
+
 		public string Password
 		{
 			get => password;
 			set => Set(ref password, value);
 		}
+
+		/// <summary>
+		/// The new account's language ("sv" or "en"): the one the app is shown in now (the device's, or
+		/// chosen in Settings) unless changed. It's kept as the member's language setting, and the code
+		/// is emailed in it.
+		/// </summary>
+		public string Language { get; set; } = Localization.Language.Current;
 
 		public string ConfirmPassword
 		{
@@ -94,9 +112,9 @@ namespace Lyrious.UILib.Login
 			}
 
 			var trimmedEmail = Email.Trim();
-			if (!trimmedEmail.Contains('@'))
+			if (!IsPhone && !trimmedEmail.Contains('@'))
 			{
-				ErrorMessage = L.T("That doesn't look like an email address.");
+				ErrorMessage = L.T("That doesn't look like an email address or a phone number.");
 				return;
 			}
 
@@ -107,7 +125,10 @@ namespace Lyrious.UILib.Login
 			}
 
 			// The server checks the code, enforces the password rules and unique usernames, and explains what's wrong.
-			var registration = new Registration(UserName.Trim(), Password, DisplayName.Trim(), trimmedEmail, Code.Trim());
+			// A phone number in place of the email address: registered with that (its code was texted).
+			var registration = IsPhone
+				? new Registration(UserName.Trim(), Password, DisplayName.Trim(), null, Code.Trim(), Language, PhoneNumber: trimmedEmail)
+				: new Registration(UserName.Trim(), Password, DisplayName.Trim(), trimmedEmail, Code.Trim(), Language);
 			var registered = await authService.RegisterAsync(registration);
 			if (!registered.Succeeded)
 			{
@@ -117,6 +138,12 @@ namespace Lyrious.UILib.Login
 
 			var credential = new SavedCredential(registration.UserName, Password);
 			Code = "";
+			// Another language than the one shown: the app follows it at once (as the account's setting).
+			if (Language != Localization.Language.Current)
+			{
+				Localization.Language.Chosen = Language;
+			}
+
 			var login = await authService.LoginAsync(credential.UserName, credential.Password);
 			if (login.User is { } user)
 			{
@@ -134,7 +161,9 @@ namespace Lyrious.UILib.Login
 
 		private async Task SendCodeNowAsync(string address)
 		{
-			var sent = await authService.SendRegistrationCodeAsync(address);
+			var sent = IsPhone
+				? await authService.SendRegistrationSmsCodeAsync(address, Language)
+				: await authService.SendRegistrationCodeAsync(address, Language);
 			if (!sent.Succeeded)
 			{
 				ErrorMessage = sent.Error ?? L.T("Couldn't send a code.");
@@ -142,7 +171,9 @@ namespace Lyrious.UILib.Login
 			}
 
 			CodeSent = true;
-			SuccessMessage = L.T("A code has been sent to {0}. Enter it below to create your account.", address);
+			SuccessMessage = IsPhone
+				? L.T("A code has been texted to {0}. Enter it below to create your account.", address)
+				: L.T("A code has been sent to {0}. Enter it below to create your account.", address);
 		}
 	}
 }

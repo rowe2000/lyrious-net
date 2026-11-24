@@ -66,10 +66,10 @@ namespace Lyrious.UILib.Setlists
 		public Func<GroupSummary, string, Task<string?>>? InviteRequested { get; set; }
 
 		/// <summary>
-		/// Makes an account for someone new (username, name, email) and invites them to the band;
+		/// Makes an account for someone new (username, name, email or phone, language) and invites them to the band;
 		/// returns why it couldn't (e.g. the username is taken), or null when it's done.
 		/// </summary>
-		public Func<GroupSummary, string, string, string, Task<string?>>? CreateMemberRequested { get; set; }
+		public Func<GroupSummary, string, string, string, string, Task<string?>>? CreateMemberRequested { get; set; }
 
 		/// <param name="members">Each band's members, keyed by group id.</param>
 		/// <param name="selectedGroupId">The band to show selected (e.g. the one just managed); else the joined one.</param>
@@ -513,9 +513,9 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// "+ Create a member…" for someone who has no account yet: opens their name, a username (made
-		/// from the name until it's changed) and their email, with "Create and invite" and a ✕ (or
-		/// Escape) that closes it; the invite box is hidden meanwhile. They're emailed their username
-		/// and how to set their own password. Problems show below it.
+		/// from the name until it's changed) and their email or phone number, with "Create and invite"
+		/// and a ✕ (or Escape) that closes it; the invite box is hidden meanwhile. They're sent their
+		/// username and how to set their own password, by email or SMS. Problems show below it.
 		/// </summary>
 		/// <param name="inviteRow">The invite box, hidden while a member is being created.</param>
 		private Control CreateMemberRow(GroupSummary group, Control inviteRow)
@@ -530,10 +530,13 @@ namespace Lyrious.UILib.Setlists
 				},
 				HorizontalAlignment = HorizontalAlignment.Left,
 			};
-			ToolTip.SetTip(open, L.T("Makes an account for someone who has none yet, and invites them to the band. They're emailed their username and how to set their own password."));
+			ToolTip.SetTip(open, L.T("Makes an account for someone who has none yet, and invites them to the band. They're sent their username and how to set their own password, by email or SMS."));
 			var name = new TextBox { PlaceholderText = L.T("Their name") };
 			var userName = new TextBox { PlaceholderText = L.T("Username") };
-			var email = new TextBox { PlaceholderText = L.T("Their email") };
+			var email = new TextBox { PlaceholderText = L.T("Their email or phone number") };
+			// Their language: the admin's own to start with.
+			var language = Localization.Language.Current;
+			var languageChoice = PageLayout.LanguageChoice(language, code => language = code);
 			var create = new Button { Content = L.T("Create and invite"), Classes = { "accent" }, IsEnabled = false, HorizontalAlignment = HorizontalAlignment.Left };
 			// The ✕ at the heading's right; Escape (once out of the boxes) closes it too, before the page's ✕.
 			var close = EscapeKey.MarkAsClose(PageLayout.CancelButton(L.T("Close")), first: true);
@@ -551,6 +554,7 @@ namespace Lyrious.UILib.Setlists
 					name,
 					userName,
 					email,
+					languageChoice,
 					create,
 					problem,
 				},
@@ -570,7 +574,9 @@ namespace Lyrious.UILib.Setlists
 			};
 			userName.TextChanged += (_, _) => userNameTyped |= !suggesting;
 
-			void Check() => create.IsEnabled = !string.IsNullOrWhiteSpace(name.Text) && !string.IsNullOrWhiteSpace(userName.Text) && (email.Text ?? "").Contains('@');
+			// An email address (with an @) or a phone number (at least 8 digits); the server checks it properly.
+			void Check() => create.IsEnabled = !string.IsNullOrWhiteSpace(name.Text) && !string.IsNullOrWhiteSpace(userName.Text)
+				&& ((email.Text ?? "").Contains('@') || (email.Text ?? "").Count(char.IsDigit) >= 8);
 			name.TextChanged += (_, _) => Check();
 			userName.TextChanged += (_, _) => Check();
 			email.TextChanged += (_, _) => Check();
@@ -604,7 +610,7 @@ namespace Lyrious.UILib.Setlists
 				try
 				{
 					// On success the page is shown again, with the new member in the list as invited.
-					if (await CreateMemberRequested(group, userName.Text!.Trim(), name.Text!.Trim(), email.Text!.Trim()) is { } why)
+					if (await CreateMemberRequested(group, userName.Text!.Trim(), name.Text!.Trim(), email.Text!.Trim(), language) is { } why)
 					{
 						problem.Text = why;
 						problem.IsVisible = true;

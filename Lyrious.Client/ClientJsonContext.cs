@@ -9,13 +9,13 @@ internal sealed record LoginResponse(string? Token, MemberProfile? Member, bool 
 
 internal sealed record ElevateRequest(string Password);
 
-internal sealed record MemberProfile(System.Guid Id, string? UserName, string? Name, System.Guid? JoinedGroupId, string? Email = null);
+internal sealed record MemberProfile(System.Guid Id, string? UserName, string? Name, System.Guid? JoinedGroupId, string? Email = null, string? PhoneNumber = null, bool PhoneNumberConfirmed = false);
 
-internal sealed record RegisterRequest(string UserName, string Password, string Name, string? Email, string? PhoneNumber, string? Code);
+internal sealed record RegisterRequest(string UserName, string Password, string Name, string? Email, string? PhoneNumber, string? Code, string? Language = null);
 
 internal sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword, string? Code);
 
-internal sealed record EmailCodeRequest(string Email);
+internal sealed record EmailCodeRequest(string Email, string? Language = null);
 
 /// <summary>A release note as the API sends it (see Lyrious.CoreLib's ReleaseNote).</summary>
 internal sealed record ReleaseNoteDto(System.Guid Id, string? Text, string? Branch, string? Version, bool Published, System.DateTime Created, bool Removed = false);
@@ -31,7 +31,11 @@ internal sealed record ResetPasswordRequest(string UserNameOrEmail, string Code,
 
 internal sealed record EmailInvitationRequest(System.Guid GroupId, string Email);
 
-internal sealed record CreateMemberRequest(System.Guid GroupId, string UserName, string Name, string Email);
+internal sealed record CreateMemberRequest(System.Guid GroupId, string UserName, string Name, string? Email, string? PhoneNumber, string? Language);
+
+internal sealed record PhoneCodeRequest(string PhoneNumber, string? Language = null);
+
+internal sealed record ChangePhoneRequest(string? PhoneNumber, string? Code);
 
 /// <summary>
 /// A group as the API sends it. Every field the API stores is included, because updates post the
@@ -112,6 +116,8 @@ internal sealed record MembershipDto(System.Guid Id, int RoleEnum, int Membershi
 [JsonSerializable(typeof(ResetPasswordRequest))]
 [JsonSerializable(typeof(EmailInvitationRequest))]
 [JsonSerializable(typeof(CreateMemberRequest))]
+[JsonSerializable(typeof(PhoneCodeRequest))]
+[JsonSerializable(typeof(ChangePhoneRequest))]
 [JsonSerializable(typeof(GroupDto))]
 [JsonSerializable(typeof(GroupDto[]))]
 [JsonSerializable(typeof(SetlistDto))]

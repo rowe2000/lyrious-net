@@ -4,6 +4,9 @@ namespace Lyrious.CoreLib.ApiModels;
 public class EmailCodeModel
 {
 	public required string Email { get; set; }
+
+	/// <summary>The language to email the code in ("sv" or "en"), when registering (the language chosen for the new account).</summary>
+	public string? Language { get; set; }
 }
 
 /// <summary>Changes the logged-in member's email address to <see cref="NewEmail"/>, with the code emailed there.</summary>

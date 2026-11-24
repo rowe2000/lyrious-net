@@ -204,15 +204,15 @@ public class MemberController(LyriousRepository repo, IEmailSender emailSender, 
 			return StatusCode(StatusCodes.Status503ServiceUnavailable, "The server isn't set up to send email, so they can't be invited by email.");
 		}
 
-		var inviter = !string.IsNullOrWhiteSpace(Repo.Me?.Name) ? Repo.Me.Name : Repo.Me?.UserName ?? "A band admin";
+		// In the inviter's language: the best guess for someone who has no account (and no language) yet.
+		var language = AccountTexts.LanguageOf(Repo.Me);
+		var inviter = !string.IsNullOrWhiteSpace(Repo.Me?.Name) ? Repo.Me.Name : Repo.Me?.UserName ?? AccountTexts.T(language, "A band admin");
 		// Where the caller reached the API is where the web app is, too.
 		var appUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/";
 		await emailSender.SendAsync(
 			email,
-			$"{inviter} invites you to {group.Name} on Lyrious",
-			$"Hi,\n\n{inviter} invites you to the band {group.Name} on Lyrious, where the band keeps its setlists and lyrics.\n\n"
-			+ $"To join, create an account at {appUrl} with this email address ({email}), and tell {inviter} that you have: they can then add you to the band.\n\n"
-			+ "If you don't know who this is from, you can ignore this email.",
+			AccountTexts.T(language, "{0} invites you to {1} on Lyrious", inviter, group.Name),
+			AccountTexts.T(language, "Hi,\n\n{0} invites you to the band {1} on Lyrious, where the band keeps its setlists and lyrics.\n\nTo join, create an account at {2} with this email address ({3}), and tell {0} that you have: they can then add you to the band.\n\nIf you don't know who this is from, you can ignore this email.", inviter, group.Name, appUrl, email),
 			cancellationToken);
 		return Ok();
 	}

@@ -12,6 +12,12 @@ public class CreateMemberModel
 	/// <summary>Their name, as the band sees it.</summary>
 	public required string Name { get; set; }
 
-	/// <summary>Their email address: where they're told about the account and set their password from.</summary>
-	public required string Email { get; set; }
+	/// <summary>Their email address: where they're told about the account and set their password from. Either this or <see cref="PhoneNumber"/>.</summary>
+	public string? Email { get; set; }
+
+	/// <summary>Their phone number, texted instead of an email. Either this or <see cref="Email"/>.</summary>
+	public string? PhoneNumber { get; set; }
+
+	/// <summary>Their language ("sv" or "en"): their language setting, and the language they're told about the account in.</summary>
+	public string? Language { get; set; }
 }

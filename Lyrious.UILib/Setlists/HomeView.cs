@@ -2853,14 +2853,14 @@ namespace Lyrious.UILib.Setlists
 					return ex.Message;
 				}
 			};
-			// A new account for someone new, then invited as any member; they're emailed how to start.
-			view.CreateMemberRequested = async (group, userName, name, email) =>
+			// A new account for someone new, then invited as any member; they're sent how to start (email or SMS).
+			view.CreateMemberRequested = async (group, userName, name, email, language) =>
 			{
 				try
 				{
-					var created = await service.CreateMemberAsync(group.Id, userName, name, email);
+					var created = await service.CreateMemberAsync(group.Id, userName, name, email, language);
 					await service.InviteMemberAsync(group.Id, created.Id);
-					ShowNotice(L.T("Made an account for {0} and invited them to {1}: they're emailed how to set their password", created.Name, group.Name));
+					ShowNotice(L.T("Made an account for {0} and invited them to {1}: they've been sent how to set their password", created.Name, group.Name));
 					await refresh(group.Id);
 					return null;
 				}

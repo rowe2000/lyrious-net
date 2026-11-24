@@ -111,6 +111,9 @@ namespace Lyrious.UILib.Login
 			return box;
 		}
 
+		/// <summary>Adds another control among the fields (e.g. a choice).</summary>
+		protected void AddControl(Control control) => fields.Children.Add(control);
+
 		/// <summary>Adds a link-style button below the submit button, e.g. to another page.</summary>
 		protected HyperlinkButton AddLink(string text, Action onClick)
 		{

@@ -61,6 +61,9 @@ internal class Program
 		// Account emails (verification and reset codes, invitations); only logged until Gmail or Smtp:Host is configured.
 		// Through the Gmail API when its environment variables are set (see GmailEmailSender), else SMTP.
 		builder.Services.AddSingleton(builder.Configuration.GetSection("Smtp").Get<SmtpSettings>() ?? new SmtpSettings());
+		// Account texts (the same codes and invitations, to a phone number), through Hello SMS; only logged until it's set up.
+		builder.Services.AddSingleton(builder.Configuration.GetSection("HelloSms").Get<HelloSmsSettings>() ?? new HelloSmsSettings());
+		builder.Services.AddSingleton<ISmsSender, HelloSmsSender>();
 		if (GmailEmailSender.IsConfigured)
 		{
 			builder.Services.AddSingleton<IEmailSender, GmailEmailSender>();

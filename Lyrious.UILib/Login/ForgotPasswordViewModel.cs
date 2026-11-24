@@ -4,7 +4,7 @@ using Lyrious.UILib.Localization;
 
 namespace Lyrious.UILib.Login
 {
-	/// <summary>First step of resetting a forgotten password: ask for a code to be emailed.</summary>
+	/// <summary>First step of resetting a forgotten password: ask for a code (emailed, or texted to a phone number).</summary>
 	public sealed class ForgotPasswordViewModel(IAuthService authService, string userNameOrEmail = "") : FormViewModel
 	{
 		private string userNameOrEmail = userNameOrEmail;

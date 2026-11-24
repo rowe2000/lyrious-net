@@ -40,6 +40,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					NameSection(user, service),
 					EmailSection(auth),
+					PhoneSection(auth),
 					PasswordSection(auth),
 				},
 			};
@@ -149,19 +150,23 @@ namespace Lyrious.UILib.Setlists
 			var current = PasswordBox(L.T("Current password"), value => model.CurrentPassword = value);
 			var next = PasswordBox(L.T("New password"), value => model.NewPassword = value);
 			var confirm = PasswordBox(L.T("Confirm new password"), value => model.ConfirmPassword = value);
-			// The code emailed to the member, beside the button that sends it.
-			var code = new TextBox { PlaceholderText = L.T("Code from the email"), MinWidth = 160, MaxWidth = 200 };
+			// The code sent to the member, beside the buttons that send it: by email, and with a verified
+			// phone number by SMS too.
+			var code = new TextBox { PlaceholderText = auth.PhoneNumber != null ? L.T("Code from the email or SMS") : L.T("Code from the email"), MinWidth = 160, MaxWidth = 200 };
 			code.TextChanged += (_, _) => model.Code = code.Text ?? "";
 			var sendCode = new Button { Content = L.T("Send code"), VerticalAlignment = VerticalAlignment.Center };
 			sendCode.Click += (_, _) => _ = model.SendCodeAsync();
-			var codeRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { code, sendCode } };
+			var sendSms = new Button { Content = L.T("Send by SMS"), VerticalAlignment = VerticalAlignment.Center, IsVisible = auth.PhoneNumber != null };
+			ToolTip.SetTip(sendSms, L.T("Texts the code to your phone number instead of emailing it"));
+			sendSms.Click += (_, _) => _ = model.SendCodeAsync(bySms: true);
+			var codeRow = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8, Children = { code, sendCode, sendSms } };
 			var change = new Button { Content = L.T("Change password"), IsEnabled = false };
 			var message = Message();
 
 			void Update(object? sender, PropertyChangedEventArgs e)
 			{
 				change.IsEnabled = model.CanSubmit;
-				sendCode.IsEnabled = !model.IsBusy;
+				sendCode.IsEnabled = sendSms.IsEnabled = !model.IsBusy;
 				if (model.ErrorMessage is { } error)
 				{
 					Show(message, error, error: true);
@@ -201,9 +206,156 @@ namespace Lyrious.UILib.Setlists
 					Section(L.T("Password")),
 					current,
 					next,
+					// What the new password must have, before it's refused for it.
+					PageLayout.PasswordRules(),
 					confirm,
 					codeRow,
 					change,
+					message,
+				},
+			};
+		}
+
+		/// <summary>
+		/// The member's phone number, in a box to add or change it: once it differs from theirs, a tick
+		/// texts a code to the new number; then the code is entered and verified, which makes the change,
+		/// so the number is known to be theirs (and can get their codes, e.g. for a forgotten password).
+		/// Remove takes their number away.
+		/// </summary>
+		private Control PhoneSection(IAuthService auth)
+		{
+			var number = new TextBox { Text = auth.PhoneNumber ?? "", PlaceholderText = L.T("Phone number"), MaxWidth = 360, MinWidth = 240, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+			// A ✓ in the box ("Send code" as its tip), shown once the number differs from theirs.
+			var sendCode = PageLayout.OkButton(L.T("Send code"));
+			var sent = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
+			var code = new TextBox { PlaceholderText = L.T("Code from the SMS"), MaxWidth = 200, MinWidth = 160, HorizontalAlignment = HorizontalAlignment.Left, IsVisible = false };
+			var verify = new Button { Content = L.T("Verify"), IsVisible = false, IsEnabled = false };
+			var remove = new Button { Content = L.T("Remove phone number") };
+			var message = Message();
+			string? sentTo = null;
+			var busy = false;
+
+			bool Changed()
+			{
+				var typed = number.Text?.Trim() ?? "";
+				return typed.Length > 0 && typed != auth.PhoneNumber;
+			}
+
+			PageLayout.OkInBox(number, sendCode, Changed);
+
+			void Enable()
+			{
+				var typed = number.Text?.Trim() ?? "";
+				sendCode.IsVisible = Changed();
+				sendCode.IsEnabled = remove.IsEnabled = !busy;
+				// The code is for the number it was sent to: another number needs a new one.
+				var codeStep = sentTo != null && typed == sentTo;
+				sent.IsVisible = code.IsVisible = verify.IsVisible = codeStep;
+				verify.IsEnabled = !busy && codeStep && (code.Text?.Trim().Length ?? 0) > 0;
+				// Remove only for the number they have, shown as it is.
+				remove.IsVisible = auth.PhoneNumber != null && typed == auth.PhoneNumber;
+			}
+
+			async Task RunAsync(Func<Task> action)
+			{
+				busy = true;
+				Enable();
+				try
+				{
+					await action();
+				}
+				catch (Exception ex)
+				{
+					Show(message, L.T("Couldn't reach the server. {0}", ex.Message), error: true);
+				}
+				finally
+				{
+					busy = false;
+					Enable();
+				}
+			}
+
+			sendCode.Click += (_, _) => _ = RunAsync(async () =>
+			{
+				var newNumber = number.Text?.Trim() ?? "";
+				message.IsVisible = false;
+				var result = await auth.SendPhoneChangeCodeAsync(newNumber);
+				if (result.Succeeded)
+				{
+					sentTo = newNumber;
+					sent.Text = L.T("A code was texted to {0}. Please verify it.", newNumber);
+					code.Text = "";
+					code.Focus();
+				}
+				else
+				{
+					Show(message, result.Error ?? L.T("Couldn't send a code."), error: true);
+				}
+			});
+			verify.Click += (_, _) => _ = RunAsync(async () =>
+			{
+				var result = await auth.ChangePhoneAsync(sentTo!, code.Text?.Trim() ?? "");
+				if (result.Succeeded)
+				{
+					// The box shows the number as kept (+46…), now theirs (so the tick goes).
+					sentTo = null;
+					code.Text = "";
+					number.Text = auth.PhoneNumber ?? "";
+					Show(message, L.T("Your phone number has been verified."), error: false);
+				}
+				else
+				{
+					Show(message, result.Error ?? L.T("Changing the phone number failed."), error: true);
+				}
+			});
+			remove.Click += (_, _) => _ = RunAsync(async () =>
+			{
+				var result = await auth.ChangePhoneAsync(null, null);
+				if (result.Succeeded)
+				{
+					number.Text = "";
+					Show(message, L.T("Your phone number has been removed."), error: false);
+				}
+				else
+				{
+					Show(message, result.Error ?? L.T("Changing the phone number failed."), error: true);
+				}
+			});
+			number.TextChanged += (_, _) =>
+			{
+				// A new number: what was said about the last one (e.g. an error) no longer applies.
+				message.IsVisible = false;
+				Enable();
+			};
+			code.TextChanged += (_, _) =>
+			{
+				// Typing the code again: the last error (e.g. a wrong code) no longer applies.
+				message.IsVisible = false;
+				Enable();
+			};
+			code.KeyDown += (_, e) =>
+			{
+				if (e.Key == Avalonia.Input.Key.Enter && verify.IsEnabled)
+				{
+					e.Handled = true;
+					verify.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+				}
+			};
+
+			var section = Section(L.T("Phone"));
+			ToolTip.SetTip(section, L.T("A verified phone number can get your codes by SMS instead of email, e.g. when you've forgotten your password."));
+			Enable();
+			return new StackPanel
+			{
+				Spacing = 8,
+				Children =
+				{
+					section,
+					number,
+					sent,
+					code,
+					verify,
+					remove,
 					message,
 				},
 			};

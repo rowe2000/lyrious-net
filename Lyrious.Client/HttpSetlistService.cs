@@ -950,7 +950,7 @@ public sealed class HttpSetlistService : ISetlistService
         }
     }
 
-    public async Task<FoundMember> CreateMemberAsync(Guid groupId, string userName, string name, string email, CancellationToken cancellationToken = default)
+    public async Task<FoundMember> CreateMemberAsync(Guid groupId, string userName, string name, string emailOrPhone, string language, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(auth.AccessToken))
         {
@@ -959,7 +959,10 @@ public sealed class HttpSetlistService : ISetlistService
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/auth/create-member");
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", auth.AccessToken);
-        request.Content = JsonContent.Create(new CreateMemberRequest(groupId, userName.Trim(), name.Trim(), email.Trim()), ClientJsonContext.Default.CreateMemberRequest);
+        // An email address has an @; anything else is taken as a phone number (the server checks it).
+        var contact = emailOrPhone.Trim();
+        var byEmail = contact.Contains('@');
+        request.Content = JsonContent.Create(new CreateMemberRequest(groupId, userName.Trim(), name.Trim(), byEmail ? contact : null, byEmail ? null : contact, language), ClientJsonContext.Default.CreateMemberRequest);
         using var response = await auth.Http.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {

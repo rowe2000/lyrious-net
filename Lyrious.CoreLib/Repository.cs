@@ -176,9 +176,11 @@ public abstract class Repository<TContext, TUser, TRole> : IRepository
 		}
 
 		var members = dbContext.Set<Member>();
+		// Phone numbers are kept in one form (+46701740610), whichever way they're typed.
+		var phone = PhoneNumbers.Clean(query) ?? query;
 		return members.FirstOrDefault(o => o.UserName == query)
 		       ?? members.FirstOrDefault(o => o.Email == query)
-		       ?? members.FirstOrDefault(o => o.PhoneNumber == query);
+		       ?? members.FirstOrDefault(o => o.PhoneNumber == phone);
 	}
 
 	public void Synchronize(Member me)

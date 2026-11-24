@@ -44,11 +44,15 @@ namespace Lyrious.UILib.Login
 
 		protected override bool IsComplete => CurrentPassword.Length > 0 && NewPassword.Length > 0 && ConfirmPassword.Length > 0 && Code.Trim().Length > 0;
 
-		/// <summary>Emails the code needed to change the password to the member's address.</summary>
-		public Task SendCodeAsync() => RunStepAsync(async () =>
+		/// <summary>Sends the code needed to change the password: emailed to the member's address, or texted to their phone number.</summary>
+		public Task SendCodeAsync(bool bySms = false) => RunStepAsync(async () =>
 		{
-			var result = await authService.SendPasswordChangeCodeAsync();
-			if (result.Succeeded)
+			var result = await authService.SendPasswordChangeCodeAsync(bySms);
+			if (result.Succeeded && bySms)
+			{
+				SuccessMessage = L.T("A code has been texted to {0}. Enter it to change your password.", authService.PhoneNumber ?? "");
+			}
+			else if (result.Succeeded)
 			{
 				SuccessMessage = authService.Email is { } email
 					? L.T("A code has been sent to {0}. Enter it to change your password.", email)

@@ -14,13 +14,22 @@ namespace Lyrious.UILib.Login
 		Task<LoginResult> LoginAsync(string userName, string password, CancellationToken cancellationToken = default);
 
 		/// <summary>Emails a code to the address someone wants to register with (see <see cref="Registration.Code"/>).</summary>
-		Task<AuthResult> SendRegistrationCodeAsync(string email, CancellationToken cancellationToken = default);
+		Task<AuthResult> SendRegistrationCodeAsync(string email, string? language = null, CancellationToken cancellationToken = default);
+
+		/// <summary>Texts a code to the phone number someone wants to register with instead of an email address.</summary>
+		Task<AuthResult> SendRegistrationSmsCodeAsync(string phoneNumber, string? language = null, CancellationToken cancellationToken = default);
 
 		/// <summary>Creates a member, with the code emailed to their address. Doesn't log in; call <see cref="LoginAsync"/> afterwards.</summary>
 		Task<AuthResult> RegisterAsync(Registration registration, CancellationToken cancellationToken = default);
 
-		/// <summary>Emails a code to the logged-in member's address, needed to change the password.</summary>
-		Task<AuthResult> SendPasswordChangeCodeAsync(CancellationToken cancellationToken = default);
+		/// <summary>Sends a code needed to change the password: emailed to the logged-in member's address, or texted to their verified phone number.</summary>
+		Task<AuthResult> SendPasswordChangeCodeAsync(bool bySms = false, CancellationToken cancellationToken = default);
+
+		/// <summary>Texts a code to the phone number the logged-in member wants as theirs.</summary>
+		Task<AuthResult> SendPhoneChangeCodeAsync(string phoneNumber, CancellationToken cancellationToken = default);
+
+		/// <summary>Sets the logged-in member's phone number, with the code texted to it (verified then); no number removes theirs.</summary>
+		Task<AuthResult> ChangePhoneAsync(string? phoneNumber, string? code, CancellationToken cancellationToken = default);
 
 		/// <summary>Changes the logged-in member's password, with the code emailed to them.</summary>
 		Task<AuthResult> ChangePasswordAsync(string currentPassword, string newPassword, string code, CancellationToken cancellationToken = default);
@@ -33,6 +42,9 @@ namespace Lyrious.UILib.Login
 
 		/// <summary>The logged-in member's email address; null if they have none (or it isn't known, e.g. offline).</summary>
 		string? Email { get; }
+
+		/// <summary>The logged-in member's verified phone number (+46701740610); null if they have none (or it isn't known).</summary>
+		string? PhoneNumber { get; }
 
 		/// <summary>
 		/// Whether the logged-in member is logged in elevated, as a site manager: an admin of every band
@@ -87,7 +99,9 @@ namespace Lyrious.UILib.Login
 	public sealed record AuthenticatedUser(string UserName, string DisplayName);
 
 	/// <param name="Code">The code emailed to <paramref name="Email"/> (see <see cref="IAuthService.SendRegistrationCodeAsync"/>).</param>
-	public sealed record Registration(string UserName, string Password, string DisplayName, string? Email, string? Code = null);
+	/// <param name="Language">The new member's language ("sv" or "en"): kept as their language setting, for the app and the emails and texts sent to them.</param>
+	/// <param name="PhoneNumber">The phone number registered with instead of an email address (then <paramref name="Email"/> is null, and the code was texted).</param>
+	public sealed record Registration(string UserName, string Password, string DisplayName, string? Email, string? Code = null, string? Language = null, string? PhoneNumber = null);
 
 	public sealed record LoginResult(AuthenticatedUser? User, string? Error)
 	{
@@ -122,13 +136,22 @@ namespace Lyrious.UILib.Login
 		public Task<LoginResult> LoginAsync(string userName, string password, CancellationToken cancellationToken = default)
 			=> Task.FromResult(LoginResult.Failure(NotConnected));
 
-		public Task<AuthResult> SendRegistrationCodeAsync(string email, CancellationToken cancellationToken = default)
+		public Task<AuthResult> SendRegistrationCodeAsync(string email, string? language = null, CancellationToken cancellationToken = default)
+			=> Task.FromResult(AuthResult.Failure(NotConnected));
+
+		public Task<AuthResult> SendRegistrationSmsCodeAsync(string phoneNumber, string? language = null, CancellationToken cancellationToken = default)
 			=> Task.FromResult(AuthResult.Failure(NotConnected));
 
 		public Task<AuthResult> RegisterAsync(Registration registration, CancellationToken cancellationToken = default)
 			=> Task.FromResult(AuthResult.Failure(NotConnected));
 
-		public Task<AuthResult> SendPasswordChangeCodeAsync(CancellationToken cancellationToken = default)
+		public Task<AuthResult> SendPasswordChangeCodeAsync(bool bySms = false, CancellationToken cancellationToken = default)
+			=> Task.FromResult(AuthResult.Failure(NotConnected));
+
+		public Task<AuthResult> SendPhoneChangeCodeAsync(string phoneNumber, CancellationToken cancellationToken = default)
+			=> Task.FromResult(AuthResult.Failure(NotConnected));
+
+		public Task<AuthResult> ChangePhoneAsync(string? phoneNumber, string? code, CancellationToken cancellationToken = default)
 			=> Task.FromResult(AuthResult.Failure(NotConnected));
 
 		public Task<AuthResult> ChangePasswordAsync(string currentPassword, string newPassword, string code, CancellationToken cancellationToken = default)
@@ -141,6 +164,8 @@ namespace Lyrious.UILib.Login
 			=> Task.FromResult(AuthResult.Failure(NotConnected));
 
 		public string? Email => null;
+
+		public string? PhoneNumber => null;
 
 		public bool IsSiteManager => false;
 

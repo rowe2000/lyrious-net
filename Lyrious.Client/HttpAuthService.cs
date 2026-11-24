@@ -291,6 +291,8 @@ public sealed class HttpAuthService : IAuthService
         offlineServer = null;
         MemberId = member.Id;
         Email = string.IsNullOrWhiteSpace(member.Email) ? null : member.Email;
+        // Only a verified number gets codes, so only that one counts as theirs here.
+        PhoneNumber = member.PhoneNumberConfirmed && !string.IsNullOrWhiteSpace(member.PhoneNumber) ? member.PhoneNumber : null;
         CanElevate = body.CanElevate;
         // A login (also one made again in the background) has a member's rights: elevated no more.
         SetSiteManager(body.IsSiteManager);
@@ -329,7 +331,7 @@ public sealed class HttpAuthService : IAuthService
     public async Task<AuthResult> RegisterAsync(Registration registration, CancellationToken cancellationToken = default)
     {
         // The API's model requires every property, so Email and PhoneNumber are sent even when null.
-        var request = new RegisterRequest(registration.UserName, registration.Password, registration.DisplayName, registration.Email, PhoneNumber: null, registration.Code);
+        var request = new RegisterRequest(registration.UserName, registration.Password, registration.DisplayName, registration.Email, registration.PhoneNumber, registration.Code, registration.Language);
         using var response = await http.PostAsJsonAsync("api/auth/register", request, ClientJsonContext.Default.RegisterRequest, cancellationToken);
 
         return response.IsSuccessStatusCode
@@ -337,10 +339,20 @@ public sealed class HttpAuthService : IAuthService
             : AuthResult.Failure(await ReadErrorAsync(response, cancellationToken));
     }
 
-    public async Task<AuthResult> SendRegistrationCodeAsync(string email, CancellationToken cancellationToken = default)
+    public async Task<AuthResult> SendRegistrationSmsCodeAsync(string phoneNumber, string? language = null, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync(
-            "api/auth/register/send-code", new EmailCodeRequest(email), ClientJsonContext.Default.EmailCodeRequest, cancellationToken);
+            "api/auth/register/send-sms-code", new PhoneCodeRequest(phoneNumber.Trim(), language), ClientJsonContext.Default.PhoneCodeRequest, cancellationToken);
+
+        return response.IsSuccessStatusCode
+            ? AuthResult.Success()
+            : AuthResult.Failure(await ReadErrorAsync(response, cancellationToken));
+    }
+
+    public async Task<AuthResult> SendRegistrationCodeAsync(string email, string? language = null, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync(
+            "api/auth/register/send-code", new EmailCodeRequest(email, language), ClientJsonContext.Default.EmailCodeRequest, cancellationToken);
 
         return response.IsSuccessStatusCode
             ? AuthResult.Success()
@@ -349,6 +361,9 @@ public sealed class HttpAuthService : IAuthService
 
     /// <summary>The logged-in member's email address, from the last online login (or changed since).</summary>
     public string? Email { get; private set; }
+
+    /// <summary>The logged-in member's verified phone number, from the last online login (or changed since).</summary>
+    public string? PhoneNumber { get; private set; }
 
     /// <summary>Whether the logged-in member is logged in elevated, as a site manager (admin of every band).</summary>
     public bool IsSiteManager { get; private set; }
@@ -403,8 +418,32 @@ public sealed class HttpAuthService : IAuthService
         return AuthResult.Success();
     }
 
-    public Task<AuthResult> SendPasswordChangeCodeAsync(CancellationToken cancellationToken = default)
-        => PostAsMemberAsync("api/auth/change-password/send-code", null, L.T("Changing your password needs a connection to the server."), cancellationToken);
+    public Task<AuthResult> SendPasswordChangeCodeAsync(bool bySms = false, CancellationToken cancellationToken = default)
+        => PostAsMemberAsync(bySms ? "api/auth/change-password/send-code?by=sms" : "api/auth/change-password/send-code", null, L.T("Changing your password needs a connection to the server."), cancellationToken);
+
+    public Task<AuthResult> SendPhoneChangeCodeAsync(string phoneNumber, CancellationToken cancellationToken = default)
+        => PostAsMemberAsync(
+            "api/auth/change-phone/send-code",
+            JsonContent.Create(new PhoneCodeRequest(phoneNumber.Trim()), ClientJsonContext.Default.PhoneCodeRequest),
+            L.T("Changing your phone number needs a connection to the server."),
+            cancellationToken);
+
+    public async Task<AuthResult> ChangePhoneAsync(string? phoneNumber, string? code, CancellationToken cancellationToken = default)
+    {
+        string? kept = null;
+        var result = await PostAsMemberAsync(
+            "api/auth/change-phone",
+            JsonContent.Create(new ChangePhoneRequest(phoneNumber?.Trim(), code?.Trim()), ClientJsonContext.Default.ChangePhoneRequest),
+            L.T("Changing your phone number needs a connection to the server."),
+            cancellationToken,
+            async response => kept = (await response.Content.ReadFromJsonAsync(ClientJsonContext.Default.PhoneCodeRequest, cancellationToken))?.PhoneNumber);
+        if (result.Succeeded)
+        {
+            PhoneNumber = string.IsNullOrWhiteSpace(kept) ? null : kept;
+        }
+
+        return result;
+    }
 
     public async Task<AuthResult> SendEmailChangeCodeAsync(string newEmail, CancellationToken cancellationToken = default)
         => await PostAsMemberAsync(
@@ -429,7 +468,8 @@ public sealed class HttpAuthService : IAuthService
     }
 
     /// <summary>Posts as the logged-in member (with the token); a failure says why, e.g. offline or the session expired.</summary>
-    private async Task<AuthResult> PostAsMemberAsync(string path, HttpContent? content, string offlineMessage, CancellationToken cancellationToken)
+    /// <param name="onSuccess">Reads the answer, when it's a success.</param>
+    private async Task<AuthResult> PostAsMemberAsync(string path, HttpContent? content, string offlineMessage, CancellationToken cancellationToken, Func<HttpResponseMessage, Task>? onSuccess = null)
     {
         if (string.IsNullOrEmpty(AccessToken))
         {
@@ -444,9 +484,17 @@ public sealed class HttpAuthService : IAuthService
             return AuthResult.Failure(L.T("Your session has expired. Log in again."));
         }
 
-        return response.IsSuccessStatusCode
-            ? AuthResult.Success()
-            : AuthResult.Failure(await ReadErrorAsync(response, cancellationToken));
+        if (!response.IsSuccessStatusCode)
+        {
+            return AuthResult.Failure(await ReadErrorAsync(response, cancellationToken));
+        }
+
+        if (onSuccess != null)
+        {
+            await onSuccess(response);
+        }
+
+        return AuthResult.Success();
     }
 
     public async Task<AuthResult> ChangePasswordAsync(string currentPassword, string newPassword, string code, CancellationToken cancellationToken = default)
@@ -481,6 +529,7 @@ public sealed class HttpAuthService : IAuthService
         AccessToken = null;
         MemberId = null;
         Email = null;
+        PhoneNumber = null;
         CanElevate = false;
         SetSiteManager(false);
         JoinedGroupId = null;
