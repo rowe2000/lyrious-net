@@ -5,14 +5,14 @@
 #   branding/build-icons.sh            (needs rsvg-convert: brew install librsvg; and macOS's iconutil)
 #
 # Writes:
-#   branding/lyrious-icon.svg            the singer on a white rounded square (the app icon)
+#   branding/lyrious-icon.svg            the singer in white on a purple (#6918B4) rounded square (the app icon)
 #   branding/lyrious-icon-square.svg     the singer on a full white square, with room around it, for
 #                                        systems that round or cut the corners themselves
 #   installers/icons/Lyrious.icns, .ico  macOS and Windows (the installers and the program)
 #   Lyrious.Webapp/wwwroot/favicon.ico   the singer alone (transparent), 16 to 256 px
 #   Lyrious.Webapp/wwwroot/icons/        icon-192/512 (installed web app), icon-maskable-512,
 #                                        apple-touch-icon (iPhone home screen), singer.svg (the page's splash)
-#   Lyrious.Api/wwwroot/                 the product site's favicon.ico (the web app's) and site/singer.svg
+#   Lyrious.Website/wwwroot/             the product site's favicon.ico (the web app's) and site/singer.svg
 #   Lyrious.UILib/AppLogo.cs             the singer drawn in the app (its path)
 #   Lyrious.Android/Icon.png             Android
 #
@@ -51,10 +51,14 @@ viewbox="$(sed -E 's/.*viewBox="([^"]+)".*/\1/' "$logo")"
 read -r _ _ logo_w logo_h <<< "$viewbox"
 path="$(grep -o '<path[^>]*/>' "$logo")"
 
-# An icon: a square of $size with an optional plate (rounded white square), and the singer
-# $share of the plate's width, in the middle.
-icon_svg() { # size plate_margin plate_radius background singer_share
-  local size=$1 margin=$2 radius=$3 background=$4 share=$5
+# An icon: a square of $size with an optional plate (a rounded square in $background), and the
+# singer $share of the plate's width, in the middle: in $detail if given, else in the logo's colour.
+icon_svg() { # size plate_margin plate_radius background singer_share [detail]
+  local size=$1 margin=$2 radius=$3 background=$4 share=$5 detail=${6:-}
+  local singer=$path
+  if [[ -n $detail ]]; then
+    singer="$(sed -E "s/fill=\"[^\"]*\"/fill=\"$detail\"/" <<< "$path")"
+  fi
   local plate=$((size - 2 * margin))
   local w; w=$(echo "$plate * $share" | bc -l)
   local h; h=$(echo "$w * $logo_h / $logo_w" | bc -l)
@@ -64,14 +68,14 @@ icon_svg() { # size plate_margin plate_radius background singer_share
   if [[ $background != none ]]; then
     echo "  <rect x=\"$margin\" y=\"$margin\" width=\"$plate\" height=\"$plate\" rx=\"$radius\" fill=\"$background\"/>"
   fi
-  printf '  <svg x="%.3f" y="%.3f" width="%.3f" height="%.3f" viewBox="%s">%s</svg>\n' "$x" "$y" "$w" "$h" "$viewbox" "$path"
+  printf '  <svg x="%.3f" y="%.3f" width="%.3f" height="%.3f" viewBox="%s">%s</svg>\n' "$x" "$y" "$w" "$h" "$viewbox" "$singer"
   echo "</svg>"
 }
 
 png() { rsvg-convert -w "$2" -h "$2" "$1" -o "$3"; }
 
 # The icons' own SVGs: rounded (the app icon) and square (rounded by the system).
-icon_svg 1024 0 224 "#ffffff" 0.78 > "$brand/lyrious-icon.svg"
+icon_svg 1024 0 224 "#6918B4" 0.78 "#FFFFFF" > "$brand/lyrious-icon.svg"
 icon_svg 1024 0 0 "#ffffff" 0.64 > "$brand/lyrious-icon-square.svg"
 # macOS: the plate inside Apple's margins (824 of 1024), as other apps' icons are.
 icon_svg 1024 100 185 "#ffffff" 0.78 > "$work/macos.svg"
@@ -115,7 +119,7 @@ cp "$logo" "$icons/singer.svg"
 
 # The product site (Lyrious.Api serves it at the root): the same favicon and singer.
 cp "$root/Lyrious.Webapp/wwwroot/favicon.ico" "$root/Lyrious.Website/wwwroot/favicon.ico"
-cp "$logo" "$root/Lyrious.Api/wwwroot/site/singer.svg"
+cp "$logo" "$root/Lyrious.Website/wwwroot/site/singer.svg"
 
 # The app's own singer (AppLogo.cs): the path's data.
 python3 -I - "$logo" "$root/Lyrious.UILib/AppLogo.cs" <<'PY'
