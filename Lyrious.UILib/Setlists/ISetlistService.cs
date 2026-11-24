@@ -271,6 +271,16 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Puts the setlist's songs in this order (by their entries, which stay the same, so the band's current song does too).</summary>
 		Task MoveSongsAsync(Guid setlistId, IReadOnlyList<Guid> entryIds, CancellationToken cancellationToken = default);
 
+		/// <summary>
+		/// A complete export of the server's data, for a site manager logged in elevated: members (without
+		/// what logs them in), bands, memberships, songbooks, songs, setlists, song settings, sessions and
+		/// release notes; as JSON, or as a SQLite database (<paramref name="sqlite"/>).
+		/// </summary>
+		Task<byte[]> ExportAllDataAsync(bool sqlite, CancellationToken cancellationToken = default);
+
+		/// <summary>Which version the connected server runs; null when it doesn't say (a server older than this).</summary>
+		Task<ServerVersion?> GetServerVersionAsync(CancellationToken cancellationToken = default);
+
 		/// <summary>Makes the setlist the group's current one (and clears the current song).</summary>
 		Task SelectSetlistAsync(Guid groupId, Guid setlistId, CancellationToken cancellationToken = default);
 
@@ -323,6 +333,9 @@ namespace Lyrious.UILib.Setlists
 
 	/// <summary>A release note kept on the server: what a release brought, its version and branch, whether it's published, and when it was made.</summary>
 	public sealed record ReleaseNoteEntry(Guid Id, string Text, string Branch, string Version, bool Published, DateTime Created);
+
+	/// <summary>A server's version as its build recorded it (e.g. "0.1.14.0"), with the git branch and commit when known.</summary>
+	public sealed record ServerVersion(string Version, string? Branch, string? Commit);
 
 	/// <summary>A member as the site manager's page lists them.</summary>
 	public sealed record SiteMember(Guid Id, string Name, string UserName, DateTime? LastLogin);
@@ -439,6 +452,8 @@ namespace Lyrious.UILib.Setlists
 		public Task AddSongsAsync(Guid setlistId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task ReplaceSongsAsync(Guid setlistId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task MoveSongsAsync(Guid setlistId, IReadOnlyList<Guid> entryIds, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<byte[]> ExportAllDataAsync(bool sqlite, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<ServerVersion?> GetServerVersionAsync(CancellationToken cancellationToken = default) => Task.FromResult<ServerVersion?>(null);
 		public Task SelectSetlistAsync(Guid groupId, Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SelectSongAsync(Guid groupId, SetlistEntry entry, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task UploadSoundAsync(Guid songId, string soundId, System.IO.Stream content, CancellationToken cancellationToken = default) => throw NotConnected();

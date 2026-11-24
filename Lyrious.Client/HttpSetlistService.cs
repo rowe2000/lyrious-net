@@ -1106,6 +1106,37 @@ public sealed class HttpSetlistService : ISetlistService
             .ToHashSet();
     }
 
+    public async Task<byte[]> ExportAllDataAsync(bool sqlite, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(auth.AccessToken))
+        {
+            throw new InvalidOperationException(L.T("The export needs a connection to the server."));
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, sqlite ? "api/export?format=sqlite" : "api/export?format=json");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", auth.AccessToken);
+        using var response = await auth.Http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(await HttpAuthService.ReadErrorAsync(response, cancellationToken));
+        }
+
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
+    public async Task<ServerVersion?> GetServerVersionAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await auth.Http.GetAsync("api/version", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null; // A server older than api/version.
+        }
+
+        var json = JsonNode.Parse(await response.Content.ReadAsStringAsync(cancellationToken)) as JsonObject;
+        var version = (string?)json?["version"];
+        return string.IsNullOrEmpty(version) ? null : new ServerVersion(version, (string?)json?["branch"], (string?)json?["commit"]);
+    }
+
     public async Task SetMemberDisabledAsync(Guid memberId, bool disabled, CancellationToken cancellationToken = default)
     {
         using var response = await SendMySettingsAsync(HttpMethod.Put, disabled ? "true" : "false", cancellationToken, $"api/member/{memberId}/disabled");

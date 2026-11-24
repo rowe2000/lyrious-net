@@ -81,6 +81,8 @@ namespace Lyrious.UILib.Setlists
 						TextWrapping = TextWrapping.Wrap,
 						Opacity = 0.75,
 					},
+					ServerVersionLine(),
+					ExportRow(),
 					filter,
 				},
 			};
@@ -752,6 +754,100 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			return message;
+		}
+
+		/// <summary>
+		/// Which server the app is connected to and the version it runs ("Server www.lyrious.se: 0.1.14.0
+		/// · main · 1ca7dc1"), read when the page opens; "an older version" when the server doesn't say.
+		/// </summary>
+		private Control ServerVersionLine()
+		{
+			var line = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.75, FontSize = 13 };
+			var address = App.AuthService.ServerAddress;
+			var host = Uri.TryCreate(address, UriKind.Absolute, out var uri) ? uri.Host : address;
+			line.Text = L.T("Server {0}: …", host);
+			ToolTip.SetTip(line, L.T("The server this app is connected to, and the version, branch and commit it runs"));
+			_ = ShowAsync();
+			return line;
+
+			async Task ShowAsync()
+			{
+				try
+				{
+					var version = await service.GetServerVersionAsync();
+					line.Text = version == null
+						? L.T("Server {0}: an older version (it doesn't say which)", host)
+						: L.T("Server {0}: {1}", host, string.Join(" · ", new[] { version.Version, version.Branch, version.Commit }.Where(part => !string.IsNullOrEmpty(part))));
+				}
+				catch (Exception ex)
+				{
+					line.Text = L.T("Server {0}: couldn't ask its version. {1}", host, ex.Message);
+				}
+			}
+		}
+
+		/// <summary>
+		/// "Export all data": all the server's data (members, bands, songbooks, setlists, songs, settings,
+		/// sessions and release notes) as a JSON file or a SQLite database, saved where the site manager
+		/// chooses; how it went shows beside the buttons.
+		/// </summary>
+		private Control ExportRow()
+		{
+			var json = new Button { Content = L.T("JSON…"), VerticalAlignment = VerticalAlignment.Center };
+			var sqlite = new Button { Content = L.T("SQLite…"), VerticalAlignment = VerticalAlignment.Center };
+			ToolTip.SetTip(json, L.T("All the data as one JSON file"));
+			ToolTip.SetTip(sqlite, L.T("All the data as a SQLite database, a table for each kind"));
+			var message = new TextBlock { TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
+
+			async Task ExportAsync(bool asSqlite)
+			{
+				if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanSave: true } storage)
+				{
+					Show(message, L.T("Saving files isn't possible here."), error: true);
+					return;
+				}
+
+				var stamp = DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+				var file = await storage.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+				{
+					Title = L.T("Export all data"),
+					SuggestedFileName = asSqlite ? $"lyrious-export-{stamp}.db" : $"lyrious-export-{stamp}.json",
+					FileTypeChoices =
+					[
+						asSqlite
+							? new Avalonia.Platform.Storage.FilePickerFileType(L.T("SQLite database")) { Patterns = ["*.db"] }
+							: new Avalonia.Platform.Storage.FilePickerFileType(L.T("JSON file")) { Patterns = ["*.json"] },
+					],
+				});
+				if (file == null)
+				{
+					return;
+				}
+
+				json.IsEnabled = sqlite.IsEnabled = false;
+				Show(message, L.T("Exporting…"), error: false);
+				try
+				{
+					var data = await service.ExportAllDataAsync(asSqlite);
+					await using var stream = await file.OpenWriteAsync();
+					await stream.WriteAsync(data);
+					Show(message, L.T("Exported to {0}.", file.Name), error: false);
+				}
+				catch (Exception ex)
+				{
+					Show(message, L.T("Couldn't export. {0}", ex.Message), error: true);
+				}
+				finally
+				{
+					json.IsEnabled = sqlite.IsEnabled = true;
+				}
+			}
+
+			json.Click += (_, _) => _ = ExportAsync(false);
+			sqlite.Click += (_, _) => _ = ExportAsync(true);
+			var label = new TextBlock { Text = L.T("Export all data:"), VerticalAlignment = VerticalAlignment.Center };
+			ToolTip.SetTip(label, L.T("Members (without their passwords), bands, memberships, songbooks, songs, setlists, song settings, sessions and release notes, removed ones too."));
+			return new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 6, Children = { label, json, sqlite, message } };
 		}
 
 		private static void Show(TextBlock message, string text, bool error)
