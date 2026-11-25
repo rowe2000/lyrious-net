@@ -193,7 +193,8 @@ namespace Lyrious.UILib.Setlists
 
 		private static TextBlock Paragraph(string text) => new() { Text = text, TextWrapping = TextWrapping.Wrap };
 
-		private static Control Bullets(IReadOnlyList<string> lines)
+		/// <summary>Lines as a list of points, each with a dot before it.</summary>
+		internal static Control Bullets(IReadOnlyList<string> lines)
 		{
 			var list = new StackPanel { Spacing = 4 };
 			foreach (var line in lines)

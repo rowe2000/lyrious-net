@@ -13,11 +13,11 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>
 	/// About the app: its name, version, branch and commit and what it's for, and the release notes
 	/// kept on the server (see <see cref="ISetlistService.GetReleaseNotesAsync"/>) for the branch the
-	/// app was built from: this release's first, then the previous ones, newest first. Others see only
-	/// published notes ("No release notes yet…" when there are none for this release); a site manager
-	/// also sees unpublished ones (drafts), edits each note's text and whether it's published, and adds
-	/// this release's note when there's none yet. Without the server, the notes built into the app
-	/// (<see cref="ReleaseNotes.All"/>).
+	/// app was built from, as a list of foldable releases: this release's first and open, then the
+	/// previous ones, newest first and folded. Others see only published notes; a site manager also
+	/// sees unpublished ones (drafts), publishes or unpublishes each with a check box (saved at once),
+	/// edits its text with Edit (Save, Cancel), and writes this release's note when there's none yet.
+	/// Without the server, the notes built into the app (<see cref="ReleaseNotes.All"/>), likewise.
 	/// </summary>
 	public sealed class AboutView : UserControl
 	{
@@ -77,7 +77,8 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// The server's release notes for this build's branch (all of them when the build didn't record
-		/// its branch): this release's (its version, else the newest), then the previous ones.
+		/// its branch), as one list of foldable releases: this release's first (its version), open, then
+		/// the previous ones, newest first, folded.
 		/// </summary>
 		private async Task ShowServerNotesAsync()
 		{
@@ -102,116 +103,213 @@ namespace Lyrious.UILib.Setlists
 				.ToList();
 
 			notes.Children.Clear();
+			notes.Children.Add(Heading(branch == null ? L.T("Release notes") : L.T("Release notes on {0}", branch)));
 			var current = forBranch.FirstOrDefault(note => note.Version == ReleaseNotes.AppVersion);
-			notes.Children.Add(Heading(L.T("This release")));
 			if (current != null)
 			{
-				notes.Children.Add(NoteBlock(current));
+				notes.Children.Add(NoteItem(current, open: true));
 			}
 			else if (canEdit)
 			{
 				// None for this version yet: a site manager writes it here (a draft until published).
-				notes.Children.Add(NoteBlock(new ReleaseNoteEntry(Guid.NewGuid(), "", branch ?? "", ReleaseNotes.AppVersion, false, DateTime.Now), isNew: true));
+				notes.Children.Add(NoteItem(new ReleaseNoteEntry(Guid.NewGuid(), "", branch ?? "", ReleaseNotes.AppVersion, false, DateTime.Now), open: true, isNew: true));
 			}
 			else
 			{
-				notes.Children.Add(new TextBlock { Text = L.T("No release notes yet…"), Opacity = 0.7 });
+				notes.Children.Add(new TextBlock { Text = L.T("No release notes for this release yet…"), Opacity = 0.7 });
 			}
 
-			var previous = forBranch.Where(note => note != current).ToList();
-			if (previous.Count > 0)
+			foreach (var note in forBranch.Where(note => note != current))
 			{
-				notes.Children.Add(Heading(branch == null ? L.T("Previous releases") : L.T("Previous releases on {0}", branch)));
-				foreach (var note in previous)
-				{
-					notes.Children.Add(NoteBlock(note));
-				}
+				notes.Children.Add(NoteItem(note, open: false));
 			}
 		}
 
-		/// <summary>A release note: shown as points; for a site manager, its text and Published to change, and Save.</summary>
-		private Control NoteBlock(ReleaseNoteEntry note, bool isNew = false)
+		/// <summary>
+		/// A release, foldable: its version and date (and "draft" when unpublished) as the heading, its
+		/// points under it. For a site manager also Published (saved as soon as it's changed) and Edit,
+		/// which turns the points into the note's text to change, with Save and Cancel.
+		/// </summary>
+		/// <param name="isNew">This release's note, not written yet: it opens to be written, and is added by saving it.</param>
+		private Control NoteItem(ReleaseNoteEntry note, bool open, bool isNew = false)
 		{
-			if (!canEdit)
-			{
-				return OnboardingView.ReleaseNoteBlock(AsReleaseNote(note));
-			}
-
-			var title = new TextBlock { FontWeight = FontWeight.SemiBold };
+			var body = new StackPanel { Spacing = 8 };
+			var title = new TextBlock { FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
 			void ShowTitle() => title.Text = $"{note.Version} · {note.Created:d MMM yyyy}" + (note.Published ? "" : " · " + L.T("draft"));
 			ShowTitle();
-			var text = new TextBox
+			var item = Foldable(title, body, open);
+			if (!canEdit)
 			{
-				Text = note.Text,
-				AcceptsReturn = true,
-				TextWrapping = TextWrapping.Wrap,
-				MinHeight = 80,
-				PlaceholderText = L.T("What this release brings, one point per line"),
-			};
-			var published = new CheckBox { Content = L.T("Published"), IsChecked = note.Published };
-			var save = new Button { Content = isNew ? L.T("Add release note") : L.T("Save"), IsEnabled = false };
-			var message = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
+				body.Children.Add(Points(note));
+				return item;
+			}
 
-			void Changed() => save.IsEnabled = !string.IsNullOrWhiteSpace(text.Text) && ((text.Text ?? "") != note.Text || published.IsChecked == true != note.Published || isNew);
-			text.TextChanged += (_, _) => Changed();
-			published.IsCheckedChanged += (_, _) => Changed();
-			save.Click += async (_, _) =>
+			var points = new ContentControl();
+			var message = new TextBlock { TextWrapping = TextWrapping.Wrap, IsVisible = false };
+			var published = new CheckBox { Content = L.T("Published"), IsChecked = note.Published, IsEnabled = !isNew };
+			ToolTip.SetTip(published, L.T("Published notes show to everyone; a draft only to site managers"));
+			var edit = new Button { Content = L.T("Edit") };
+			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { published, edit } };
+			body.Children.Add(points);
+			body.Children.Add(actions);
+			body.Children.Add(message);
+
+			// Published or not: saved at once (back as it was if that fails).
+			var settingPublished = false;
+			published.IsCheckedChanged += async (_, _) =>
 			{
-				var changed = note with { Text = (text.Text ?? "").Trim(), Published = published.IsChecked == true };
-				save.IsEnabled = false;
+				if (settingPublished || published.IsChecked == true == note.Published)
+				{
+					return;
+				}
+
+				var changed = note with { Published = published.IsChecked == true };
+				published.IsEnabled = false;
 				try
 				{
 					await service!.SaveReleaseNoteAsync(changed);
 					note = changed;
-					isNew = false;
-					save.Content = L.T("Save");
 					ShowTitle();
-					Show(message, L.T("Saved."), error: false);
+					message.IsVisible = false;
 				}
 				catch (Exception ex)
 				{
+					settingPublished = true;
+					published.IsChecked = note.Published;
+					settingPublished = false;
 					Show(message, L.T("Couldn't save the release note. {0}", ex.Message), error: true);
-					Changed();
+				}
+				finally
+				{
+					published.IsEnabled = true;
 				}
 			};
 
-			var card = new Border
+			// The note's points, as everyone sees them.
+			void ShowPoints()
 			{
-				Padding = new Thickness(12),
-				CornerRadius = new CornerRadius(8),
-				Child = new StackPanel
+				points.Content = string.IsNullOrWhiteSpace(note.Text)
+					? new TextBlock { Text = L.T("No text yet."), Opacity = 0.7 }
+					: Points(note);
+				actions.IsVisible = true;
+			}
+
+			// The note's text to change, with Save (once it's changed) and Cancel.
+			void ShowEditor()
+			{
+				var text = new TextBox
+				{
+					Text = note.Text,
+					AcceptsReturn = true,
+					TextWrapping = TextWrapping.Wrap,
+					MinHeight = 80,
+					PlaceholderText = L.T("What this release brings, one point per line"),
+				};
+				var save = new Button { Content = isNew ? L.T("Add release note") : L.T("Save"), IsEnabled = false };
+				save.Classes.Add("accent");
+				var cancel = new Button { Content = L.T("Cancel"), IsVisible = !isNew };
+				text.TextChanged += (_, _) => save.IsEnabled = !string.IsNullOrWhiteSpace(text.Text) && (isNew || (text.Text ?? "").Trim() != note.Text);
+				cancel.Click += (_, _) => ShowPoints();
+				save.Click += async (_, _) =>
+				{
+					var changed = note with { Text = (text.Text ?? "").Trim() };
+					save.IsEnabled = false;
+					try
+					{
+						await service!.SaveReleaseNoteAsync(changed);
+						note = changed;
+						isNew = false;
+						published.IsEnabled = true;
+						ShowPoints();
+						Show(message, L.T("Saved."), error: false);
+					}
+					catch (Exception ex)
+					{
+						Show(message, L.T("Couldn't save the release note. {0}", ex.Message), error: true);
+						save.IsEnabled = true;
+					}
+				};
+
+				points.Content = new StackPanel
 				{
 					Spacing = 8,
-					Children =
-					{
-						title,
-						text,
-						new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { published, save } },
-						message,
-					},
-				},
+					Children = { text, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { save, cancel } } },
+				};
+				actions.IsVisible = false;
+				message.IsVisible = false;
+			}
+
+			edit.Click += (_, _) => ShowEditor();
+			if (isNew)
+			{
+				ShowEditor();
+			}
+			else
+			{
+				ShowPoints();
+			}
+
+			return item;
+		}
+
+		/// <summary>
+		/// A foldable item in a card: <paramref name="heading"/> after a chevron, as a button that opens and
+		/// closes <paramref name="body"/> under it.
+		/// </summary>
+		private static Control Foldable(Control heading, Control body, bool open)
+		{
+			var chevron = AppIcons.Create(AppIcons.Chevron, 16);
+			var toggle = new Button
+			{
+				Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { chevron, heading } },
+				Background = Brushes.Transparent,
+				BorderThickness = new Thickness(0),
+				Padding = new Thickness(0, 2),
+				HorizontalAlignment = HorizontalAlignment.Stretch,
+				HorizontalContentAlignment = HorizontalAlignment.Left,
+			};
+			body.Margin = new Thickness(24, 8, 0, 0);
+
+			void Show()
+			{
+				body.IsVisible = open;
+				chevron.RenderTransform = new RotateTransform(open ? 90 : 0);
+			}
+
+			toggle.Click += (_, _) =>
+			{
+				open = !open;
+				Show();
+			};
+			Show();
+
+			var card = new Border
+			{
+				Padding = new Thickness(12, 8),
+				CornerRadius = new CornerRadius(8),
+				Child = new StackPanel { Children = { toggle, body } },
 			};
 			card.Bind(Border.BackgroundProperty, card.GetResourceObservable(LyriousTheme.CardBrush));
 			return card;
 		}
 
-		/// <summary>The release notes built into the app, newest first.</summary>
+		/// <summary>A stored release note's points: one per line of its text (without a leading "-", "•" or "*").</summary>
+		private static Control Points(ReleaseNoteEntry note)
+			=> OnboardingView.Bullets(note.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(line => line.TrimStart('-', '•', '*', ' ')).ToList());
+
+		/// <summary>The release notes built into the app, newest first, foldable: the newest open.</summary>
 		private void ShowBuiltInNotes()
 		{
 			notes.Children.Clear();
 			notes.Children.Add(Heading(L.T("Release notes")));
+			var first = true;
 			foreach (var note in ReleaseNotes.All)
 			{
-				notes.Children.Add(OnboardingView.ReleaseNoteBlock(note));
+				var title = new TextBlock { Text = $"{note.Version} · {note.Date:d MMM yyyy}", FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+				notes.Children.Add(Foldable(title, OnboardingView.Bullets(note.Notes), first));
+				first = false;
 			}
 		}
-
-		/// <summary>A stored release note as the notes are shown: one point per line of its text; a draft (unpublished) says so.</summary>
-		private static ReleaseNote AsReleaseNote(ReleaseNoteEntry note)
-			=> new(
-				note.Created,
-				note.Published ? note.Version : L.T("{0} (draft, not published)", note.Version),
-				note.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(line => line.TrimStart('-', '•', '*', ' ')).ToList());
 
 		private static TextBlock Heading(string text)
 			=> new() { Text = text, FontSize = 18, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 12, 0, 0) };
