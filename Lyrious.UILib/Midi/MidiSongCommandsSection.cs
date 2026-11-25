@@ -30,7 +30,7 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					// Its explanation as the heading's tooltip.
-					SettingsView.SettingName(
+					SettingsView.SettingHeading(
 						L.T("MIDI for every song"),
 						L.T("MIDI sent for every song to every MIDI output: when it's selected (before the song's own MIDI tags), when it starts playing and when it stops. ")
 						+ L.T("Written as in a MIDI tag, e.g. $LIGHT.1, PC0@10.")

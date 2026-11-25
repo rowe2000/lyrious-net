@@ -31,6 +31,10 @@ namespace Lyrious.UILib
 		public const string SiteManager = "M12,3 L19,6 V11 C19,15.5 16,19 12,21 C8,19 5,15.5 5,11 V6 Z M9,12 L11,14 L15,10";
 		// A magnifying glass: search.
 		public const string Search = "M4,10.5 A6.5,6.5 0 1 0 17,10.5 A6.5,6.5 0 1 0 4,10.5 M15.2,15.2 L20,20";
+		/// <summary>A phone or tablet: what's kept on this device.</summary>
+		public const string Device = "M8,3 H16 A2,2 0 0 1 18,5 V19 A2,2 0 0 1 16,21 H8 A2,2 0 0 1 6,19 V5 A2,2 0 0 1 8,3 M11,18 H13";
+		/// <summary>A chevron pointing right: a folded section (turned down when it's open).</summary>
+		public const string Chevron = "M9,6 L15,12 L9,18";
 		public const string Trash = "M5,7 H19 M10,7 V5 H14 V7 M7,7 L8,20 H16 L17,7 M10,11 V16 M14,11 V16";
 
 		/// <summary>

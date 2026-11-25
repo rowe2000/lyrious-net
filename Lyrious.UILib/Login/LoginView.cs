@@ -15,7 +15,7 @@ namespace Lyrious.UILib.Login
 		public LoginView(LoginViewModel viewModel)
 			: base(viewModel, "Lyrious", L.T("Songs, setlists and lyrics for your band, in sync."), L.T("Log in"), viewModel.LogInAsync)
 		{
-			var userName = AddField(L.T("Username"), () => viewModel.UserName, value => viewModel.UserName = value);
+			var userName = AddField(L.T("Username, email or phone"), () => viewModel.UserName, value => viewModel.UserName = value);
 			var password = AddField(L.T("Password"), () => viewModel.Password, value => viewModel.Password = value, isPassword: true);
 			// In a browser: real web fields over these, so its password manager offers to save the login
 			// and fills it in (see ILoginForm).

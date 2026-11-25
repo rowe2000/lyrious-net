@@ -35,7 +35,7 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					// Its explanation as the heading's tooltip.
-					SettingsView.SettingName(
+					SettingsView.SettingHeading(
 						L.T("MIDI expressions"),
 						L.T("Shortcuts for MIDI commands in the lyrics, e.g. [midi:$MODX.0.20]: the name, then the values of its parameters. ")
 						+ L.T("They're sent to every MIDI output when a song opens.")

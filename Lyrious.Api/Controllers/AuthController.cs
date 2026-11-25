@@ -158,10 +158,14 @@ public class AuthController(
 			: BadRequest(result.Errors);
 	}
 
+	/// <summary>
+	/// Logs in with the username, or the email address or phone number of the account (when only
+	/// one account has it), and the password.
+	/// </summary>
 	[HttpPost("login")]
 	public async Task<IActionResult> Login([FromBody] LoginModel model)
 	{
-		var member = await userManager.FindByNameAsync(model.Username);
+		var (member, _) = await FindAccountAsync(model.Username, forLogin: true);
 		if (member == null)
 		{
 			return Unauthorized("Invalid username or password.");
@@ -640,9 +644,10 @@ public class AuthController(
 	/// <summary>
 	/// Finds a member by username, else by email, else by phone number (<c>ByPhone</c> then true).
 	/// Emails aren't required to be unique, so an email shared by several members matches none of
-	/// them; likewise a phone number. Only a number codes may be texted to counts (see <see cref="CanTextCodesTo"/>).
+	/// them; likewise a phone number. Only a number codes may be texted to counts (see <see cref="CanTextCodesTo"/>),
+	/// except <paramref name="forLogin"/>, where the password is checked next.
 	/// </summary>
-	private async Task<(Member? Member, bool ByPhone)> FindAccountAsync(string userNameOrEmailOrPhone)
+	private async Task<(Member? Member, bool ByPhone)> FindAccountAsync(string userNameOrEmailOrPhone, bool forLogin = false)
 	{
 		var value = userNameOrEmailOrPhone.Trim();
 		var member = await userManager.FindByNameAsync(value);
@@ -661,7 +666,7 @@ public class AuthController(
 		if (PhoneNumbers.Clean(value) is { } phone)
 		{
 			var matches = userManager.Users.Where(m => m.PhoneNumber == phone).Take(2).ToList();
-			return matches.Count == 1 && CanTextCodesTo(matches[0]) ? (matches[0], true) : (null, false);
+			return matches.Count == 1 && (forLogin || CanTextCodesTo(matches[0])) ? (matches[0], true) : (null, false);
 		}
 
 		return (null, false);

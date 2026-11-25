@@ -20,25 +20,29 @@
     <PackageReference Include="Avalonia.Browser" Version="12.1.6" GeneratePathProperty="true" />
     <!-- The browser has no system fonts; the app ships Inter (see WithInterFont in Program.cs). -->
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.6" />
+    <!-- Already in through Lyrious.UILib (the media player); named here too for the path to its
+         browser script (see below). The same version as Lyrious.UILib's. -->
+    <PackageReference Include="Avalonia.Controls.WebView" Version="12.1.2" GeneratePathProperty="true" />
   </ItemGroup>
 
-  <!-- Avalonia's own scripts (avalonia.js and friends), as files of this project instead of the
-       package's: a package's web files don't reach a project that references this one, and
-       Lyrious.Api does, to serve the web app. -->
+  <!-- Avalonia's own scripts (avalonia.js and friends, and the web view's av-webview.mjs, without
+       which the media player doesn't open), as files of this project instead of the packages': a
+       package's web files don't reach a project that references this one, and Lyrious.Api does, to
+       serve the web app. -->
   <PropertyGroup>
     <ShouldIncludeAvaloniaStaticAssets>false</ShouldIncludeAvaloniaStaticAssets>
   </PropertyGroup>
   <ItemGroup>
     <!-- The copies made below, which would otherwise be found as a second set of the same files. -->
     <Content Remove="wwwroot/_framework/**" />
-    <Content Include="$(PkgAvalonia_Browser)/staticwebassets/*.*" Link="wwwroot/_framework/%(Filename)%(Extension)" />
+    <Content Include="$(PkgAvalonia_Browser)/staticwebassets/*.*;$(PkgAvalonia_Controls_WebView)/staticwebassets/*.*" Link="wwwroot/_framework/%(Filename)%(Extension)" />
   </ItemGroup>
   <!-- Running from a build (not a publish), the files are served from where the link says they are,
        wwwroot/_framework, rather than from the package: without a copy there, the scripts are
        served empty and the app stays on its splash screen. The copies aren't in source control. -->
   <Target Name="CopyAvaloniaScriptsForRunningFromBuild" AfterTargets="Build">
     <ItemGroup>
-      <_AvaloniaScript Include="$(PkgAvalonia_Browser)/staticwebassets/*.*" />
+      <_AvaloniaScript Include="$(PkgAvalonia_Browser)/staticwebassets/*.*;$(PkgAvalonia_Controls_WebView)/staticwebassets/*.*" />
     </ItemGroup>
     <Copy SourceFiles="@(_AvaloniaScript)" DestinationFolder="$(MSBuildProjectDirectory)/wwwroot/_framework" SkipUnchangedFiles="true" />
   </Target>

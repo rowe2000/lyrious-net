@@ -31,7 +31,7 @@ namespace Lyrious.UILib.Setlists
 				Children =
 				{
 					// Its explanation as the heading's tooltip.
-					SettingsView.SettingName(
+					SettingsView.SettingHeading(
 						L.T("Lyrics header"),
 						L.T("Shown above every song's lyrics, and scrolls with them. Written in ChordPro, as the lyrics: \"# \" is a heading, a chord in brackets is over the words. ")
 						+ L.T("The song's details go in with $songname, $artist, $key, $tempo, $beat and $tags (its tags, separated by spaces); [$key] is the key as a chord, transposed with the song. Empty is no header.")

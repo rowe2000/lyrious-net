@@ -260,6 +260,9 @@ namespace Lyrious.UILib.Setlists
 			// (In a panel of its own: the filter above shows and hides the rows of the form itself.)
 			form.Children.Insert(midiAt + 2, Scoped(SettingScope.User, new Border { Child = midiSettings }));
 
+			// Each section folds (its heading opens and closes it), once all its settings are in place.
+			MakeFoldable(form);
+
 			// Scrolls when the settings don't fit (a short window or a large interface size).
 			form.Margin = new Thickness(0, 0, 0, 16);
 			scroller = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
@@ -281,6 +284,16 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		public void ScrollToCapo()
 		{
+			// Its section is opened if it was folded.
+			for (var parent = capoRow.Parent; parent != null; parent = parent.Parent)
+			{
+				if (parent is Control { Tag: FoldBody body })
+				{
+					body.Open();
+					break;
+				}
+			}
+
 			void OnLayout(object? sender, EventArgs e)
 			{
 				// Hidden (the user's settings aren't shown, see ScopeFilter, or no transpose button): nothing to scroll to.
@@ -581,6 +594,86 @@ namespace Lyrious.UILib.Setlists
 		// Marks a section's heading (see Section).
 		private static readonly object SectionMark = new();
 
+		/// <summary>Marks the panel of a section's settings (see <see cref="MakeFoldable"/>): its title, whether it's folded, and opening it.</summary>
+		private sealed record FoldBody(string Key, Func<bool> IsFolded, Action Open);
+
+		// The sections folded, by title, while the app runs (all open again after a restart).
+		private static readonly HashSet<string> foldedSections = [];
+
+		/// <summary>
+		/// Makes every section of <paramref name="form"/> foldable: its settings (up to the next section)
+		/// go into a panel under its heading, and the heading, with a chevron, opens and closes it.
+		/// </summary>
+		private static void MakeFoldable(StackPanel form)
+		{
+			var children = form.Children.ToList();
+			form.Children.Clear();
+			StackPanel? body = null;
+			foreach (var child in children)
+			{
+				if (ReferenceEquals(child.Tag, SectionMark) && child is TextBlock title)
+				{
+					body = new StackPanel { Spacing = form.Spacing };
+					form.Children.Add(FoldableHeading(title, body));
+					form.Children.Add(body);
+				}
+				else if (body != null)
+				{
+					body.Children.Add(child);
+				}
+				else
+				{
+					form.Children.Add(child);
+				}
+			}
+		}
+
+		/// <summary>A section's heading as a button with a chevron that folds and unfolds <paramref name="body"/> (its settings).</summary>
+		private static Button FoldableHeading(TextBlock title, StackPanel body)
+		{
+			var key = title.Text ?? "";
+			var chevron = AppIcons.Create(AppIcons.Chevron, 18);
+			var heading = new Button
+			{
+				Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { chevron, title } },
+				Background = Brushes.Transparent,
+				BorderThickness = new Thickness(0),
+				Padding = new Thickness(0, 2),
+				Margin = title.Margin,
+				HorizontalAlignment = HorizontalAlignment.Stretch,
+				HorizontalContentAlignment = HorizontalAlignment.Left,
+				// Shown while any of its settings is (see ScopeFilter).
+				Tag = SectionMark,
+			};
+			title.Margin = default;
+			Avalonia.Automation.AutomationProperties.SetName(heading, key);
+
+			// Open: the chevron points down and the settings show (those the scope filter shows).
+			void Show()
+			{
+				var open = !foldedSections.Contains(key);
+				chevron.RenderTransform = new RotateTransform(open ? 90 : 0);
+				body.IsVisible = open && heading.IsVisible;
+			}
+
+			heading.Click += (_, _) =>
+			{
+				if (!foldedSections.Remove(key))
+				{
+					foldedSections.Add(key);
+				}
+
+				Show();
+			};
+			body.Tag = new FoldBody(key, () => foldedSections.Contains(key), () =>
+			{
+				foldedSections.Remove(key);
+				Show();
+			});
+			Show();
+			return heading;
+		}
+
 		/// <summary>Marks a setting (its row) with where it's kept, for <see cref="ScopeFilter"/>.</summary>
 		private static Control Scoped(SettingScope scope, Control row)
 		{
@@ -600,12 +693,20 @@ namespace Lyrious.UILib.Setlists
 
 		private static Control ScopeFilter(Panel form, string? bandName, string? memberName)
 		{
+			// A check box's icon, then its name.
+			static Control WithIcon(string icon, string text) => new StackPanel
+			{
+				Orientation = Orientation.Horizontal,
+				Spacing = 6,
+				Children = { AppIcons.Create(icon, 18), new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center } },
+			};
+
 			var hidden = hiddenScopes;
 			var boxes = new (SettingScope Scope, CheckBox Box)[]
 			{
-				(SettingScope.Device, new CheckBox { Content = L.T("Device") }),
-				(SettingScope.User, new CheckBox { Content = L.T("User") }),
-				(SettingScope.Band, new CheckBox { Content = L.T("Band") }),
+				(SettingScope.Device, new CheckBox { Content = WithIcon(AppIcons.Device, L.T("Device")) }),
+				(SettingScope.User, new CheckBox { Content = WithIcon(AppIcons.Profile, L.T("User")) }),
+				(SettingScope.Band, new CheckBox { Content = WithIcon(AppIcons.Band, L.T("Band")) }),
 			};
 			// Whose settings each box shows: this device's, the member's (by name), the band's (by name).
 			ToolTip.SetTip(boxes[0].Box, L.T("This device settings"));
@@ -615,34 +716,39 @@ namespace Lyrious.UILib.Setlists
 			void Show()
 			{
 				var shown = boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Scope).ToHashSet();
-				TextBlock? section = null;
-				var anyInSection = false;
+				Control? section = null;
 				foreach (var child in form.Children)
 				{
 					if (ReferenceEquals(child.Tag, SectionMark))
 					{
-						if (section != null)
+						section = child;
+					}
+					else if (child is Panel { Tag: FoldBody fold } body)
+					{
+						// A section's settings: those of the checked kinds show, and the section while any does
+						// (its settings only while it isn't folded).
+						var any = false;
+						foreach (var row in body.Children)
 						{
-							section.IsVisible = anyInSection;
+							if (row.Tag is SettingScope scope)
+							{
+								row.IsVisible = shown.Contains(scope);
+							}
+
+							any |= row.IsVisible;
 						}
 
-						section = child as TextBlock;
-						anyInSection = false;
+						if (section != null)
+						{
+							section.IsVisible = any;
+						}
+
+						body.IsVisible = any && !fold.IsFolded();
 					}
 					else if (child.Tag is SettingScope scope)
 					{
 						child.IsVisible = shown.Contains(scope);
-						anyInSection |= child.IsVisible;
 					}
-					else
-					{
-						anyInSection |= child.IsVisible;
-					}
-				}
-
-				if (section != null)
-				{
-					section.IsVisible = anyInSection;
 				}
 			}
 
@@ -828,7 +934,7 @@ namespace Lyrious.UILib.Setlists
 			button.AttachedToVisualTree += (_, _) => UserSettings.Changed += OnChangedElsewhere;
 			button.DetachedFromVisualTree += (_, _) => UserSettings.Changed -= OnChangedElsewhere;
 			// The colours are kept with the user.
-			return new DockPanel
+			return new SettingRow
 			{
 				Tag = SettingScope.User,
 				Children =
@@ -1207,8 +1313,55 @@ namespace Lyrious.UILib.Setlists
 			control.VerticalAlignment = VerticalAlignment.Center;
 			control.Margin = new Thickness(16, 0, 0, 0);
 			DockPanel.SetDock(control, Dock.Right);
-			return new DockPanel { Children = { control, SettingName(name, explanation) } };
+			return new SettingRow { Children = { control, SettingName(name, explanation) } };
 		}
+
+		/// <summary>
+		/// A setting's row: its name, and its control at the right. On the settings page, the icon of
+		/// where it's kept (this device, the user, the band) shows at the far right.
+		/// </summary>
+		private sealed class SettingRow : DockPanel
+		{
+			private Control? scopeIcon;
+
+			protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+			{
+				base.OnAttachedToVisualTree(e);
+				if (scopeIcon != null)
+				{
+					return;
+				}
+
+				// Where it's kept: marked on the row or a panel it's in (see Scoped). Elsewhere (e.g. the
+				// MIDI popup) no icon.
+				for (StyledElement? at = this; at != null; at = at.Parent)
+				{
+					if (at is Control { Tag: SettingScope scope })
+					{
+						var (icon, tip) = scope switch
+						{
+							SettingScope.Device => (AppIcons.Device, L.T("This device settings")),
+							SettingScope.User => (AppIcons.Profile, L.T("Your user settings")),
+							_ => (AppIcons.Band, L.T("Band settings")),
+						};
+						scopeIcon = AppIcons.Create(icon, 16);
+						scopeIcon.Margin = new Thickness(10, 0, 0, 0);
+						scopeIcon.Opacity = 0.6;
+						ToolTip.SetTip(scopeIcon, tip);
+						SetDock(scopeIcon, Dock.Right);
+						// First: the rightmost of what's docked at the right.
+						Children.Insert(0, scopeIcon);
+						return;
+					}
+				}
+			}
+		}
+
+		/// <summary>
+		/// The name of a setting whose controls are under it (e.g. the lyrics header), with the icon of
+		/// where it's kept at the right like the other settings (see <see cref="SettingRow"/>).
+		/// </summary>
+		internal static Control SettingHeading(string name, string explanation) => new SettingRow { Children = { SettingName(name, explanation) } };
 
 		/// <summary>A setting's name, its explanation shown when it's hovered (or held).</summary>
 		internal static TextBlock SettingName(string name, string explanation)
