@@ -22,6 +22,16 @@ public sealed class Play : Entity
     /// </summary>
     [DataMember] public Guid? SetlistId { get; set; }
 
+    /// <summary>
+    /// The band recorded as it played the song (by a device recording plays): a sound file's media
+    /// link ("sound:&lt;id&gt;/&lt;name&gt;"), the file kept on the server for the band's devices; null when none.
+    /// </summary>
+    [MaxLength(MaxRecordingLength)]
+    [DataMember] public string? Recording { get; set; }
+
+    /// <summary>The longest <see cref="Recording"/> link.</summary>
+    public const int MaxRecordingLength = 300;
+
     [JsonIgnore] public Member? Conductor { get; set; }
     [JsonIgnore] public Playlog? Playlog { get; set; }
 	[JsonIgnore] public Song? Song { get; set; }

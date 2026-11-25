@@ -30,6 +30,15 @@ internal class Program
         App.SetlistService = new HttpSetlistService(auth, offline);
         App.CredentialStore = DesktopCredentialStore.Create();
         App.SoundStore = new FileSoundStore();
+        // Recording the band as it plays (a device setting): Windows through WASAPI, the Mac through Core Audio.
+        if (OperatingSystem.IsWindows())
+        {
+            App.AudioRecorder = new WindowsAudioRecorder();
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            App.AudioRecorder = new MacAudioRecorder();
+        }
         // The MIDI tags in songs go to every MIDI output of this computer.
         App.Midi = new DesktopMidiOutput();
         // Sharing on the local network (the Sync page), on again if it was left on. A failure to

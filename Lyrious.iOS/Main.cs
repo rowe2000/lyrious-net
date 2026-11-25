@@ -19,6 +19,8 @@ public class Application
         var auth = new HttpAuthService(host, offline);
         App.AuthService = auth;
         App.SetlistService = new HttpSetlistService(auth, offline);
+        // An iPhone (not an iPad): the lyrics page leaves out what has no room upright.
+        App.IsIPhone = UIDevice.CurrentDevice.UserInterfaceIdiom == UIUserInterfaceIdiom.Phone;
 
         // To use a different application delegate class than AppDelegate, specify it here.
         UIApplication.Main(args, null, typeof(AppDelegate));

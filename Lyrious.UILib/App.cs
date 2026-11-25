@@ -52,6 +52,18 @@ namespace Lyrious.UILib
 		public static ISoundStore? SoundStore { get; set; }
 
 		/// <summary>
+		/// Records from the device's sound input, for recording the band as it plays (a device setting).
+		/// Hosts that can record set this before starting the app; by default recording isn't offered.
+		/// </summary>
+		public static IAudioRecorder? AudioRecorder { get; set; }
+
+		/// <summary>
+		/// Whether the app runs on an iPhone (the iOS app, or a browser on one; not an iPad), where the
+		/// screen is narrow upright. Hosts set it before starting the app; false by default.
+		/// </summary>
+		public static bool IsIPhone { get; set; }
+
+		/// <summary>
 		/// Sends the MIDI tags in songs' lyrics (see <see cref="Midi"/>) on every MIDI output of this
 		/// device. Hosts set this before starting the app; by default no MIDI is sent.
 		/// </summary>

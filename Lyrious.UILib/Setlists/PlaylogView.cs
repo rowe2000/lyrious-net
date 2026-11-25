@@ -115,10 +115,63 @@ namespace Lyrious.UILib.Setlists
 			DockPanel.SetDock(when, Dock.Left);
 
 			var content = PageLayout.RowContent(play.SongName, Details(play));
-			var row = new DockPanel { Children = { when, content } };
+			var row = new DockPanel { Children = { when } };
+			// The band's recording of the play (when a device recorded it): played here, fetched from the
+			// server first when it isn't on this device.
+			if (MediaLinks.SoundOf(play.Recording) is { } recording && App.SoundStore is { } sounds)
+			{
+				var listen = RecordingButton(recording, sounds);
+				DockPanel.SetDock(listen, Dock.Right);
+				row.Children.Add(listen);
+			}
+
+			row.Children.Add(content);
 			var card = new Border { Padding = new Thickness(16, 10), CornerRadius = new CornerRadius(6), Child = row };
 			card.Bind(Border.BackgroundProperty, card.GetResourceObservable(LyriousTheme.CardBrush));
 			return card;
+		}
+
+		/// <summary>
+		/// The play's recording: a waveform to play it (a stop sign while it plays, to stop it). Not on
+		/// this device yet, it's fetched from the server first.
+		/// </summary>
+		private static Button RecordingButton(SoundFile recording, ISoundStore sounds)
+		{
+			var button = new Button { Padding = new Thickness(6), Background = Brushes.Transparent, BorderThickness = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
+			ToolTip.SetTip(button, L.T("Play the band's recording of it"));
+			void ShowPlaying() => button.Content = MediaLinks.Icon(MediaSite.Sound, playing: sounds.Playing == recording.Id);
+			void OnPlayingChanged() => Avalonia.Threading.Dispatcher.UIThread.Post(ShowPlaying);
+			ShowPlaying();
+			button.AttachedToVisualTree += (_, _) => sounds.PlayingChanged += OnPlayingChanged;
+			button.DetachedFromVisualTree += (_, _) => sounds.PlayingChanged -= OnPlayingChanged;
+			button.Click += async (_, _) =>
+			{
+				if (sounds.Playing == recording.Id)
+				{
+					sounds.Stop();
+					return;
+				}
+
+				button.IsEnabled = false;
+				try
+				{
+					if (!await sounds.PlayAsync(recording.Id) && !(await SoundSync.FetchAsync(recording.Id) && await sounds.PlayAsync(recording.Id)))
+					{
+						ToolTip.SetTip(button, L.T("The recording isn't on the server (yet)."));
+						ToolTip.SetIsOpen(button, true);
+					}
+				}
+				catch (Exception ex)
+				{
+					ToolTip.SetTip(button, L.T("Couldn't play the recording. {0}", ex.Message));
+					ToolTip.SetIsOpen(button, true);
+				}
+				finally
+				{
+					button.IsEnabled = true;
+				}
+			};
+			return button;
 		}
 
 		private static string Details(PlayEntry play)

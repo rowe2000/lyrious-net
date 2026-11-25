@@ -89,7 +89,7 @@ internal sealed record PlaylogDto(System.Guid Id, System.Guid GroupId, System.Da
 /// <summary>A song played, in the key and tempo it was played in, who conducted it, and the setlist it was played from (if any).</summary>
 internal sealed record PlayDto(
     System.Guid Id, System.Guid PlaylogId, System.Guid SongId, System.Guid ConductorId,
-    string? KeyString, float Tempo, int DurationMilliSeconds, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum = 0, System.Guid? SetlistId = null);
+    string? KeyString, float Tempo, int DurationMilliSeconds, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum = 0, System.Guid? SetlistId = null, string? Recording = null);
 
 /// <summary>A member's own settings for a song (their transpose and lyrics).</summary>
 internal sealed record SongSettingDto(

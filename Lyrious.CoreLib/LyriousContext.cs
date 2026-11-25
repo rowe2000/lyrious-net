@@ -55,6 +55,7 @@ public class LyriousContext : LocalContext<Member, Role>
 			AddColumnIfMissing(nameof(Members), nameof(Member.Settings), sqlite ? "TEXT NULL" : $"{NVarChar(Member.MaxSettingsLength)} NULL");
 			CreateReleaseNotesIfMissing(sqlite);
 			AddColumnIfMissing(nameof(Plays), nameof(Play.SetlistId), sqlite ? "TEXT NULL" : "uniqueidentifier NULL");
+			AddColumnIfMissing(nameof(Plays), nameof(Play.Recording), sqlite ? "TEXT NULL" : $"{NVarChar(Play.MaxRecordingLength)} NULL");
 		}
 
 		return created;

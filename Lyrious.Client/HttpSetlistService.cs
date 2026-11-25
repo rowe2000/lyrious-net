@@ -691,7 +691,8 @@ public sealed class HttpSetlistService : ISetlistService
                         play.Tempo,
                         TimeSpan.FromMilliseconds(play.DurationMilliSeconds),
                         members.GetValueOrDefault(play.ConductorId, ""),
-                        play.SetlistId))
+                        play.SetlistId,
+                        play.Recording))
                     .ToArray()))
             .ToArray();
     }
@@ -742,6 +743,18 @@ public sealed class HttpSetlistService : ISetlistService
 
         var total = (long)play.DurationMilliSeconds + (long)time.TotalMilliseconds;
         current.Update("play", playId, new JsonObject { ["durationMilliSeconds"] = (int)Math.Min(total, int.MaxValue) });
+        Queued(current);
+    }
+
+    public async Task SetPlayRecordingAsync(Guid playId, string recording, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        if (Find(current, "play", playId, ClientJsonContext.Default.PlayDto) == null)
+        {
+            return;
+        }
+
+        current.Update("play", playId, new JsonObject { ["recording"] = recording });
         Queued(current);
     }
 

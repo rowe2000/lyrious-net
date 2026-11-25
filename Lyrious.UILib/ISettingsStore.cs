@@ -44,6 +44,15 @@ namespace Lyrious.UILib
 		/// <summary>The artists typed for the SongbookPro import whose songs get their name as a tag (see SongbookProImportOptions.TaggedArtists); kept on this device.</summary>
 		public const string ImportTaggedArtists = "import-tagged-artists";
 
+		/// <summary>Whether this device records the band when a song is played (see PlayRecorder): "true"; off unless turned on.</summary>
+		public const string RecordPlays = "recordPlays";
+
+		/// <summary>The sound input this device records from (its id, see IAudioRecorder.GetInputsAsync); none for the device's own choice.</summary>
+		public const string RecordingInput = "recordingInput";
+
+		/// <summary>How much the recordings are compressed: their bitrate in kbit/s (64 to 256); none for 128.</summary>
+		public const string RecordingBitrate = "recordingBitrate";
+
 		/// <summary>The pedals learned on this device and what each does: "PageDown:PageForward,PageUp:PageBack" (see PedalSettings).</summary>
 		public const string Pedals = "pedals";
 

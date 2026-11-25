@@ -87,6 +87,12 @@ namespace Lyrious.UILib.Setlists
 
 		private void ShowTime() => clock.Text = DateTime.Now.ToString("t", System.Globalization.CultureInfo.CurrentCulture);
 
+		/// <summary>
+		/// The clock shows but on an iPhone held upright, where the toolbar has no room to spare (and
+		/// the phone shows the time itself); turned sideways, it shows again.
+		/// </summary>
+		private void ShowClockIfRoom() => clock.IsVisible = !(App.IsIPhone && Bounds.Height > Bounds.Width);
+
 		private readonly ContentControl titleActions = new()
 		{
 			MinWidth = 128,
@@ -938,6 +944,12 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		protected override void OnSizeChanged(SizeChangedEventArgs e)
+		{
+			base.OnSizeChanged(e);
+			ShowClockIfRoom();
+		}
+
 		protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
 		{
 			base.OnAttachedToVisualTree(e);
@@ -950,6 +962,7 @@ namespace Lyrious.UILib.Setlists
 			// On screen now, the theme's colours can be found (the transpose button's chord colour).
 			ShowMySettingButtons(shownWithChords);
 			ShowTime();
+			ShowClockIfRoom();
 			clockTimer.Start();
 			ShowTitle();
 			if (App.SoundStore is { } sounds)

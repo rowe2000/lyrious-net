@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices.JavaScript;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -46,6 +47,20 @@ internal sealed partial class Program
         // The login page's fields as a real login form, for the browser's password manager.
         App.LoginForm = new BrowserLoginForm();
         App.SoundStore = new BrowserSoundStore();
+        // On an iPhone (in any browser), the lyrics page leaves out what has no room upright.
+        try
+        {
+            App.IsIPhone = JsIsIPhone();
+        }
+        catch (JSException)
+        {
+            App.IsIPhone = false;
+        }
+        // Recording the band as it plays (a device setting), where the browser can.
+        if (BrowserAudioRecorder.IsAvailable())
+        {
+            App.AudioRecorder = new BrowserAudioRecorder();
+        }
         // The MIDI tags in songs go to every MIDI output the browser offers.
         App.Midi = new BrowserMidiOutput();
         // Full screen as the member chose (Settings), at their first tap or key when it can't be at once.
@@ -85,4 +100,7 @@ internal sealed partial class Program
 
         return page is { Scheme: "http" or "https" } ? new Uri(page.GetLeftPart(UriPartial.Authority) + "/") : new Uri(DefaultApiBaseUrl);
     }
+
+    [System.Runtime.InteropServices.JavaScript.JSImport("globalThis.lyriousDevice.isIPhone")]
+    private static partial bool JsIsIPhone();
 }

@@ -33,7 +33,12 @@ namespace Lyrious.UILib.Setlists
 		private readonly TextBlock dropHint = new() { Opacity = 0.7, FontSize = 13, TextWrapping = TextWrapping.Wrap, Text = L.T("Drop sound files here, or add them with +, to link them to songs that have no media yet.") };
 		private const int MaxMediaLinkLength = 500;
 
-		private sealed record Row(StoredSound Sound, string Name, IReadOnlyList<string> Songs, bool Pending);
+		/// <param name="RecordingOf">The song it's the band's recording of (a play recorded, see PlayRecorder); null when it isn't one.</param>
+		private sealed record Row(StoredSound Sound, string Name, IReadOnlyList<string> Songs, bool Pending, string? RecordingOf = null)
+		{
+			/// <summary>Whether a song links to it, or it's a play's recording.</summary>
+			public bool Used => Songs.Count > 0 || RecordingOf != null;
+		}
 
 		public SoundFilesView(ISoundStore sounds, ISetlistService service)
 		{
@@ -276,12 +281,15 @@ namespace Lyrious.UILib.Setlists
 			{
 				var stored = await sounds.ListAsync();
 				var used = await SongsBySoundAsync();
+				var recordings = await RecordingsBySoundAsync();
 				var pending = SoundSync.PendingSoundIds;
 				var rows = stored
 					.Select(sound => used.TryGetValue(sound.Id, out var songs)
 						? new Row(sound, songs.Name, songs.Songs, pending.Contains(sound.Id))
-						: new Row(sound, sound.Id, [], pending.Contains(sound.Id)))
-					.OrderBy(row => row.Songs.Count > 0)
+						: recordings.TryGetValue(sound.Id, out var recording)
+							? new Row(sound, recording.Name, [], pending.Contains(sound.Id), recording.Song)
+							: new Row(sound, sound.Id, [], pending.Contains(sound.Id)))
+					.OrderBy(row => row.Used)
 					.ThenBy(row => row.Name, StringComparer.CurrentCultureIgnoreCase)
 					.ToList();
 				Show(rows);
@@ -291,6 +299,35 @@ namespace Lyrious.UILib.Setlists
 				body.Content = null;
 				ShowProblem(L.T("Couldn't list the sound files. {0}", ex.Message));
 			}
+		}
+
+		/// <summary>The bands' recorded plays by their recording's sound file: its name, and the song played.</summary>
+		private async Task<Dictionary<string, (string Name, string Song)>> RecordingsBySoundAsync()
+		{
+			var bySound = new Dictionary<string, (string Name, string Song)>();
+			try
+			{
+				foreach (var group in await service.GetGroupsAsync())
+				{
+					foreach (var playlog in await service.GetPlaylogsAsync(group.Id))
+					{
+						foreach (var play in playlog.Plays)
+						{
+							if (MediaLinks.SoundOf(play.Recording) is { } sound)
+							{
+								bySound[sound.Id] = (sound.Name, play.SongName);
+							}
+						}
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				// The recordings are still listed, by their ids.
+				System.Diagnostics.Debug.WriteLine($"Couldn't find the recorded plays: {ex.Message}");
+			}
+
+			return bySound;
 		}
 
 		/// <summary>The bands' songs by the sound file their media link names: its name as added, and the songs.</summary>
@@ -336,7 +373,7 @@ namespace Lyrious.UILib.Setlists
 				: L.Plural(rows.Count, "{0} file, {1} in all. Deleting one only frees this device: a song that uses it fetches it from the server again when it's played.", "{0} files, {1} in all. Deleting one only frees this device: a song that uses it fetches it from the server again when it's played.", Size(total));
 
 			var list = new StackPanel { Spacing = 4 };
-			var unused = rows.Where(row => row.Songs.Count == 0 && !row.Pending).ToList();
+			var unused = rows.Where(row => !row.Used && !row.Pending).ToList();
 			if (unused.Count > 1)
 			{
 				list.Children.Add(DeleteUnusedButton(unused));
@@ -348,7 +385,9 @@ namespace Lyrious.UILib.Setlists
 
 		private Control RowCard(Row row)
 		{
-			var detail = row.Songs.Count == 0 ? L.T("Not used by any song") : L.T("Used by {0}", string.Join(", ", row.Songs));
+			var detail = row.RecordingOf != null
+				? L.T("The band's recording of {0}", row.RecordingOf)
+				: row.Songs.Count == 0 ? L.T("Not used by any song") : L.T("Used by {0}", string.Join(", ", row.Songs));
 			if (row.Pending)
 			{
 				detail += L.T(" · Not sent to the server yet");
@@ -356,7 +395,7 @@ namespace Lyrious.UILib.Setlists
 
 			var question = row.Pending
 				? L.T("{0} hasn't reached the server yet: deleted, it's lost. Delete it?", row.Name)
-				: row.Songs.Count == 0
+				: !row.Used
 					? L.T("Delete {0}? No song uses it.", row.Name)
 					: L.T("Delete {0} from this device? It's fetched from the server again when it's played.", row.Name);
 			var delete = PageLayout.DeleteButton(L.T("Delete {0}", row.Name), question, () => _ = DeleteAsync([row.Sound.Id]));

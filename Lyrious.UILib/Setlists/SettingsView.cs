@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
@@ -226,6 +227,30 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			capoRow.IsVisible = DisplaySettings.TransposeButton;
+
+			// Recording (where the device can: a sound input, and room for sound files), before MIDI and
+			// the colours: whether it's on, and while it is, its settings.
+			if (PlayRecorder.IsSupported)
+			{
+				var recordingAt = form.Children.IndexOf(colorsSection);
+				var recordingSection = Section(L.T("Recording"));
+				ToolTip.SetTip(recordingSection, Explained(L.T("Recording the band as it plays, on this device.")));
+				var recordingSettings = RecordingSettings();
+				recordingSettings.IsVisible = PlaybackSettings.RecordPlays;
+				var recordPlays = new ToggleSwitch { IsChecked = PlaybackSettings.RecordPlays, OnContent = L.T("On"), OffContent = L.T("Off") };
+				recordPlays.IsCheckedChanged += (_, _) =>
+				{
+					PlaybackSettings.RecordPlays = recordPlays.IsChecked == true;
+					recordingSettings.IsVisible = PlaybackSettings.RecordPlays;
+				};
+				form.Children.Insert(recordingAt, recordingSection);
+				form.Children.Insert(recordingAt + 1, Scoped(SettingScope.Device, Setting(
+					L.T("Record when playing"),
+					L.T("Records the band from this device's sound input (two channels) while a song plays, from play until it stops. Each recording is kept in Sound files as an OGG file, named after the song and when it was played, with the play in the playlog, and on the server for the band's other devices. The first time, the device may ask to allow the microphone. On this device."),
+					recordPlays)));
+				// (In a panel of its own: the filter above shows and hides the rows of the form itself.)
+				form.Children.Insert(recordingAt + 2, Scoped(SettingScope.Device, new Border { Child = recordingSettings }));
+			}
 
 			// The MIDI module (see MidiSetup), before the colours: whether it's on, and while it is, its settings.
 			var (useMidi, midiSettings) = MidiSetup.Create(bandMidiExpressions, bandMidiCommands);
@@ -1064,6 +1089,118 @@ namespace Lyrious.UILib.Setlists
 			return panel;
 		}
 
+		/// <summary>
+		/// The recording settings, shown while recording is on: the sound input (the device's list, or
+		/// its own choice) and the quality (how much it's compressed). Each is saved as it's chosen.
+		/// </summary>
+		private static Control RecordingSettings()
+		{
+			// The sound input: the device's own choice first, then its inputs once they're known.
+			var input = new SettingComboBox { MinWidth = 200, MaxWidth = 320 };
+			var inputs = new List<AudioInput>();
+			var filling = true;
+			input.ItemsSource = new[] { L.T("Same as the device") };
+			input.SelectedIndex = 0;
+			input.SelectionChanged += (_, _) =>
+			{
+				if (filling || input.SelectedIndex < 0)
+				{
+					return;
+				}
+
+				PlaybackSettings.RecordingInput = input.SelectedIndex == 0 || input.SelectedIndex > inputs.Count ? null : inputs[input.SelectedIndex - 1].Id;
+			};
+
+			async void FillInputs()
+			{
+				try
+				{
+					inputs = [.. await App.AudioRecorder!.GetInputsAsync()];
+				}
+				catch (Exception ex)
+				{
+					System.Diagnostics.Debug.WriteLine($"Couldn't list the sound inputs: {ex.Message}");
+					inputs = [];
+				}
+
+				filling = true;
+				var names = new List<string> { L.T("Same as the device") };
+				names.AddRange(inputs.Select(found => found.Name));
+				var chosen = PlaybackSettings.RecordingInput;
+				var index = chosen == null ? 0 : inputs.FindIndex(found => found.Id == chosen) + 1;
+				if (chosen != null && index == 0)
+				{
+					// Chosen before, but not connected now: kept, and the device's own choice used meanwhile.
+					names.Add(L.T("The input chosen before (not connected)"));
+					index = names.Count - 1;
+				}
+
+				input.ItemsSource = names;
+				input.SelectedIndex = index;
+				filling = false;
+			}
+
+			// Listed each time it's shown (an input may have been plugged in since): see below.
+			input.AttachedToVisualTree += (_, _) => FillInputs();
+
+			// The quality: how much it's compressed (Opus's bitrate), with about how big a minute is.
+			var bitrates = PlaybackSettings.RecordingBitrates;
+			var quality = new SettingComboBox
+			{
+				MinWidth = 200,
+				ItemsSource = bitrates.Select(BitrateName).ToList(),
+				SelectedIndex = Math.Max(0, Array.IndexOf(bitrates, PlaybackSettings.RecordingBitrate)),
+			};
+			quality.SelectionChanged += (_, _) =>
+			{
+				if (quality.SelectedIndex >= 0)
+				{
+					PlaybackSettings.RecordingBitrate = bitrates[quality.SelectedIndex];
+				}
+			};
+
+			var panel = new StackPanel
+			{
+				Spacing = 16,
+				Children =
+				{
+					Setting(
+						L.T("Sound input"),
+						L.T("Where this device records from: a microphone, or a sound card's input (e.g. from the mixer). The same as the device records from by default. An input chosen here that isn't connected when a song starts is left for the device's own. In a browser the inputs' names show once it's been allowed to use the microphone. On this device."),
+						input),
+					Setting(
+						L.T("Quality"),
+						L.T("How much the recordings are compressed: a lower bitrate makes smaller files, a higher one sounds better. 128 kbit/s (about 1 MB a minute) is good for a band; 64 is fine to listen through, 256 for the best sound. On this device."),
+						quality),
+				},
+			};
+
+			// Shown again (recording turned on): the inputs listed anew.
+			panel.PropertyChanged += (_, e) =>
+			{
+				if (e.Property == Visual.IsVisibleProperty && panel.IsVisible && TopLevel.GetTopLevel(panel) != null)
+				{
+					FillInputs();
+				}
+			};
+			return panel;
+		}
+
+		/// <summary>A bitrate as Settings shows it: "128 kbit/s · about 1 MB a minute".</summary>
+		private static string BitrateName(int bitrate)
+		{
+			var megabytesAMinute = bitrate * 60 / 8 / 1000.0;
+			var name = bitrate switch
+			{
+				64 => L.T("Small"),
+				96 => L.T("Good"),
+				128 => L.T("High"),
+				192 => L.T("Very high"),
+				_ => L.T("Best"),
+			};
+			return L.T("{0} · {1} kbit/s · about {2} MB a minute", name, bitrate, megabytesAMinute.ToString("0.#"));
+		}
+
 		/// <summary>One setting: its name (its explanation the name's tooltip), with its control at the right.</summary>
 		internal static Control Setting(string name, string explanation, Control control)
 		{
@@ -1186,6 +1323,36 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>Playback settings, read from and saved to <see cref="App.Settings"/>.</summary>
 	public static class PlaybackSettings
 	{
+		/// <summary>
+		/// Whether this device records the band while a song plays, kept with the play in Sound files
+		/// (see <see cref="PlayRecorder"/>). On this device only (its sound input); off unless turned on.
+		/// </summary>
+		public static bool RecordPlays
+		{
+			get => App.Settings.Get(SettingKeys.RecordPlays) == "true";
+			set => App.Settings.Set(SettingKeys.RecordPlays, value ? "true" : null);
+		}
+
+		/// <summary>The bitrates offered for recordings (kbit/s): smaller files, or better sound.</summary>
+		public static readonly int[] RecordingBitrates = [64, 96, 128, 192, 256];
+
+		/// <summary>
+		/// How much recordings are compressed: their bitrate in kbit/s, one of <see cref="RecordingBitrates"/>
+		/// (128 unless changed: about 1 MB a minute, good for a band). On this device.
+		/// </summary>
+		public static int RecordingBitrate
+		{
+			get => int.TryParse(App.Settings.Get(SettingKeys.RecordingBitrate), out var bitrate) && Array.IndexOf(RecordingBitrates, bitrate) >= 0 ? bitrate : 128;
+			set => App.Settings.Set(SettingKeys.RecordingBitrate, value == 128 ? null : value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+		}
+
+		/// <summary>The sound input this device records from (its id); null for the device's own choice. On this device.</summary>
+		public static string? RecordingInput
+		{
+			get => App.Settings.Get(SettingKeys.RecordingInput);
+			set => App.Settings.Set(SettingKeys.RecordingInput, string.IsNullOrEmpty(value) ? null : value);
+		}
+
 		/// <summary>
 		/// Band sync (the globe in the play toolbar): follow the joined band's current song, setlist
 		/// and play/stop, and send this member's. On unless turned off.

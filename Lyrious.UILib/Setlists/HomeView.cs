@@ -97,6 +97,10 @@ namespace Lyrious.UILib.Setlists
 		// that lyrics page stops scrolling.
 		private (LyricScrollView View, Task<Guid?> Play, DateTime Started)? timedPlay;
 
+		// Records the band while a song plays, when this device records plays (a device setting).
+		private PlayRecorder? playRecorder;
+		private PlayRecorder Recorder => playRecorder ??= new PlayRecorder(service, text => Dispatcher.UIThread.Post(() => ShowNotice(text)));
+
 		/// <summary>
 		/// Band sync (the globe in the play toolbar): follow the joined band's current song, setlist and
 		/// play/stop, and send this member's. Off, the member picks songs and plays on their own.
@@ -516,6 +520,8 @@ namespace Lyrious.UILib.Setlists
 			service.MembersChanged -= OnMembersChanged;
 			service.StatusChanged -= OnStatusChanged;
 			service.JoinedGroupChanged -= OnJoinedGroupChanged;
+			// Logged out (or the app closing) while recording: what was recorded is kept.
+			_ = playRecorder?.StopAsync();
 			service.MySongSettingChanged -= OnMySongSettingChanged;
 			App.AuthService.SiteManagerChanged -= OnSiteManagerChanged;
 			UserSettings.Detach();
@@ -1081,7 +1087,10 @@ namespace Lyrious.UILib.Setlists
 
 			// The setlist it's played from goes with it, for the sessions (not the songbook shown as a setlist: no setlist).
 			var setlistId = currentSetlist is { } setlist && !IsSongbookSetlist(setlist) ? setlist.Id : (Guid?)null;
-			timedPlay = (lyrics, AddPlayAsync(group.Id, songId, setlistId), DateTime.Now);
+			var play = AddPlayAsync(group.Id, songId, setlistId);
+			timedPlay = (lyrics, play, DateTime.Now);
+			// Recorded until it stops, kept with the play (when this device records plays).
+			Recorder.Start(songId, currentSongName.Text ?? "", play);
 		}
 
 		private async Task<Guid?> AddPlayAsync(Guid groupId, Guid songId, Guid? setlistId)
@@ -3522,6 +3531,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					timedPlay = null;
 					_ = AddPlayTimeAsync(timed.Play, DateTime.Now - timed.Started);
+					_ = Recorder.StopAsync();
 				}
 
 				if (page.Content == view)

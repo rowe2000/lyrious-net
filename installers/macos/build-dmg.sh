@@ -59,6 +59,8 @@ for arch in "${archs[@]}"; do
 	<string>Lyrious.Desktop</string>
 	<key>CFBundleIconFile</key>
 	<string>Lyrious.icns</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Lyrious records the band while a song plays, when you turn on Record when playing in Settings.</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

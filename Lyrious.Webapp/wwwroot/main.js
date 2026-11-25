@@ -130,6 +130,107 @@ globalThis.lyriousLogin = (() => {
     };
 })();
 
+// The device, for what the app leaves out where there's no room (Program.cs): an iPhone (any browser
+// on one says so; an iPad's Safari says it's a Mac, so it isn't taken for one).
+globalThis.lyriousDevice = {
+    isIPhone: () => /iPhone|iPod/.test(navigator.userAgent),
+};
+
+// Recording the band as it plays (BrowserAudioRecorder.cs): the sound input the browser gives
+// (it asks the member the first time), two channels, without the processing meant for calls (echo
+// cancelling, noise suppression, automatic gain), which would spoil music. An audio worklet hands on
+// what comes in; it's kept as 16-bit samples, interleaved (a one-channel input in both), and taken by
+// the app a few times a second (take, as base64).
+globalThis.lyriousRecorder = (() => {
+    let context = null, stream = null, node = null, source = null;
+    let chunks = [];
+
+    // The worklet: each block of input (two channels; one given twice) is posted to the page.
+    const workletCode = `
+        class LyriousTap extends AudioWorkletProcessor {
+            process(inputs) {
+                const input = inputs[0];
+                if (input && input.length > 0) {
+                    const left = input[0], right = input.length > 1 ? input[1] : input[0];
+                    const block = new Int16Array(left.length * 2);
+                    for (let i = 0; i < left.length; i++) {
+                        block[2 * i] = Math.max(-1, Math.min(1, left[i])) * 32767;
+                        block[2 * i + 1] = Math.max(-1, Math.min(1, right[i])) * 32767;
+                    }
+                    this.port.postMessage(block, [block.buffer]);
+                }
+                return true;
+            }
+        }
+        registerProcessor("lyrious-tap", LyriousTap);`;
+
+    function cleanUp() {
+        try { source?.disconnect(); node?.disconnect(); } catch { }
+        stream?.getTracks().forEach(track => track.stop());
+        context?.close().catch(() => { });
+        context = stream = node = source = null;
+    }
+
+    return {
+        isSupported: () => !!(navigator.mediaDevices?.getUserMedia && typeof AudioWorkletNode === "function"),
+        // The sound inputs, as JSON ([{ id, name }]). Their names only once the page may use the
+        // microphone (until then they're numbered); the browser's own "default" entries are left
+        // out, as the app offers the device's own choice itself.
+        inputs: async () => {
+            if (!navigator.mediaDevices?.enumerateDevices) return "[]";
+            const devices = (await navigator.mediaDevices.enumerateDevices())
+                .filter(device => device.kind === "audioinput" && device.deviceId && device.deviceId !== "default" && device.deviceId !== "communications");
+            return JSON.stringify(devices.map((device, index) => ({ id: device.deviceId, name: device.label || `Sound input ${index + 1}` })));
+        },
+        // Starts from the input (its id; "" for the device's own choice); the sample rate. Fails with
+        // the browser's reason (e.g. not allowed). An input that isn't there any more is left for the
+        // device's own choice.
+        start: async deviceId => {
+            cleanUp();
+            chunks = [];
+            // Made at once, in answer to the press of play: a browser lets sound start only then.
+            context = new AudioContext();
+            const audio = { channelCount: { ideal: 2 }, echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+            try {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { ...audio, deviceId: { exact: deviceId } } : audio });
+                } catch (error) {
+                    if (!deviceId || (error?.name !== "OverconstrainedError" && error?.name !== "NotFoundError")) throw error;
+                    stream = await navigator.mediaDevices.getUserMedia({ audio });
+                }
+                const url = URL.createObjectURL(new Blob([workletCode], { type: "text/javascript" }));
+                await context.audioWorklet.addModule(url);
+                URL.revokeObjectURL(url);
+                source = context.createMediaStreamSource(stream);
+                node = new AudioWorkletNode(context, "lyrious-tap", { channelCount: 2, channelCountMode: "explicit", numberOfOutputs: 0 });
+                node.port.onmessage = event => chunks.push(event.data);
+                source.connect(node);
+                await context.resume();
+                return context.sampleRate;
+            } catch (error) {
+                cleanUp();
+                throw new Error(error?.name === "NotAllowedError"
+                    ? "the browser wasn't allowed to use the microphone (allow it in the address bar)"
+                    : error?.message ?? String(error));
+            }
+        },
+        // What came in since the last time, as base64 (16-bit samples, interleaved); "" when nothing.
+        take: () => {
+            if (chunks.length === 0) return "";
+            const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const all = new Int16Array(length);
+            let at = 0;
+            for (const chunk of chunks) { all.set(chunk, at); at += chunk.length; }
+            chunks = [];
+            const bytes = new Uint8Array(all.buffer);
+            let binary = "";
+            for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+            return btoa(binary);
+        },
+        stop: () => cleanUp(),
+    };
+})();
+
 // The on-screen keyboard on iOS (Safari, and any iOS browser): it only shows for an input focused
 // while handling a tap (a user gesture). Avalonia types into a hidden input (.avalonia-input-element)
 // that it shows and focuses when a text box gets focus, but only after the tap has been handled, so
