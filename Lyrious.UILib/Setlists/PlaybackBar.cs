@@ -561,8 +561,9 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// "NEXT", read from the bottom up, bold in the details colour (the text colour, dimmed) on the
-		/// highlight colour: what the button is. The button's whole height: the song's two lines with the
+		/// "NEXT", read from the bottom up, bold in the colour for text on the highlight (white on the
+		/// purple) on the highlight colour: what the button is; clear while the button can be used, dimmed
+		/// when it can't. The button's whole height: the song's two lines with the
 		/// room above and below them (<paramref name="song"/>'s margin), the text scaled to fill it.
 		/// </summary>
 		private static Control NextLabel(Control song)
@@ -571,9 +572,16 @@ namespace Lyrious.UILib.Setlists
 			{
 				Text = L.T("Next").ToUpper(System.Globalization.CultureInfo.CurrentCulture),
 				FontWeight = FontWeight.Bold,
-				Opacity = 0.7,
 			};
-			text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(LyriousTheme.ForegroundBrush));
+			// As the highlighted buttons' text (see ColorSettings): black or white, whichever reads better on it.
+			text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable("AccentButtonForeground"));
+			text.PropertyChanged += (_, e) =>
+			{
+				if (e.Property == IsEffectivelyEnabledProperty)
+				{
+					text.Opacity = text.IsEffectivelyEnabled ? 1 : 0.4;
+				}
+			};
 			var label = new Border
 			{
 				Padding = new Thickness(2, 3),
