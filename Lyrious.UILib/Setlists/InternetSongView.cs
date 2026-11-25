@@ -34,12 +34,18 @@ namespace Lyrious.UILib.Setlists
 		private readonly RadioButton lrclibSource = new() { Content = "LRCLIB", GroupName = "find-online-source" };
 		// The source chosen, while the app runs: Ultimate Guitar unless LRCLIB was chosen.
 		private static bool lrclibChosen;
-		// Whether something was searched, so changing the source searches it there too.
-		private bool searched;
+		// The search, kept while the app runs until a song found is added (see ForgetSearch), so coming
+		// back to the page shows it as it was: whether something was searched (changing the source then
+		// searches it there too), the words, each source's last results, and which of them are listed.
+		private static bool searched;
+		// (The words as searched, not as typed since: Escape in the box puts back its text from when it got
+		// the focus, e.g. when leaving the page with Escape.)
+		private static string keptQuery = "";
+		private static bool? listedFromLrclib;
 		private readonly ContentControl results = new();
 		private readonly Control searchPage;
-		private IReadOnlyList<InternetSong> lastResults = [];
-		private IReadOnlyList<UltimateGuitarSong> lastUltimateGuitarResults = [];
+		private static IReadOnlyList<InternetSong> lastResults = [];
+		private static IReadOnlyList<UltimateGuitarSong> lastUltimateGuitarResults = [];
 		// Counts the songs shown from Ultimate Guitar, so one that's still loading when the next is
 		// asked for doesn't show over it.
 		private int ultimateGuitarShown;
@@ -120,6 +126,35 @@ namespace Lyrious.UILib.Setlists
 				closable: true,
 				icon: AppIcons.FindOnline);
 			Content = searchPage;
+
+			// The search as it was left (see keptQuery).
+			query.Text = keptQuery;
+			switch (listedFromLrclib)
+			{
+				case true:
+					ShowResults();
+					break;
+				case false:
+					ShowUltimateGuitarResults();
+					break;
+			}
+		}
+
+		/// <summary>Forgets the search kept for coming back to the page: a song found was added, so the next search starts afresh.</summary>
+		private static void ForgetSearch()
+		{
+			searched = false;
+			keptQuery = "";
+			listedFromLrclib = null;
+			lastResults = [];
+			lastUltimateGuitarResults = [];
+		}
+
+		/// <summary>Adds the song found (see <see cref="AddRequested"/>); the search is forgotten then.</summary>
+		private void Add(InternetSong song)
+		{
+			ForgetSearch();
+			AddRequested?.Invoke(song);
 		}
 
 		protected override void OnLoaded(Avalonia.Interactivity.RoutedEventArgs e)
@@ -127,6 +162,9 @@ namespace Lyrious.UILib.Setlists
 			base.OnLoaded(e);
 			query.Focus();
 		}
+
+		/// <summary>The bar that shows a search is under way: just below the source buttons, at the top of the results' room.</summary>
+		private static ProgressBar SearchProgress() => new() { IsIndeterminate = true, Margin = new Thickness(0, 0, 0, 8), VerticalAlignment = VerticalAlignment.Top };
 
 		/// <summary>Searches the source chosen: Ultimate Guitar (in the browser where it can't be searched here) or LRCLIB.</summary>
 		private Task SearchAsync()
@@ -149,15 +187,18 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			searched = true;
+			keptQuery = text;
 			searchButton.IsEnabled = false;
-			results.Content = new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 8) };
+			results.Content = SearchProgress();
 			try
 			{
 				lastResults = await search(text);
+				listedFromLrclib = true;
 				ShowResults();
 			}
 			catch (Exception ex)
 			{
+				listedFromLrclib = null;
 				results.Content = Message(L.T("Couldn't search. {0}", ex.Message));
 			}
 			finally
@@ -176,22 +217,31 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			searched = true;
+			keptQuery = text;
 			searchButton.IsEnabled = false;
-			results.Content = new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 8) };
+			results.Content = SearchProgress();
 			try
 			{
-				var found = lastUltimateGuitarResults = await searchUltimateGuitar(text);
-				var rows = found.Select(song => (Control)UltimateGuitarRow(song)).ToArray();
-				results.Content = PageLayout.List(rows, L.T("Ultimate Guitar found no chords or tabs. Try other words, or the artist's name too."));
+				lastUltimateGuitarResults = await searchUltimateGuitar(text);
+				listedFromLrclib = false;
+				ShowUltimateGuitarResults();
 			}
 			catch (Exception ex)
 			{
+				listedFromLrclib = null;
 				results.Content = Message(L.T("Couldn't search Ultimate Guitar. {0}", ex.Message));
 			}
 			finally
 			{
 				searchButton.IsEnabled = !string.IsNullOrWhiteSpace(query.Text);
 			}
+		}
+
+		/// <summary>Lists Ultimate Guitar's last results (see <see cref="UltimateGuitarRow"/>).</summary>
+		private void ShowUltimateGuitarResults()
+		{
+			var rows = lastUltimateGuitarResults.Select(song => (Control)UltimateGuitarRow(song)).ToArray();
+			results.Content = PageLayout.List(rows, L.T("Ultimate Guitar found no chords or tabs. Try other words, or the artist's name too."));
 		}
 
 		/// <summary>One of Ultimate Guitar's results: title, then artist, what it is and its rating; it shows the song (see <see cref="ShowUltimateGuitarTabAsync"/>).</summary>
@@ -281,10 +331,10 @@ namespace Lyrious.UILib.Setlists
 				{
 					// Once: the page changes to the song added.
 					add.IsEnabled = false;
-					AddRequested?.Invoke(new InternetSong(shown.Name, shown.Artist, "", TimeSpan.Zero, shown.Lyrics, Instrumental: false, Key: shown.OriginalKey));
+					Add(new InternetSong(shown.Name, shown.Artist, "", TimeSpan.Zero, shown.Lyrics, Instrumental: false, Key: shown.OriginalKey));
 				};
 				DockPanel.SetDock(add, Dock.Top);
-				Content = Page(new DockPanel { Children = { add, lyrics } }, artist.Length > 0 ? L.T("{0} · only for you, not saved", artist) : L.T("Only for you, not saved"));
+				Content = Page(new DockPanel { Children = { add, PageLayout.WholeWidth(lyrics) } }, artist.Length > 0 ? L.T("{0} · only for you, not saved", artist) : L.T("Only for you, not saved"));
 			}
 			catch (Exception ex) when (showing == ultimateGuitarShown)
 			{
@@ -306,6 +356,7 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
+			keptQuery = text;
 			var uri = new Uri($"https://www.ultimate-guitar.com/search.php?search_type=title&value={Uri.EscapeDataString(text)}");
 			if (!await topLevel.Launcher.LaunchUriAsync(uri))
 			{
@@ -368,7 +419,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			var add = new Button { Content = addText, HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(16, 10), Margin = new Thickness(0, 0, 0, 16) };
 			add.Classes.Add("accent");
-			add.Click += (_, _) => AddRequested?.Invoke(song);
+			add.Click += (_, _) => Add(song);
 			DockPanel.SetDock(add, Dock.Top);
 
 			var hasLyrics = !string.IsNullOrWhiteSpace(song.Lyrics);

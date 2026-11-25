@@ -457,11 +457,7 @@ namespace Lyrious.UILib.Setlists
 
 			infoHost.Content = nameBox;
 			top?.AddHandler(PointerPressedEvent, OnPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
-			Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-			{
-				nameBox.Focus();
-				nameBox.SelectAll();
-			});
+			Avalonia.Threading.Dispatcher.UIThread.Post(() => nameBox.Focus());
 		}
 
 		/// <summary>✕ that asks first, then removes the member from the band.</summary>

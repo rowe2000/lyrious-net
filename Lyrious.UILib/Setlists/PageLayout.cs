@@ -141,7 +141,7 @@ namespace Lyrious.UILib.Setlists
 		private static Control Page(string title, Control content, Control? backLink, string? subtitle = null, Control? titleAction = null, string? icon = null)
 		{
 			// The whole width of the app (as the song pages), not a narrow column in the middle.
-			var column = new DockPanel { Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Stretch };
+			var column = new DockPanel { Margin = new Thickness(ColumnMargin), HorizontalAlignment = HorizontalAlignment.Stretch };
 
 			// A header with an icon (a page from the left drawer) has 4px more room below it.
 			var header = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, icon != null ? 8 : 4) };
@@ -334,6 +334,24 @@ namespace Lyrious.UILib.Setlists
 		/// reach out into the page's right margin, with what they scroll kept where it was: the scroll
 		/// bar is beside the content (still lined up with the title's buttons), not over it.
 		/// </summary>
+		// The room around a page's column (see Page).
+		private const double ColumnMargin = 4;
+
+		/// <summary>
+		/// Makes <paramref name="content"/> of a page use the app's whole width, as the lyrics page does:
+		/// out past the page's margins (the room kept for the drawer buttons and around the column). E.g. a
+		/// song previewed in the lyrics view, so it sits as it does when played.
+		/// </summary>
+		public static T WholeWidth<T>(T content) where T : Control
+		{
+			content.Margin = new Thickness(
+				-(HomeView.PageMargin.Left + ColumnMargin),
+				content.Margin.Top,
+				-(HomeView.PageMargin.Right + ColumnMargin),
+				content.Margin.Bottom);
+			return content;
+		}
+
 		private static void KeepScrollBarsBeside(Control page)
 		{
 			page.Styles.Add(new Avalonia.Styling.Style(x => Avalonia.Styling.Selectors.OfType<ScrollViewer>(x))
@@ -817,11 +835,7 @@ namespace Lyrious.UILib.Setlists
 				ok.Focusable = false;
 				OkInBox(box, ok, () => box.Text?.Trim() is { Length: > 0 } typed && typed != title.Text);
 				ok.Click += (_, _) => Finish(save: true);
-				box.AttachedToVisualTree += (_, _) =>
-				{
-					box.Focus();
-					box.SelectAll();
-				};
+				box.AttachedToVisualTree += (_, _) => box.Focus();
 				host.Content = box;
 			}
 

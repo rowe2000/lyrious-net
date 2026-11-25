@@ -25,6 +25,8 @@ namespace Lyrious.UILib
 	/// <item>When the view with the text box closes while it's being typed in, the text box loses the
 	/// focus first (its LostFocus is raised), so what was typed is handled as when leaving it by hand,
 	/// e.g. taken or saved.</item>
+	/// <item>A text box that gets the focus (by a click or tap, Tab, or the app) has the caret at the
+	/// end of its text, nothing selected.</item>
 	/// <item>When the room to type in changes (the text box gets narrower or wider, or a button
 	/// inside it, e.g. a ✓ or ✕, shows or hides) while it's being typed in, the caret is scrolled
 	/// back into sight, so it's never hidden under those buttons.</item>
@@ -238,6 +240,24 @@ namespace Lyrious.UILib
 			focused = box;
 			textWhenFocused = box.Text;
 			box.DetachedFromVisualTree += OnDetached;
+			// After the text box's own handling of the focus (Tab selects all, a click puts the caret where
+			// it was clicked), and of the press that gave it.
+			Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+			{
+				if (ReferenceEquals(focused, box))
+				{
+					CaretAtEnd(box);
+				}
+			}, Avalonia.Threading.DispatcherPriority.Background);
+		}
+
+		/// <summary>The caret at the end of the text box's text, nothing selected.</summary>
+		private static void CaretAtEnd(TextBox box)
+		{
+			var end = box.Text?.Length ?? 0;
+			box.SelectionStart = end;
+			box.SelectionEnd = end;
+			box.CaretIndex = end;
 		}
 
 		private static void OnLostFocus(TextBox box, FocusChangedEventArgs e)

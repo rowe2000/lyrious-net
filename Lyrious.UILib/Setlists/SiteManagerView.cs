@@ -562,7 +562,6 @@ namespace Lyrious.UILib.Setlists
 				{
 					box.Text = current;
 					ok.IsVisible = false;
-					box.SelectAll();
 					box.Focus();
 				}
 			}

@@ -2030,6 +2030,7 @@ namespace Lyrious.UILib.Setlists
 				{
 					if (e.Property == ScrollViewer.ViewportProperty)
 					{
+						FitToViewWidth();
 						// Right after this layout pass (changing the room lays the view out again).
 						Dispatcher.UIThread.Post(() => UpdateOverscroll(), DispatcherPriority.Loaded);
 					}
@@ -2061,6 +2062,19 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
+		/// Keeps the lyrics no wider than the view (at their zoom): a line that can't wrap (e.g. guitar tab,
+		/// in a fixed-width font) then runs past the view's right edge only, every line starting at its left.
+		/// Wider, the lyrics would be centred past both edges, cutting off the start of every line.
+		/// </summary>
+		private void FitToViewWidth()
+		{
+			if (scroller is { } viewer && zoomHost?.Child is Control content && viewer.Viewport.Width > 0 && zoom > 0)
+			{
+				content.MaxWidth = viewer.Viewport.Width / zoom;
+			}
+		}
+
+		/// <summary>
 		/// Shows the lyrics' new content in the scroll view they're in, where they were: at their start if
 		/// they were there, else with the same part of them in the middle of the view (as a share of their
 		/// height: the lines may wrap otherwise now). Playing in time, the song's clock places them anyway.
@@ -2085,6 +2099,7 @@ namespace Lyrious.UILib.Setlists
 
 			zoomHost.Child = content;
 			zoomHost.HorizontalAlignment = grid ? HorizontalAlignment.Stretch : HorizontalAlignment.Center;
+			FitToViewWidth();
 			viewer.UpdateLayout();
 			if (scrollTimer.IsEnabled && IsTimed)
 			{
@@ -2202,6 +2217,7 @@ namespace Lyrious.UILib.Setlists
 			// Another size: centred anew at their own width (see KeepPlace).
 			zoomHost.MinWidth = 0;
 			zoomHost.LayoutTransform = new ScaleTransform(zoom, zoom);
+			FitToViewWidth();
 			scroller.UpdateLayout();
 			if (!scrollTimer.IsEnabled || !IsTimed)
 			{
@@ -3130,11 +3146,7 @@ namespace Lyrious.UILib.Setlists
 			void ShowNameBox()
 			{
 				nameSlot.Content = name;
-				Dispatcher.UIThread.Post(() =>
-				{
-					name.Focus();
-					name.SelectAll();
-				});
+				Dispatcher.UIThread.Post(() => name.Focus());
 			}
 
 			nameText.Tapped += (_, e) =>
@@ -3293,11 +3305,7 @@ namespace Lyrious.UILib.Setlists
 				artistWhenOpened = artist.Text ?? "";
 				hideArtistOk();
 				artistSlot.Content = artist;
-				Dispatcher.UIThread.Post(() =>
-				{
-					artist.Focus();
-					artist.SelectAll();
-				});
+				Dispatcher.UIThread.Post(() => artist.Focus());
 			}
 
 			artist.LostFocus += (_, _) => ShowArtistText();

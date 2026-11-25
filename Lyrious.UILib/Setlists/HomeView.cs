@@ -38,7 +38,7 @@ namespace Lyrious.UILib.Setlists
 		private static string NoSong => L.T("Choose a song");
 
 		/// <summary>A page's room at the sides, clear of the drawer buttons over the top corners (4 of margin plus 40 wide).</summary>
-		private static readonly Thickness PageMargin = new(44, 0);
+		internal static readonly Thickness PageMargin = new(44, 0);
 
 		private const string AddIcon = "M12,5 V19 M5,12 H19";
 		private const string CloseIcon = "M6,6 L18,18 M18,6 L6,18";
@@ -356,12 +356,10 @@ namespace Lyrious.UILib.Setlists
 					return;
 				}
 
-				lastOpenedDrawer = menuDrawer;
 				menuDrawer.IsPaneOpen = true;
 			};
 			setlistButton.Click += (_, _) =>
 			{
-				lastOpenedDrawer = setlistDrawer;
 				setlistDrawer.IsPaneOpen = true;
 				_ = LoadSetlistDrawerAsync(centerSong: true);
 			};
@@ -379,23 +377,27 @@ namespace Lyrious.UILib.Setlists
 			};
 			// The computer may have changed networks since.
 			menuDrawer.PaneOpened += (_, _) => ShowSharingCode();
-			// Remembered for Escape, which opens the other drawer (see OnLyricsEscape).
-			// Only a drawer's own opening counts: the right drawer is inside the left one's content, so
-			// its opening reaches the left drawer too (the event goes up through it).
-			menuDrawer.PaneOpening += (_, e) =>
+			// A drawer Escape opened, closed again by Escape with nothing else done in between: the next
+			// Escape opens the other drawer (see OnLyricsEscape). Any close ends what Escape opened.
+			// Only a drawer's own closing counts: the right drawer is inside the left one's content, so
+			// its closing reaches the left drawer too (the event goes up through it).
+			foreach (var drawer in new[] { menuDrawer, setlistDrawer })
 			{
-				if (e.Source == menuDrawer)
+				drawer.PaneClosing += (_, e) =>
 				{
-					lastOpenedDrawer = menuDrawer;
-				}
-			};
-			setlistDrawer.PaneOpening += (_, e) =>
-			{
-				if (e.Source == setlistDrawer)
-				{
-					lastOpenedDrawer = setlistDrawer;
-				}
-			};
+					if (e.Source != drawer)
+					{
+						return;
+					}
+
+					if (openedByEscape == drawer && escapeKeyDown)
+					{
+						escapeDrawer = drawer == menuDrawer ? setlistDrawer : menuDrawer;
+					}
+
+					openedByEscape = null;
+				};
+			}
 
 			Content = menuDrawer;
 
@@ -696,8 +698,14 @@ namespace Lyrious.UILib.Setlists
 
 			ShowSharingCode();
 			keyWindow?.AddHandler(KeyDownEvent, OnLyricsKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+			// Watching what's done between Escape opening a drawer and closing it (see OnLyricsEscape):
+			// keys first of all, presses too (also those something else takes).
+			keyWindow?.AddHandler(KeyDownEvent, OnEscapeSequenceKey, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+			keyWindow?.AddHandler(PointerPressedEvent, OnEscapeSequencePress, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 			// Bubbling: after everything else had its go at the key (see OnLyricsEscape).
 			keyWindow?.AddHandler(KeyDownEvent, OnLyricsEscape, Avalonia.Interactivity.RoutingStrategies.Bubble);
+			// Last of all: the Escape press is over.
+			keyWindow?.AddHandler(KeyDownEvent, OnEscapeKeyDone, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
 			keyWindow?.AddHandler(KeyDownEvent, OnLyricsPaste, Avalonia.Interactivity.RoutingStrategies.Bubble);
 			keyWindow?.AddHandler(KeyDownEvent, OnSiteManagerKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 			keyWindow?.AddHandler(KeyDownEvent, OnEditSongKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -779,14 +787,47 @@ namespace Lyrious.UILib.Setlists
 			popup.ShowAt(this);
 		}
 
-		// The drawer opened last (by its button, by Escape or otherwise): Escape opens the other one.
-		private SplitView? lastOpenedDrawer;
+		// The drawer Escape opens on the lyrics page: the left one at first (null), the other one once
+		// Escape has opened it and closed it again with nothing else done in between.
+		private SplitView? escapeDrawer;
+
+		// The drawer Escape just opened, while nothing else has been done since (a key or a press, or
+		// it was closed); null otherwise.
+		private SplitView? openedByEscape;
+
+		// Whether an Escape press is being handled now: a drawer closed meanwhile was closed by Escape.
+		private bool escapeKeyDown;
+
+		/// <summary>An Escape press starts (see <see cref="escapeKeyDown"/>); any other key is something else done, after Escape opened a drawer.</summary>
+		private void OnEscapeSequenceKey(object? sender, Avalonia.Input.KeyEventArgs e)
+		{
+			if (e.Key == Avalonia.Input.Key.Escape && e.KeyModifiers == Avalonia.Input.KeyModifiers.None)
+			{
+				escapeKeyDown = true;
+			}
+			else
+			{
+				openedByEscape = null;
+			}
+		}
+
+		/// <summary>A press (anywhere) is something else done, after Escape opened a drawer.</summary>
+		private void OnEscapeSequencePress(object? sender, Avalonia.Input.PointerPressedEventArgs e) => openedByEscape = null;
+
+		/// <summary>The Escape press has been handled by everything that wanted it.</summary>
+		private void OnEscapeKeyDone(object? sender, Avalonia.Input.KeyEventArgs e)
+		{
+			if (e.Key == Avalonia.Input.Key.Escape)
+			{
+				escapeKeyDown = false;
+			}
+		}
 
 		/// <summary>
 		/// Escape on the lyrics page, when nothing else used it (a close button on screen, see
-		/// <see cref="EscapeKey"/>, a text box, ending focus mode): opens the drawer that wasn't
-		/// opened last (the left one the first time), so Escape takes turns between them. There,
-		/// Escape closes it again.
+		/// <see cref="EscapeKey"/>, a text box, ending focus mode): opens a drawer, the left one at first.
+		/// There, Escape closes it again; done so with nothing else in between, the next Escape opens the
+		/// other drawer instead (see <see cref="escapeDrawer"/>).
 		/// </summary>
 		private void OnLyricsEscape(object? sender, Avalonia.Input.KeyEventArgs e)
 		{
@@ -796,15 +837,15 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			var drawer = lastOpenedDrawer == menuDrawer ? setlistDrawer : menuDrawer;
+			var drawer = escapeDrawer ?? menuDrawer;
 			if (drawer.IsPaneOpen)
 			{
 				return; // Open already (e.g. pinned).
 			}
 
 			e.Handled = true;
-			lastOpenedDrawer = drawer; // The next Escape opens the other one.
 			drawer.IsPaneOpen = true;
+			openedByEscape = drawer;
 			if (drawer == setlistDrawer)
 			{
 				// As its button does: the songs loaded, the current one in the middle.
@@ -831,6 +872,9 @@ namespace Lyrious.UILib.Setlists
 			base.OnDetachedFromVisualTree(e);
 			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsKey);
 			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsEscape);
+			keyWindow?.RemoveHandler(KeyDownEvent, OnEscapeSequenceKey);
+			keyWindow?.RemoveHandler(PointerPressedEvent, OnEscapeSequencePress);
+			keyWindow?.RemoveHandler(KeyDownEvent, OnEscapeKeyDone);
 			keyWindow?.RemoveHandler(KeyDownEvent, OnLyricsPaste);
 			keyWindow?.RemoveHandler(KeyDownEvent, OnSiteManagerKey);
 			keyWindow?.RemoveHandler(KeyDownEvent, OnEditSongKey);
