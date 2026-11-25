@@ -21,7 +21,7 @@ namespace Lyrious.UILib.Setlists
 	/// sent to the server, and a delete button; the total size at the top. Deleting only frees this
 	/// device: a song keeps its link, and the file is fetched from the server again when it's played.
 	/// Files no song uses come first, and can be deleted all at once. Sound files dropped on the page
-	/// are matched by name to songs without media, and listed to be linked to them (see <see cref="SoundMatching"/>).
+	/// are matched by name to songs without media, and listed to be linked to them (see <see cref="SoundLinkProposals"/>).
 	/// </summary>
 	public sealed class SoundFilesView : UserControl
 	{
@@ -31,7 +31,6 @@ namespace Lyrious.UILib.Setlists
 		private readonly TextBlock summary = new() { Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
 		private readonly TextBlock problem = new() { TextWrapping = TextWrapping.Wrap, IsVisible = false };
 		private readonly TextBlock dropHint = new() { Opacity = 0.7, FontSize = 13, TextWrapping = TextWrapping.Wrap, Text = L.T("Drop sound files here, or add them with +, to link them to songs that have no media yet.") };
-		private const int MaxMediaLinkLength = 500;
 
 		/// <param name="RecordingOf">The song it's the band's recording of (a play recorded, see PlayRecorder); null when it isn't one.</param>
 		private sealed record Row(StoredSound Sound, string Name, IReadOnlyList<string> Songs, bool Pending, string? RecordingOf = null)
@@ -66,7 +65,7 @@ namespace Lyrious.UILib.Setlists
 			DragDrop.SetAllowDrop(this, true);
 			AddHandler(DragDrop.DragOverEvent, (_, e) =>
 			{
-				if (DroppedSounds(e).Count > 0)
+				if (SoundLinkProposals.DroppedSounds(e).Count > 0)
 				{
 					e.DragEffects = DragDropEffects.Copy;
 					e.Handled = true;
@@ -74,20 +73,13 @@ namespace Lyrious.UILib.Setlists
 			}, RoutingStrategies.Bubble, handledEventsToo: true);
 			AddHandler(DragDrop.DropEvent, async (_, e) =>
 			{
-				var files = DroppedSounds(e);
+				var files = SoundLinkProposals.DroppedSounds(e);
 				if (files.Count > 0)
 				{
 					e.Handled = true;
 					await ProposeLinksAsync(files);
 				}
 			}, RoutingStrategies.Bubble, handledEventsToo: true);
-		}
-
-		/// <summary>The border with a card's background.</summary>
-		private static Border Card(Border border)
-		{
-			border.Bind(Border.BackgroundProperty, border.GetResourceObservable(LyriousTheme.CardBrush));
-			return border;
 		}
 
 		/// <summary>Picks sound files from the device, then lists them to be linked to songs.</summary>
@@ -114,10 +106,6 @@ namespace Lyrious.UILib.Setlists
 				await ProposeLinksAsync(sounds);
 			}
 		}
-
-		/// <summary>The sound files among what's dragged.</summary>
-		private static IReadOnlyList<IStorageFile> DroppedSounds(DragEventArgs e)
-			=> e.DataTransfer.TryGetFiles()?.OfType<IStorageFile>().Where(file => MediaLinks.IsSoundFile(file.Name)).ToList() ?? [];
 
 		/// <summary>
 		/// The dropped files, each with the song without media its name fits (or another one to pick, or
@@ -149,130 +137,23 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			candidates = candidates.OrderBy(c => c.Shown, StringComparer.CurrentCultureIgnoreCase).ToList();
-			var matches = SoundMatching.Match(files.Select(file => file.Name).ToList(), candidates.Select(c => c.Song).ToList());
-			var noSong = L.T("Don't link");
-			var choices = new List<ComboBox>();
-			var rows = new StackPanel { Spacing = 6 };
-			for (var i = 0; i < files.Count; i++)
+			var proposals = new SoundLinkProposals(
+				sounds,
+				service,
+				files,
+				candidates.Select(c => new SoundLinkProposals.Candidate(c.Song, c.Shown)).ToList(),
+				L.T("Each file is matched by its name to a song that has no media yet. Change the song if it's wrong; files that aren't linked aren't kept."),
+				L.T("No song without media fits the name"));
+			proposals.Cancelled += () => _ = LoadAsync();
+			proposals.Linked += async (_, problems) =>
 			{
-				var items = new List<string> { noSong };
-				items.AddRange(candidates.Select(c => c.Shown));
-				var match = matches[i];
-				var choice = new ComboBox
+				await LoadAsync();
+				if (problems.Count > 0)
 				{
-					ItemsSource = items,
-					SelectedIndex = match == null ? 0 : candidates.FindIndex(c => c.Song.Id == match.Id) + 1,
-					HorizontalAlignment = HorizontalAlignment.Stretch,
-					MaxDropDownHeight = 320,
-				};
-				choices.Add(choice);
-				var found = new TextBlock
-				{
-					Text = match == null ? L.T("No song without media fits the name") : L.T("Fits {0}", match.Name),
-					FontSize = 12,
-					Opacity = 0.7,
-				};
-				rows.Children.Add(Card(new Border
-				{
-					Padding = new Thickness(12, 8),
-					CornerRadius = new CornerRadius(8),
-					Child = new StackPanel
-					{
-						Spacing = 4,
-						Children =
-						{
-							new TextBlock { Text = files[i].Name, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis },
-							found,
-							choice,
-						},
-					},
-				}));
-			}
-
-			var link = PageLayout.OkButton(L.T("Link"));
-			var cancel = new Button { Content = L.T("Cancel") };
-			var count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Opacity = 0.7 };
-
-			void ShowCount()
-			{
-				var n = choices.Count(c => c.SelectedIndex > 0);
-				count.Text = L.Plural(n, "{0} file to link", "{0} files to link");
-				link.IsEnabled = n > 0;
-			}
-
-			foreach (var choice in choices)
-			{
-				choice.SelectionChanged += (_, _) => ShowCount();
-			}
-
-			ShowCount();
-			cancel.Click += (_, _) => _ = LoadAsync();
-			link.Click += async (_, _) =>
-			{
-				link.IsEnabled = false;
-				cancel.IsEnabled = false;
-				var chosen = files.Select((file, i) => (file, index: choices[i].SelectedIndex - 1))
-					.Where(c => c.index >= 0)
-					.Select(c => (c.file, candidates[c.index].Song))
-					.ToList();
-				await LinkAsync(chosen);
-			};
-
-			body.Content = new DockPanel
-			{
-				Children =
-				{
-					new StackPanel
-					{
-						Spacing = 8,
-						Margin = new Thickness(0, 0, 0, 8),
-						Children =
-						{
-							new TextBlock { Text = L.T("Link the dropped sound files"), FontSize = 18, FontWeight = FontWeight.SemiBold },
-							new TextBlock { Text = L.T("Each file is matched by its name to a song that has no media yet. Change the song if it's wrong; files that aren't linked aren't kept."), Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
-							new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { link, cancel, count } },
-						},
-					}.Docked(Dock.Top),
-					new ScrollViewer { Content = rows },
-				},
-			};
-		}
-
-		/// <summary>Keeps each file on this device, links it to its song, and sends it to the server for the band.</summary>
-		private async Task LinkAsync(IReadOnlyList<(IStorageFile File, SongDetails Song)> chosen)
-		{
-			var problems = new List<string>();
-			foreach (var (file, song) in chosen)
-			{
-				try
-				{
-					var sound = new SoundFile(MediaLinks.NewSoundId(file.Name), file.Name);
-					await using (var content = await file.OpenReadAsync())
-					{
-						if (content.CanSeek && content.Length > MediaLinks.MaxSoundSize)
-						{
-							problems.Add(L.T("{0} is too big: a sound file can be at most {1} MB.", file.Name, MediaLinks.MaxSoundSize / (1024 * 1024)));
-							continue;
-						}
-
-						await sounds.SaveAsync(sound.Id, content);
-					}
-
-					var saved = await service.UpdateSongAsync(song with { MediaLink = MediaLinks.SoundLink(sound, MaxMediaLinkLength) });
-					SoundSync.Upload(saved.Id, sound.Id);
+					ShowProblem(string.Join("\n", problems));
 				}
-				catch (Exception ex)
-				{
-					problems.Add(L.T("Couldn't keep {0}. {1}", file.Name, ex.Message));
-				}
-			}
-
-			await LoadAsync();
-			if (problems.Count > 0)
-			{
-				ShowProblem(string.Join("\n", problems));
-			}
+			};
+			body.Content = proposals;
 		}
 
 		private async Task LoadAsync()

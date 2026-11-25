@@ -40,6 +40,13 @@ namespace Lyrious.UILib.Setlists
 				DisplaySettings.TransposeButton = transposeButton.IsChecked == true;
 				capoRow!.IsVisible = DisplaySettings.TransposeButton;
 			};
+			var barCounter = new ToggleSwitch
+			{
+				IsChecked = DisplaySettings.BarCounter,
+				OnContent = L.T("On"),
+				OffContent = L.T("Off"),
+			};
+			barCounter.IsCheckedChanged += (_, _) => DisplaySettings.BarCounter = barCounter.IsChecked == true;
 			var chordGridButton = new ToggleSwitch
 			{
 				IsChecked = DisplaySettings.ChordGridButton,
@@ -147,6 +154,10 @@ namespace Lyrious.UILib.Setlists
 							L.T("On: + in the transpose dialog puts the capo a fret higher, which moves the chords down (capo +1 makes G F#). Off: a transpose in semitones, which moves them up. Yours on all your devices."),
 							capoMode),
 					}),
+					Scoped(SettingScope.User, Setting(
+						L.T("Bar counter"),
+						L.T("Shows in the play toolbar which bar and beat the song is at (e.g. 12.3), by its tempo and beats per bar: from where it is for songs with time or bar marks, else counted from play. Yours on all your devices."),
+						barCounter)),
 					bandSyncSection,
 					Scoped(SettingScope.User, Setting(
 						L.T("Follow the band's setlist"),
@@ -1416,6 +1427,24 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Raised when <see cref="TransposeButton"/> is changed here (a change from another device raises <see cref="UserSettings.Changed"/>).</summary>
 		public static event Action? TransposeButtonChanged;
+
+		/// <summary>
+		/// Whether the play toolbar shows the bar counter (see <see cref="SettingKeys.BarCounter"/>): the bar
+		/// and beat the song is at. Kept with the user; off unless turned on.
+		/// </summary>
+		public static bool BarCounter
+		{
+			get => App.Settings.Get(SettingKeys.BarCounter) == "true";
+			set
+			{
+				App.Settings.Set(SettingKeys.BarCounter, value ? "true" : null);
+				UserSettings.ChangedHere();
+				BarCounterChanged?.Invoke();
+			}
+		}
+
+		/// <summary>Raised when <see cref="BarCounter"/> is changed here (a change from another device raises <see cref="UserSettings.Changed"/>).</summary>
+		public static event Action? BarCounterChanged;
 
 		/// <summary>
 		/// Whether the lyrics page has the chord grid button (see <see cref="SettingKeys.ChordGridButton"/>);

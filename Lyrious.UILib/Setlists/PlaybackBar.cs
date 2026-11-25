@@ -31,6 +31,30 @@ namespace Lyrious.UILib.Setlists
 		private const string RabbitIcon = "M3.5,19 C3,14.5 6.5,11.5 10.5,12 C13,12.3 14.5,13.5 15.2,14.8 M15.5,16.5 C15.6,18 14.8,19 13.5,19 H3.5 M15,12.5 A3.2,3.2 0 1,0 21.4,12.5 A3.2,3.2 0 1,0 15,12.5 M16.6,9.8 C15.6,7 15.6,4 16.7,3.2 C17.8,3.6 18.3,6.5 18,9.4 M18.9,9.4 C19.5,6.6 20.7,4.4 21.8,4.7 C22.4,5.5 21.6,8 20.4,10 M3.8,15 C2.3,14.8 2.1,16.8 3.5,17.2 M9.5,19 C9.5,17.5 10.5,16.8 11.8,17 M19.4,12 A0.2,0.2 0 1,0 19.8,12 A0.2,0.2 0 1,0 19.4,12";
 
 		private readonly Button restart = HomeView.IconButton(RestartIcon, L.T("Back to the start of the song"));
+
+		// The bar and beat the song is at, e.g. "12.3" (see BarAndBeat): as wide for any bar, the digits
+		// all the same width, so it doesn't jump as it counts.
+		private readonly TextBlock barCounter = new()
+		{
+			Text = "–",
+			FontSize = 20,
+			FontWeight = FontWeight.SemiBold,
+			FontFeatures = FontFeatureCollection.Parse("tnum"),
+			MinWidth = 64,
+			TextAlignment = TextAlignment.Center,
+			// Only when turned on in Settings (see DisplaySettings.BarCounter).
+			IsVisible = false,
+			VerticalAlignment = VerticalAlignment.Center,
+			Margin = new Thickness(4, 0),
+		};
+		// Looks at the bar and beat often enough to show each beat as it comes.
+		private readonly Avalonia.Threading.DispatcherTimer barTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
+
+		/// <summary>
+		/// Where the song is: its bar and the beat in it (both from 1), shown in the toolbar while it's on
+		/// screen; null when it isn't known (e.g. stopped, for a song without time marks).
+		/// </summary>
+		public Func<(int Bar, int Beat)?>? BarAndBeat { get; set; }
 		private readonly Button playPause = HomeView.IconButton(PlayIcon, L.T("Scroll the lyrics"));
 		// Where the next song would be, after the last song of a setlist.
 		private readonly TextBlock noMoreSongs = new() { Text = L.T("No more songs"), FontSize = 14, Opacity = 0.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0), IsVisible = false };
@@ -201,7 +225,8 @@ namespace Lyrious.UILib.Setlists
 				nextFits = e.NewSize.Width >= NextWidth;
 				ShowNext();
 			};
-			var row = new DockPanel { Children = { playPause, restart, bandSync, midi, nextSlot } };
+			barTimer.Tick += (_, _) => ShowBarAndBeat();
+			var row = new DockPanel { Children = { playPause, restart, bandSync, midi, barCounter, nextSlot } };
 
 			// The media file's progress above the buttons, while one plays: slower and faster at the left,
 			// lower and higher at the right, the time played and the length beside the bar.
@@ -296,17 +321,53 @@ namespace Lyrious.UILib.Setlists
 		protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
 		{
 			base.OnAttachedToVisualTree(e);
+			DisplaySettings.BarCounterChanged += OnBarCounterSetting;
+			UserSettings.Changed += OnBarCounterSetting;
 			if (App.SoundStore is { } sounds)
 			{
 				sounds.PlayingChanged += OnSoundChanged;
 			}
 
 			ShowProgress();
+			OnBarCounterSetting();
+		}
+
+		/// <summary>The bar counter shown or not, as the member's setting says (see <see cref="DisplaySettings.BarCounter"/>); counting only while shown.</summary>
+		private void OnBarCounterSetting() => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+		{
+			barCounter.IsVisible = DisplaySettings.BarCounter;
+			if (barCounter.IsVisible && VisualRoot != null)
+			{
+				ShowBarAndBeat();
+				barTimer.Start();
+			}
+			else
+			{
+				barTimer.Stop();
+			}
+		});
+
+		/// <summary>The bar and beat now (see <see cref="BarAndBeat"/>), as "bar.beat", or a dash when it isn't known.</summary>
+		private void ShowBarAndBeat()
+		{
+			var now = BarAndBeat?.Invoke();
+			var text = now is { } at ? $"{at.Bar}.{at.Beat}" : "–";
+			if (barCounter.Text == text)
+			{
+				return;
+			}
+
+			barCounter.Text = text;
+			barCounter.Opacity = now != null ? 1 : 0.5;
+			ToolTip.SetTip(barCounter, now is { } shown ? L.T("Bar {0}, beat {1}", shown.Bar, shown.Beat) : L.T("Bar and beat: shown while the song plays"));
 		}
 
 		protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
 		{
 			base.OnDetachedFromVisualTree(e);
+			DisplaySettings.BarCounterChanged -= OnBarCounterSetting;
+			UserSettings.Changed -= OnBarCounterSetting;
+			barTimer.Stop();
 			if (App.SoundStore is { } sounds)
 			{
 				sounds.PlayingChanged -= OnSoundChanged;

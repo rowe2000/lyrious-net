@@ -105,6 +105,12 @@ namespace Lyrious.UILib
 		public const string TransposeButton = "transpose-button";
 
 		/// <summary>
+		/// "true" shows the bar counter in the play toolbar (the bar and beat the song is at); off unless
+		/// turned on. Kept with the user.
+		/// </summary>
+		public const string BarCounter = "bar-counter";
+
+		/// <summary>
 		/// "true" counts the member's own transpose as a capo (in frets, −11 to +11, moving the chords
 		/// down: the transpose −n); none as a transpose in semitones (−11 to +11). Kept with the user.
 		/// </summary>

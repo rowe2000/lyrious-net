@@ -260,6 +260,8 @@ namespace Lyrious.UILib.Setlists
 			mediaPlayer.PlayingChanged += OnMediaPlayingChanged;
 			setlistDrawer.Content = new Grid { Children = { new DockPanel { Children = { playbackBar, pageHost } }, mediaPlayer, topRow, notice } };
 			playbackBar.PlayPauseRequested += () => PlayPause();
+			// The bar counter: the lyrics page's song, where it is.
+			playbackBar.BarAndBeat = () => (page.Content as LyricScrollView)?.BarAndBeat;
 			playbackBar.RestartRequested += () =>
 			{
 				(page.Content as LyricScrollView)?.ScrollToStart();
@@ -2993,6 +2995,18 @@ namespace Lyrious.UILib.Setlists
 				var created = await service.CreateSetlistAsync(group.Id, name);
 				ShowSetlists(group, await service.GetSetlistsAsync(group.Id), replace: true, selectedSetlistId: created.Id);
 			});
+			// Sound files dropped on it: linked to the shown setlist's songs (see LinkDroppedSounds).
+			LinkDroppedSounds(
+				view,
+				async () => view.SelectedSetlistId is { } shownId && setlists.FirstOrDefault(s => s.Id == shownId) is { } shown
+					? (await service.GetEntriesAsync(shown.Id)).Select(entry => entry.Song).ToList()
+					: [],
+				() => setlists.FirstOrDefault(s => s.Id == view.SelectedSetlistId)?.Name ?? "",
+				async () =>
+				{
+					ForgetBackTo<SetlistsView>();
+					ShowSetlists(group, await service.GetSetlistsAsync(group.Id), replace: true, selectedSetlistId: view.SelectedSetlistId);
+				});
 			ShowPage(view, replace);
 		}
 
@@ -3022,6 +3036,16 @@ namespace Lyrious.UILib.Setlists
 			view.SongsMoved += order => MoveSongs(setlist, order);
 			view.AddSongsRequested += () => _ = RunAsync(async () =>
 				ShowAddSongs(group, setlist, await service.GetSongbookSongsAsync(group.Id), entries.Select(entry => entry.Song.Id).ToHashSet()));
+			// Sound files dropped on it: linked to its songs (see LinkDroppedSounds).
+			LinkDroppedSounds(
+				view,
+				async () => (await service.GetEntriesAsync(setlist.Id)).Select(entry => entry.Song).ToList(),
+				() => setlist.Name,
+				async () =>
+				{
+					ForgetBackTo<SetlistView>();
+					await ShowSetlistAsync(group, setlist);
+				});
 			page.Content = view;
 			if (isCurrent)
 			{
@@ -3311,6 +3335,16 @@ namespace Lyrious.UILib.Setlists
 				ShowNotice(L.Plural(songs.Count, "Deleted {0} song", "Deleted {0} songs"));
 				await ShowSongsAsync(group, replace: true);
 			});
+			// Sound files dropped on it: linked to its songs (see LinkDroppedSounds).
+			LinkDroppedSounds(
+				view,
+				async () => await service.GetSongbookSongsAsync(group.Id),
+				() => group.Name,
+				async () =>
+				{
+					ForgetBackTo<SongsView>();
+					await ShowSongsAsync(group, replace: true);
+				});
 			ShowPage(view, replace);
 		}
 
@@ -4626,6 +4660,63 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>Shows a page; with <paramref name="replace"/>, the current one isn't kept to go back to.</summary>
+		/// <summary>
+		/// Lets sound files be dropped on <paramref name="view"/> (a songbook or a setlist) to be linked to
+		/// its songs: each file is matched by its name to one of them, and the proposals are shown on a
+		/// page of their own to check and change before anything is kept (see <see cref="SoundLinkProposals"/>).
+		/// Cancel (or ✕) goes back to the view; after linking, the view is shown again (<paramref name="refresh"/>),
+		/// with what was linked as a notice. Songs that have media links keep them: the file is added after.
+		/// </summary>
+		/// <param name="songs">The songs the files can be linked to (read when the files are dropped).</param>
+		/// <param name="name">The songbook's or setlist's name, for the page's text.</param>
+		private void LinkDroppedSounds(Control view, Func<Task<IReadOnlyList<SongDetails>>> songs, Func<string> name, Func<Task> refresh)
+		{
+			if (App.SoundStore is not { } sounds)
+			{
+				return; // No room for sound files here.
+			}
+
+			Avalonia.Input.DragDrop.SetAllowDrop(view, true);
+			view.AddHandler(Avalonia.Input.DragDrop.DragOverEvent, (_, e) =>
+			{
+				if (SoundLinkProposals.DroppedSounds(e).Count > 0)
+				{
+					e.DragEffects = Avalonia.Input.DragDropEffects.Copy;
+					e.Handled = true;
+				}
+			}, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+			view.AddHandler(Avalonia.Input.DragDrop.DropEvent, (_, e) =>
+			{
+				var files = SoundLinkProposals.DroppedSounds(e);
+				if (files.Count == 0)
+				{
+					return;
+				}
+
+				e.Handled = true;
+				_ = RunAsync(async () =>
+				{
+					var candidates = (await songs()).DistinctBy(song => song.Id).Select(song => new SoundLinkProposals.Candidate(song, song.Name)).ToList();
+					var proposals = new SoundLinkProposals(
+						sounds,
+						service,
+						files,
+						candidates,
+						L.T("Each file is matched by its name to a song in {0}. Change the song if it's wrong; files that aren't linked aren't kept. A song's other media links stay.", name()),
+						L.T("No song in {0} fits the name", name()),
+						pageTitle: L.T("Link sound files"));
+					proposals.Cancelled += GoBack;
+					proposals.Linked += (linked, problems) => _ = RunAsync(async () =>
+					{
+						var done = L.Plural(linked, "Linked {0} sound file", "Linked {0} sound files");
+						ShowNotice(problems.Count == 0 ? done : done + "\n" + string.Join("\n", problems));
+						await refresh();
+					});
+					page.Content = proposals;
+				});
+			}, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+		}
+
 		private void ShowPage(Control view, bool replace)
 		{
 			if (!replace)

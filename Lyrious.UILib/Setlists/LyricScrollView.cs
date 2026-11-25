@@ -1005,6 +1005,35 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
+		/// The bar and the beat in it (both from 1) the song is at, by its tempo and beats per bar: while it
+		/// plays, from the song's clock (timed lyrics: where it is in the song; others: since play was
+		/// pressed); stopped, for timed lyrics where the middle of the view is. Null when it isn't known
+		/// (stopped without time marks, or no tempo).
+		/// </summary>
+		public (int Bar, int Beat)? BarAndBeat
+		{
+			get
+			{
+				if (song.Tempo <= 0)
+				{
+					return null;
+				}
+
+				double? seconds = scrollTimer.IsEnabled
+					? (IsTimed ? playbackStart : 0) + ScrollSeconds
+					: IsTimed ? PlayPosition : null;
+				if (seconds is not { } at || at < 0)
+				{
+					return null;
+				}
+
+				var beatsPerBar = Math.Max(1, ChordPro.BeatsPerBar(song.Beat));
+				var beats = (long)Math.Floor(at * song.Tempo / 60 + 1e-6);
+				return ((int)(beats / beatsPerBar) + 1, (int)(beats % beatsPerBar) + 1);
+			}
+		}
+
+		/// <summary>
 		/// Where in the song the lyrics are, for the band (see <see cref="GoToPlayPosition"/>): for timed
 		/// lyrics the time in the song at the middle of the view, in seconds; else how far down the
 		/// lyrics the line under the toolbar is (0 at the start, 1 at the end). Null before they're laid out.
@@ -2005,6 +2034,7 @@ namespace Lyrious.UILib.Setlists
 					Content = zoomHost,
 				};
 				AddZoomGestures(scroller);
+				AddMouseDrag(scroller);
 				// Scrolled by hand (wheel or touchpad, a drag, the scroll bar): the song's sound file goes along.
 				scroller.AddHandler(PointerWheelChangedEvent, (_, _) =>
 				{
@@ -2039,6 +2069,13 @@ namespace Lyrious.UILib.Setlists
 				scroller.Tapped += (_, e) =>
 				{
 					e.Handled = true;
+					// The end of a drag with the mouse (see AddMouseDrag) isn't a tap.
+					if (mouseDragged)
+					{
+						mouseDragged = false;
+						return;
+					}
+
 					FocusModeToggled?.Invoke();
 				};
 				body.Content = scroller;
@@ -2125,6 +2162,92 @@ namespace Lyrious.UILib.Setlists
 		private bool wheelZooms;
 
 		/// <summary>Pinch (touch screen or touchpad) and Ctrl/⌘ + mouse wheel zoom the lyrics.</summary>
+		// A drag with the mouse on the lyrics (see AddMouseDrag): where it started and the scroll offset
+		// then, while the button is down; and whether it has scrolled (so its release isn't a tap).
+		private Point? mouseDragStart;
+		private double mouseDragOffset;
+		private bool mouseDragging;
+		private bool mouseDragged;
+
+		/// <summary>
+		/// The lyrics scroll with a drag of the mouse (the left button held), as with a finger: once it's
+		/// moved a few pixels more up or down than sideways, the lyrics follow it until the button is let
+		/// go. Mostly sideways it's left to the swipe to another song (see HomeView), which then holds the
+		/// pointer. It counts as scrolling by hand (the song's sound file goes along), and its release isn't
+		/// a tap (focus mode stays as it is).
+		/// </summary>
+		private void AddMouseDrag(ScrollViewer viewer)
+		{
+			// Before a press on a line or button inside handles it, and also when one did.
+			viewer.AddHandler(PointerPressedEvent, (_, e) =>
+			{
+				mouseDragStart = null;
+				mouseDragging = false;
+				mouseDragged = false;
+				if (e.Pointer.Type == PointerType.Mouse && e.GetCurrentPoint(viewer).Properties.IsLeftButtonPressed && !IsEditing)
+				{
+					mouseDragStart = e.GetPosition(viewer);
+					mouseDragOffset = viewer.Offset.Y;
+				}
+			}, RoutingStrategies.Tunnel, handledEventsToo: true);
+
+			viewer.AddHandler(PointerMovedEvent, (_, e) =>
+			{
+				if (mouseDragStart is not { } start || e.Pointer.Type != PointerType.Mouse)
+				{
+					return;
+				}
+
+				// Taken by something outside the lyrics meanwhile (a swipe to another song holds the pointer):
+				// not a scroll. (A press is held by what was pressed, e.g. a line of the lyrics: that's ours.)
+				if (e.Pointer.Captured is Visual holder && holder != viewer && !viewer.IsVisualAncestorOf(holder))
+				{
+					mouseDragStart = null;
+					return;
+				}
+
+				var at = e.GetPosition(viewer);
+				var dx = at.X - start.X;
+				var dy = at.Y - start.Y;
+				if (!mouseDragging)
+				{
+					if (Math.Max(Math.Abs(dx), Math.Abs(dy)) < MouseDragLock || Math.Abs(dy) < Math.Abs(dx))
+					{
+						return;
+					}
+
+					mouseDragging = true;
+					mouseDragged = true;
+					e.Pointer.Capture(viewer);
+				}
+
+				e.Handled = true;
+				viewer.Offset = new Vector(viewer.Offset.X, Math.Clamp(mouseDragOffset - dy, 0, MaxOffset(viewer)));
+				ScrolledByHand();
+			}, RoutingStrategies.Tunnel, handledEventsToo: true);
+
+			void End(PointerEventArgs e)
+			{
+				if (mouseDragging)
+				{
+					e.Pointer.Capture(null);
+				}
+
+				mouseDragStart = null;
+				mouseDragging = false;
+			}
+
+			viewer.AddHandler(PointerReleasedEvent, (_, e) => End(e), RoutingStrategies.Tunnel, handledEventsToo: true);
+			viewer.AddHandler(PointerCaptureLostEvent, (_, _) =>
+			{
+				mouseDragStart = null;
+				mouseDragging = false;
+			}, RoutingStrategies.Direct | RoutingStrategies.Bubble, handledEventsToo: true);
+		}
+
+		// How far a press moves before it counts as a drag (as the swipe's lock, see HomeView).
+		private const double MouseDragLock = 5;
+
 		private void AddZoomGestures(ScrollViewer viewer)
 		{
 			viewer.GestureRecognizers.Add(new PinchGestureRecognizer());
@@ -2306,7 +2429,18 @@ namespace Lyrious.UILib.Setlists
 				buttons.DetachedFromVisualTree += (_, _) => sounds.PlayingChanged -= OnPlayingChanged;
 			}
 
-			LongClickButton NewButton() => new() { Padding = new Thickness(8), Background = Brushes.Transparent, BorderThickness = new Thickness(0) };
+			// As big as the toolbar's other tools (a 24 px icon with 8 of room around it: 40 by 40), the
+			// (smaller) media icon in its middle.
+			LongClickButton NewButton() => new()
+			{
+				Width = 40,
+				Height = 40,
+				Padding = new Thickness(0),
+				HorizontalContentAlignment = HorizontalAlignment.Center,
+				VerticalContentAlignment = VerticalAlignment.Center,
+				Background = Brushes.Transparent,
+				BorderThickness = new Thickness(0),
+			};
 
 			// No links yet: a note, whose click (or longclick) shows how to add one.
 			LongClickButton EmptyButton()
