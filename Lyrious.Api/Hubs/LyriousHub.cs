@@ -42,6 +42,9 @@ public class LyriousHub(LyriousRepository repo, HubConnectionRegistry registry) 
 	/// <summary>Sent to a group's members when one of them picks its current setlist and song: (groupId, setlistId, setlistItemId).</summary>
 	public const string SongSelectedMethod = "SongSelected";
 
+	/// <summary>The method clients get when a member plays a song from outside the band's current setlist (see <see cref="SelectOutsideSong"/>).</summary>
+	public const string OutsideSongSelectedMethod = "OutsideSongSelected";
+
 	/// <summary>Sent to a member's other connections when they change their own settings (see api/member/me/settings): (settings as a JSON object string).</summary>
 	public const string SettingsChangedMethod = "SettingsChanged";
 
@@ -144,6 +147,24 @@ public class LyriousHub(LyriousRepository repo, HubConnectionRegistry registry) 
 		}
 
 		await Clients.GroupExcept(GroupName(groupId), [Context.ConnectionId]).SendAsync(SongSelectedMethod, groupId, setlistId, setlistItemId);
+		return true;
+	}
+
+	/// <summary>
+	/// Tells the group's other members at once that the caller plays a song from outside its current
+	/// setlist (e.g. from the songbook), as the band's current song, without waiting for it to be stored
+	/// (the client stores it through the API too: <c>Group.CurrentSongId</c>). Apps that don't know this
+	/// message leave it. Returns false when the caller isn't a member of the group.
+	/// </summary>
+	public async Task<bool> SelectOutsideSong(Guid groupId, Guid? setlistId, Guid songId)
+	{
+		repo.SetIdentity(Context.User?.Identity);
+		if (!repo.IsMember(groupId))
+		{
+			return false;
+		}
+
+		await Clients.GroupExcept(GroupName(groupId), [Context.ConnectionId]).SendAsync(OutsideSongSelectedMethod, groupId, setlistId, songId);
 		return true;
 	}
 

@@ -316,6 +316,13 @@ namespace Lyrious.UILib.Setlists
 		Task SelectSongAsync(Guid groupId, SetlistEntry entry, CancellationToken cancellationToken = default);
 
 		/// <summary>
+		/// Makes a song played from outside the band's current setlist (e.g. from the songbook) the band's
+		/// current song, its setlist staying <paramref name="setlistId"/>: the other members are told at once,
+		/// then it's stored.
+		/// </summary>
+		Task SelectOutsideSongAsync(Guid groupId, Guid? setlistId, Guid songId, CancellationToken cancellationToken = default);
+
+		/// <summary>
 		/// Sends a sound file kept on this device to the server, for the song's band (see
 		/// <see cref="SoundSync"/>). Throws when the server can't be reached or doesn't take it yet
 		/// (e.g. the song hasn't been sent to it).
@@ -348,7 +355,8 @@ namespace Lyrious.UILib.Setlists
 	/// <param name="MidiCommands">The band's MIDI commands for every song as stored (see <see cref="Midi.SongCommandsFromJson"/>); null if none.</param>
 	/// <param name="NextSongOnStopAtEnd">Whether stopping a song at the end of its lyrics goes on to the next song; null (unset) is yes.</param>
 	/// <param name="LyricsHeader">The header above every song's lyrics as stored (see <see cref="Setlists.LyricsHeader"/>): null for the default, empty for none.</param>
-	public sealed record GroupSummary(Guid Id, string Name, Guid? CurrentSetlistId, Guid? CurrentSetlistItemId, bool IsPrivate = false, string? MidiExpressions = null, string? MidiCommands = null, string? LyricsHeader = null, bool? NextSongOnStopAtEnd = null);
+	/// <param name="CurrentSongId">The band's current song when it's played from outside the current setlist (e.g. from the songbook); <paramref name="CurrentSetlistItemId"/> wins when both are set.</param>
+	public sealed record GroupSummary(Guid Id, string Name, Guid? CurrentSetlistId, Guid? CurrentSetlistItemId, bool IsPrivate = false, string? MidiExpressions = null, string? MidiCommands = null, string? LyricsHeader = null, bool? NextSongOnStopAtEnd = null, Guid? CurrentSongId = null);
 
 	public enum GroupRole { Member, Conductor, Admin }
 
@@ -501,6 +509,7 @@ namespace Lyrious.UILib.Setlists
 		public Task<ServerVersion?> GetServerVersionAsync(CancellationToken cancellationToken = default) => Task.FromResult<ServerVersion?>(null);
 		public Task SelectSetlistAsync(Guid groupId, Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SelectSongAsync(Guid groupId, SetlistEntry entry, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task SelectOutsideSongAsync(Guid groupId, Guid? setlistId, Guid songId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task UploadSoundAsync(Guid songId, string soundId, System.IO.Stream content, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<System.IO.Stream?> DownloadSoundAsync(string soundId, CancellationToken cancellationToken = default) => throw NotConnected();
 	}

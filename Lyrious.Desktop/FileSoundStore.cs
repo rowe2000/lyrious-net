@@ -376,6 +376,60 @@ internal sealed class FileSoundStore : ISoundStore
     private string PathOf(string id) => Path.Combine(folder, Path.GetFileName(id));
 
     /// <summary>
+    /// How loud the sound is over time: an Ogg Opus file (as the app records) decoded by the app
+    /// itself, anything else by the computer (Media Foundation on Windows, AVFoundation on macOS).
+    /// </summary>
+    public Task<SoundWave?> ReadWaveAsync(string id) => Task.Run(() =>
+    {
+        var path = PathOf(id);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        if (path.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".opus", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".oga", StringComparison.OrdinalIgnoreCase))
+        {
+            using var ogg = File.OpenRead(path);
+            if (SoundWave.FromOggOpus(ogg) is { } wave)
+            {
+                return wave;
+            }
+        }
+
+        try
+        {
+            if (OperatingSystem.IsMacOS())
+            {
+                return MacSoundPlayer.ReadWave(path);
+            }
+
+            if (OperatingSystem.IsWindows())
+            {
+                using var reader = new MediaFoundationReader(path);
+                var samples = reader.ToSampleProvider();
+                var builder = new SoundWaveBuilder(samples.WaveFormat.SampleRate, samples.WaveFormat.Channels);
+                var buffer = new float[16384];
+                int read;
+                while ((read = samples.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    for (var i = 0; i < read; i++)
+                    {
+                        builder.Add(buffer[i]);
+                    }
+                }
+
+                return builder.Build();
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Couldn't read the sound {id}: {ex.Message}");
+        }
+
+        return (SoundWave?)null;
+    });
+
+    /// <summary>
     /// The sound through SoundTouch, which changes its tempo and its pitch each without the other
     /// (<see cref="Processor"/>). Read under the lock, so the speed and pitch aren't changed halfway
     /// through a read (they're set under it too).

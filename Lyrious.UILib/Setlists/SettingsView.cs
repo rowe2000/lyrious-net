@@ -1493,7 +1493,7 @@ namespace Lyrious.UILib.Setlists
 			get => App.Settings.Get(SettingKeys.DynamicZoom) != "false";
 			set
 			{
-				App.Settings.Set(SettingKeys.DynamicZoom, value ? "true" : "false");
+				App.Settings.Set(SettingKeys.DynamicZoom, value ? null : "false");
 				DynamicZoomChanged?.Invoke();
 			}
 		}
@@ -1542,7 +1542,7 @@ namespace Lyrious.UILib.Setlists
 		public static bool BandSync
 		{
 			get => App.Settings.Get(SettingKeys.BandSync) != "false";
-			set => App.Settings.Set(SettingKeys.BandSync, value ? "true" : "false");
+			set => App.Settings.Set(SettingKeys.BandSync, value ? null : "false");
 		}
 
 		/// <summary>Whether band sync changes this member's current setlist to the band's. Kept with the user; on unless turned off.</summary>

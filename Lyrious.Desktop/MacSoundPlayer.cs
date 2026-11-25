@@ -269,6 +269,82 @@ internal sealed class MacSoundPlayer : IDisposable
         }
     }
 
+    /// <summary>
+    /// How loud the file is over time, read through AVFoundation (its samples as floats, a channel at a
+    /// time); null when macOS can't read it.
+    /// </summary>
+    public static Lyrious.UILib.SoundWave? ReadWave(string path)
+    {
+        if (!IsAvailable)
+        {
+            return null;
+        }
+
+        var pool = objc_autoreleasePoolPush();
+        IntPtr file = 0, buffer = 0;
+        try
+        {
+            var url = Send(Class("NSURL"), Sel("fileURLWithPath:"), NSString(path));
+            file = SendWithError(Send(Class("AVAudioFile"), Sel("alloc")), Sel("initForReading:error:"), url, out _);
+            if (file == 0)
+            {
+                return null;
+            }
+
+            var format = Send(file, Sel("processingFormat"));
+            var channels = (int)SendUInt(format, Sel("channelCount"));
+            var builder = new Lyrious.UILib.SoundWaveBuilder(SendDouble(format, Sel("sampleRate")), channels);
+            const uint Frames = 65536;
+            buffer = SendInitBuffer(Send(Class("AVAudioPCMBuffer"), Sel("alloc")), Sel("initWithPCMFormat:frameCapacity:"), format, Frames);
+            if (buffer == 0 || channels < 1)
+            {
+                return null;
+            }
+
+            var pointers = new IntPtr[channels];
+            var samples = new float[channels][];
+            while (SendRead(file, Sel("readIntoBuffer:frameCount:error:"), buffer, Frames, out _))
+            {
+                var count = (int)SendUInt(buffer, Sel("frameLength"));
+                var data = Send(buffer, Sel("floatChannelData"));
+                if (count == 0 || data == 0)
+                {
+                    break;
+                }
+
+                Marshal.Copy(data, pointers, 0, channels);
+                for (var c = 0; c < channels; c++)
+                {
+                    samples[c] ??= new float[Frames];
+                    Marshal.Copy(pointers[c], samples[c], 0, count);
+                }
+
+                // Interleaved, as the builder takes them.
+                for (var i = 0; i < count; i++)
+                {
+                    for (var c = 0; c < channels; c++)
+                    {
+                        builder.Add(samples[c][i]);
+                    }
+                }
+            }
+
+            return builder.Count > 0 ? builder.Build() : null;
+        }
+        finally
+        {
+            foreach (var created in new[] { buffer, file })
+            {
+                if (created != 0)
+                {
+                    Send(created, Sel("release"));
+                }
+            }
+
+            objc_autoreleasePoolPop(pool);
+        }
+    }
+
     private static bool Load()
     {
         if (!OperatingSystem.IsMacOS())
@@ -355,6 +431,18 @@ internal sealed class MacSoundPlayer : IDisposable
 
     [DllImport(ObjC, EntryPoint = "objc_msgSend")]
     private static extern double SendDouble(IntPtr receiver, IntPtr selector);
+
+    [DllImport(ObjC, EntryPoint = "objc_msgSend")]
+    private static extern uint SendUInt(IntPtr receiver, IntPtr selector);
+
+    // initWithPCMFormat:frameCapacity:
+    [DllImport(ObjC, EntryPoint = "objc_msgSend")]
+    private static extern IntPtr SendInitBuffer(IntPtr receiver, IntPtr selector, IntPtr format, uint frameCapacity);
+
+    // readIntoBuffer:frameCount:error:
+    [DllImport(ObjC, EntryPoint = "objc_msgSend")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private static extern bool SendRead(IntPtr receiver, IntPtr selector, IntPtr buffer, uint frameCount, out IntPtr error);
 
     // scheduleSegment:startingFrame:frameCount:atTime:completionHandler:
     [DllImport(ObjC, EntryPoint = "objc_msgSend")]

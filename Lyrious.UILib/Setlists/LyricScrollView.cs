@@ -29,7 +29,7 @@ namespace Lyrious.UILib.Setlists
 	/// focus mode only the song's name, key, tempo, beat and lyrics are shown. The lyrics can also
 	/// scroll by themselves (<see cref="SetAutoScroll"/>), at <see cref="ScrollSpeed"/>.
 	/// </summary>
-	public sealed class LyricScrollView : UserControl
+	public sealed partial class LyricScrollView : UserControl
 	{
 		// A pencil: the body, its tip, and the line where the tip meets the body.
 		private const string EditIcon = "M4,20 L8,19 L19,8 L16,5 L5,16 Z M14,7 L17,10";
@@ -250,7 +250,52 @@ namespace Lyrious.UILib.Setlists
 		public Guid SongId => song.Id;
 
 		/// <summary>Whether the editor is open (so the page shouldn't be replaced under the user).</summary>
-		public bool IsEditing => titleActions.Content != lyricsActions;
+		public bool IsEditing => titleActions.Content != lyricsActions || waveformShown;
+
+		// Whether the waveform view shows in the view's place (see OpenWaveform).
+		private bool waveformShown;
+
+		// Whether focus mode is on (see SetFocusMode): a tap then leaves it, rather than going to a line.
+		private bool inFocusMode;
+
+		/// <summary>
+		/// Shows the sound file's waveform in the view's place (see <see cref="WaveformView"/>), to set where
+		/// the song starts and stops in it and its tempo; saved to the song (the sound's link, its tempo),
+		/// then the lyrics again. Also while it plays: it plays on, its playhead shown there. Playing or
+		/// stopping it there isn't told until it closes (the lyrics and the band then follow).
+		/// </summary>
+		private void OpenWaveform(SoundFile sound, string link)
+		{
+			if (App.SoundStore is not { } sounds || waveformShown)
+			{
+				return;
+			}
+
+			var shown = Content;
+			var view = new WaveformView(sound, sounds, song.Tempo, ChordPro.BeatsPerBar(song.Beat), TitleOf(song))
+			{
+				// Between the drawers' columns, as the other pages (the lyrics use the whole width).
+				Margin = HomeView.PageMargin,
+			};
+			view.SaveRequested = async (changed, tempo) =>
+			{
+				var links = MediaLinks.Join(MediaLinks.Split(song.MediaLink).Select(other => other == link ? MediaLinks.SoundLink(changed, MaxMediaLinkLength) : other));
+				song = await saveSong(song with { MediaLink = links, Tempo = (float)Math.Round(tempo, 1) });
+				SongSaved?.Invoke(song);
+			};
+			view.Closed += () =>
+			{
+				waveformShown = false;
+				Content = shown;
+				ShowSongHeader();
+				ShowLyrics();
+				showMediaLink();
+				// Started or stopped there: the scrolling (and the band) catch up now.
+				TellSoundPlaying();
+			};
+			waveformShown = true;
+			Content = view;
+		}
 
 		/// <summary>Whether the lyrics are scrolling by themselves.</summary>
 		public bool IsAutoScrolling => scrollTimer.IsEnabled;
@@ -883,7 +928,8 @@ namespace Lyrious.UILib.Setlists
 				() => this.song.Name,
 				() => this.song.Lyrics,
 				() => this.song.Artist,
-				ShowProblemAt);
+				ShowProblemAt,
+				OpenWaveform);
 			// The member's own transpose and lyrics (only they see them).
 			transposeButton = TextButton<LongClickButton>(L.T("Capo: move the chords for me only"));
 			// Square whatever it shows (the ♯♭ icon, "+2", "−11"), as tall as the toolbar's buttons, its content in the middle.
@@ -1000,6 +1046,7 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		public void SetFocusMode(bool focused)
 		{
+			inFocusMode = focused;
 			lyricsActions.Opacity = focused ? 0 : 1;
 			lyricsActions.IsHitTestVisible = !focused;
 		}
@@ -1010,6 +1057,16 @@ namespace Lyrious.UILib.Setlists
 		/// pressed); stopped, for timed lyrics where the middle of the view is. Null when it isn't known
 		/// (stopped without time marks, or no tempo).
 		/// </summary>
+		/// <summary>
+		/// Where the song is, in seconds from its start: its sound file's place while one plays, else the
+		/// lyrics' clock while they play (timed: where it is in the song; others: since play), else, for
+		/// timed lyrics, where the middle of the view is. Null when it isn't known.
+		/// </summary>
+		private double? SongSeconds => SongSoundSeconds
+			?? (scrollTimer.IsEnabled
+				? (IsTimed ? playbackStart : 0) + ScrollSeconds
+				: IsTimed ? PlayPosition : null);
+
 		public (int Bar, int Beat)? BarAndBeat
 		{
 			get
@@ -1019,10 +1076,7 @@ namespace Lyrious.UILib.Setlists
 					return null;
 				}
 
-				double? seconds = scrollTimer.IsEnabled
-					? (IsTimed ? playbackStart : 0) + ScrollSeconds
-					: IsTimed ? PlayPosition : null;
-				if (seconds is not { } at || at < 0)
+				if (SongSeconds is not { } at || at < 0)
 				{
 					return null;
 				}
@@ -1920,9 +1974,16 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		// The lyrics' rows as last drawn, with their lines in the text shown (header included), how many of
+		// those lines are the header's, and whether the lyrics are the member's own (see MarkBarAsync).
+		private IReadOnlyList<(Control Row, int Line)> shownRows = [];
+		private int headerLines;
+		private bool rowsAreMine;
+
 		private void ShowLyrics()
 		{
 			StopNudge();
+			shownRows = [];
 			var lyrics = ShownLyrics;
 			var hasLyrics = !string.IsNullOrWhiteSpace(lyrics);
 			Control text;
@@ -1965,6 +2026,10 @@ namespace Lyrious.UILib.Setlists
 				var rendered = ChordPro.Render(transposed, fontSize: 24, lineHeight: 36, song.Tempo, song.Beat, chordGrid: grid);
 				text = rendered.Content;
 				markers = rendered.Markers;
+				// For Ctrl+click (see MarkBarAsync): the rows, the header's lines in front of the lyrics, and whose lyrics.
+				shownRows = rendered.Rows;
+				headerLines = shown.Replace("\r\n", "\n").Split('\n').Length - lyrics.Replace("\r\n", "\n").Split('\n').Length;
+				rowsAreMine = mySetting.HasLyrics && !ShowBandLyrics;
 			}
 			else
 			{
@@ -2076,7 +2141,12 @@ namespace Lyrious.UILib.Setlists
 						return;
 					}
 
-					FocusModeToggled?.Invoke();
+					// In focus mode a tap leaves it; else the song goes to the line tapped (see GoToLine),
+					// and where it can't, a tap toggles focus mode as before.
+					if (inFocusMode || lyricsContent == null || !GoToLine(e.GetPosition(lyricsContent)))
+					{
+						FocusModeToggled?.Invoke();
+					}
 				};
 				body.Content = scroller;
 				this.scroller = scroller;
@@ -2184,6 +2254,16 @@ namespace Lyrious.UILib.Setlists
 				mouseDragStart = null;
 				mouseDragging = false;
 				mouseDragged = false;
+				// Ctrl (⌘) and the left button, while one of the song's sound files plays: the line clicked
+				// gets the bar the song is at in it (see MarkBarAsync). Otherwise it's a click as any.
+				if ((e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta))
+				    && e.GetCurrentPoint(viewer).Properties.IsLeftButtonPressed && !IsEditing && lyricsContent != null && PlayingSound != null)
+				{
+					e.Handled = true;
+					mouseDragged = true; // Not a tap (focus mode stays).
+					_ = MarkBarAsync(e.GetPosition(lyricsContent));
+					return;
+				}
 				if (e.Pointer.Type == PointerType.Mouse && e.GetCurrentPoint(viewer).Properties.IsLeftButtonPressed && !IsEditing)
 				{
 					mouseDragStart = e.GetPosition(viewer);
@@ -2247,6 +2327,161 @@ namespace Lyrious.UILib.Setlists
 
 		// How far a press moves before it counts as a drag (as the swipe's lock, see HomeView).
 		private const double MouseDragLock = 5;
+
+		/// <summary>
+		/// Ctrl (⌘) + click on a line of the lyrics: the line starts at the bar the song is at now (the next
+		/// one in a bar's last quarter, so a click a little early or late still marks the bar the line begins in):
+		/// a bar mark such as [12] at its start, instead of a time or bar mark there before. Saved to the
+		/// lyrics shown (the band's, or the member's own), which are then shown with it, the scrolling
+		/// following the song's timeline from it. Only while one of the song's sound files plays (the bar
+		/// is where it is in the recording); not on the header.
+		/// </summary>
+		/// <param name="at">Where it was clicked, in the lyrics' content.</param>
+		private async Task MarkBarAsync(Point at)
+		{
+			if (lyricsContent == null || shownRows.Count == 0)
+			{
+				return;
+			}
+
+			if (SongSeconds is not { } seconds || song.Tempo <= 0)
+			{
+				ShowProblemAt(mediaButtons, song.Tempo <= 0
+					? L.T("The song needs a tempo for bar marks.")
+					: L.T("Play the song, then Ctrl+click (⌘+click) the line that's being sung: it gets the bar the song is at."));
+				return;
+			}
+
+			var line = (RowAt(at)?.Line ?? -1) - headerLines;
+			var text = (rowsAreMine ? mySetting.Lyrics : song.Lyrics).Replace("\r\n", "\n");
+			var lines = text.Split('\n');
+			if (line < 0 || line >= lines.Length)
+			{
+				return; // The header (or nothing).
+			}
+
+			// The bar it's in; in its last quarter, the next one (clicked a little early, for the line's first beat).
+			var beatsPerBar = Math.Max(1, ChordPro.BeatsPerBar(song.Beat));
+			var bars = Math.Max(0, seconds * song.Tempo / 60 / beatsPerBar);
+			var bar = (int)Math.Floor(bars) + 1 + (bars - Math.Floor(bars) >= 0.75 ? 1 : 0);
+			lines[line] = $"[{bar}]" + LeadingTimeTags().Replace(lines[line], "");
+			var changed = string.Join("\n", lines);
+			try
+			{
+				if (rowsAreMine)
+				{
+					if (SaveMySetting is not { } saveMine)
+					{
+						return;
+					}
+
+					var mine = mySetting with { Lyrics = changed };
+					await saveMine(mine);
+					mySetting = mine;
+				}
+				else
+				{
+					song = await saveSong(song with { Lyrics = changed });
+					SongSaved?.Invoke(song);
+				}
+			}
+			catch (Exception ex)
+			{
+				ShowProblemAt(mediaButtons, L.T("Couldn't save the bar mark. {0}", ex.Message));
+				return;
+			}
+
+			ShowLyrics();
+		}
+
+		/// <summary>The row of the lyrics at <paramref name="at"/> (in the lyrics' content): the last one starting at or above it; null when none.</summary>
+		private (Control Row, int Line)? RowAt(Point at)
+		{
+			(Control Row, int Line)? found = null;
+			foreach (var row in shownRows)
+			{
+				if (lyricsContent != null && row.Row.TranslatePoint(default, lyricsContent) is { } top && top.Y <= at.Y + 0.5)
+				{
+					found = row;
+				}
+			}
+
+			return found;
+		}
+
+		/// <summary>
+		/// A click (or tap) on a line: the song goes there, the lyrics and its sound file alike. Where the
+		/// line is in the song: by the song's timeline when it has time or bar marks, else by how far down
+		/// the lyrics it is, matched to the sound file between its start and stop (as the lyrics follow
+		/// it). While a sound file plays it jumps there (the lyrics follow); while the lyrics scroll by
+		/// the clock they go on from the line; stopped, the line goes to the top (below the toolbar), and
+		/// the sound file starts there when played. False when there's no line there.
+		/// </summary>
+		/// <param name="at">Where it was clicked, in the lyrics' content.</param>
+		private bool GoToLine(Point at)
+		{
+			if (scroller is not { } viewer || RowAt(at) is not { } row || row.Row.TranslatePoint(default, lyricsContent!) is not { } rowTop)
+			{
+				return false;
+			}
+
+			// The line's middle in the scrolled content (zoomed, as the timeline counts it).
+			var lineY = (rowTop.Y + row.Row.Bounds.Height / 2) * zoom;
+			var playing = IsAutoScrolling || SongSoundPlays;
+			// The scroll offset that puts the line where the song is read: the middle while it plays, else just below the toolbar.
+			var offset = Math.Clamp(playing ? OffsetCentering(lineY) : rowTop.Y * zoom + overscroll - RoomForToolbar, 0, MaxOffset(viewer));
+			double? seconds = IsTimed && Timeline() is { } points ? TimeAt(points, lineY) : null;
+
+			// The sound file's place for the line: its time, else its share of the lyrics (as FollowMedia maps it).
+			double? SoundSeconds(SoundFile sound, double? duration)
+			{
+				var start = sound.Start ?? 0;
+				if (seconds is { } time)
+				{
+					return start + time;
+				}
+
+				var end = sound.Stop ?? duration;
+				var range = MaxOffset(viewer) - StartOffset;
+				return end is { } last && last > start && range > 0
+					? start + Math.Clamp((offset - StartOffset) / range, 0, 1) * (last - start)
+					: null;
+			}
+
+			if (PlayingSound is { } sound && App.SoundStore is { } sounds)
+			{
+				if (SoundSeconds(sound, sounds.Duration?.TotalSeconds) is not { } place)
+				{
+					return false;
+				}
+
+				sounds.Seek(TimeSpan.FromSeconds(place));
+				handScrolledAt = long.MinValue / 2; // The lyrics follow it at once.
+				return true;
+			}
+
+			if (IsAutoScrolling && seconds is { } now)
+			{
+				// Timed lyrics: the song's clock goes there (the lyrics follow it).
+				playbackStart = now - ScrollSeconds;
+				return true;
+			}
+
+			viewer.Offset = new Vector(viewer.Offset.X, offset);
+			scrollPosition = null;
+			ScrolledByHand();
+			// Stopped: the song's sound file starts there when played (where it's known).
+			if (!playing && ActiveSound is { } active && SoundSeconds(active, null) is { } from)
+			{
+				soundResume = (song.Id, active.Id, TimeSpan.FromSeconds(from));
+			}
+
+			return true;
+		}
+
+		// Time and bar marks at a line's start ("[1:23]", "[12]", "[+1]", one or more), with the spaces after them.
+		[System.Text.RegularExpressions.GeneratedRegex(@"^\s*(?:\[(?:\+?\d+(?::\d+(?:\.\d+)?)?)\]\s*)+")]
+		private static partial System.Text.RegularExpressions.Regex LeadingTimeTags();
 
 		private void AddZoomGestures(ScrollViewer viewer)
 		{
@@ -2394,7 +2629,8 @@ namespace Lyrious.UILib.Setlists
 		/// sound file on the device and adds it (for one dropped on the view); and what adds a link.
 		/// </returns>
 		private (StackPanel Buttons, Action ShowLinks, Func<IStorageFile, Task> AddSound, Func<string, Task> AddLink) MediaButtons(
-			Func<string> getLinks, Func<string, Task> setLinks, Func<string> name, Func<string> lyrics, Func<string> artist, Action<Control, string> showProblem)
+			Func<string> getLinks, Func<string, Task> setLinks, Func<string> name, Func<string> lyrics, Func<string> artist, Action<Control, string> showProblem,
+			Action<SoundFile, string>? openWaveform = null)
 		{
 			var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
 			var sounds = App.SoundStore;
@@ -2465,10 +2701,12 @@ namespace Lyrious.UILib.Setlists
 				var playing = sound != null && sounds?.Playing == sound.Id;
 				var active = sound != null && ActiveSound?.Id == sound.Id;
 				button.Content = ToolbarMediaIcon(MediaLinks.Icon(site, playing));
-				// The sound the media player is on for: filled with the highlight colour.
+				// The sound the media player is on for: a highlighted button (the highlight's fill, darker or
+				// lighter when pointed at, and the colour for its icon on it), instead of a see-through one.
 				if (active)
 				{
-					button.Bind(BackgroundProperty, button.GetResourceObservable("AccentButtonBackground"));
+					button.ClearValue(BackgroundProperty);
+					button.Classes.Add("accent");
 				}
 				// Played slower or faster, or in another key: said, so it's no surprise.
 				var tuned = sounds != null && (Math.Abs(sounds.Speed - 1) > 0.001 || Math.Abs(sounds.Pitch) > 0.001)
@@ -2648,6 +2886,16 @@ namespace Lyrious.UILib.Setlists
 				var menu = new MenuFlyout();
 				if (link != null)
 				{
+					// A sound file: its waveform, to set where the song starts and stops in it and its tempo.
+					if (openWaveform != null && MediaLinks.SoundOf(link) is { } shown && sounds != null)
+					{
+						menu.Items.Add(Item(L.T("Waveform: start, stop and tempo…"), () =>
+						{
+							openWaveform(shown, link);
+							return Task.CompletedTask;
+						}));
+					}
+
 					menu.Items.Add(Item(MediaLinks.SoundOf(link) is { } sound ? $"Remove {sound.Name}" : L.T("Remove this link"),
 						() => ChangeAsync(button, MediaLinks.Without(getLinks(), link))));
 					menu.Items.Add(new Separator());
@@ -2735,6 +2983,12 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>Whether one of the song's sound files plays now (in the app).</summary>
 		private bool SongSoundPlays => App.SoundStore?.Playing is { } playing && SongSounds().Any(sound => sound.Id == playing);
+
+		/// <summary>The song's sound file playing now (in the app), with where the song starts and stops in it; null when none does.</summary>
+		private SoundFile? PlayingSound => App.SoundStore?.Playing is { } playing ? SongSounds().FirstOrDefault(sound => sound.Id == playing) : null;
+
+		/// <summary>Where the song is in its sound file playing now, from where the song starts in it (seconds); null when none plays (or it isn't known).</summary>
+		private double? SongSoundSeconds => PlayingSound is { } sound && App.SoundStore?.Position is { } position ? position.TotalSeconds - (sound.Start ?? 0) : null;
 
 		/// <summary>Plays on from where the sound stopped before (until another song was shown), unless that's the very end.</summary>
 		private void PlayOnFromRemembered(SoundFile sound)
@@ -2826,6 +3080,11 @@ namespace Lyrious.UILib.Setlists
 
 				startedSound = true;
 				PlayOnFromRemembered(sound);
+				// From where the song starts in it (unless it played on from later).
+				if (sound.Start is { } start && (sounds.Position is not { } at || at.TotalSeconds < start))
+				{
+					sounds.Seek(TimeSpan.FromSeconds(start));
+				}
 			}
 			catch (Exception ex)
 			{
@@ -2841,7 +3100,7 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (SongSoundPlays)
 			{
-				App.SoundStore!.Seek(TimeSpan.Zero);
+				App.SoundStore!.Seek(TimeSpan.FromSeconds(PlayingSound?.Start ?? 0));
 				return true;
 			}
 
@@ -2874,9 +3133,16 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private bool FollowMedia(ScrollViewer viewer)
 		{
-			if (!SongSoundPlays || App.SoundStore is not { Position: { } position } sounds)
+			if (PlayingSound is not { } playing || App.SoundStore is not { Position: { } position } sounds)
 			{
 				return false;
+			}
+
+			// Past where the song stops in it: it stops (and the lyrics with it).
+			if (playing.Stop is { } stop && position.TotalSeconds >= stop)
+			{
+				StopMedia();
+				return true;
 			}
 
 			if (Environment.TickCount64 - handScrolledAt < HandScrollPause)
@@ -2884,18 +3150,19 @@ namespace Lyrious.UILib.Setlists
 				return true;
 			}
 
+			// The song's time counts from where it starts in the sound.
+			var songSeconds = position.TotalSeconds - (playing.Start ?? 0);
 			double target;
 			if (IsTimed && Timeline() is { } points)
 			{
-				var seconds = position.TotalSeconds;
-				ShowCurrentPart(seconds);
-				target = OffsetCentering(CenterAt(points, seconds));
+				ShowCurrentPart(songSeconds);
+				target = OffsetCentering(CenterAt(points, songSeconds));
 				timedPoints = points;
 			}
-			else if (sounds.Duration is { TotalSeconds: > 0 } duration)
+			else if ((playing.Stop ?? sounds.Duration?.TotalSeconds) is { } end && end - (playing.Start ?? 0) > 0)
 			{
-				// From the start (the first line just below the toolbar) to the end.
-				target = StartOffset + position.TotalSeconds / duration.TotalSeconds * Math.Max(0, MaxOffset(viewer) - StartOffset);
+				// From the start (the first line just below the toolbar) to the end of the song in the sound.
+				target = StartOffset + Math.Clamp(songSeconds / (end - (playing.Start ?? 0)), 0, 1) * Math.Max(0, MaxOffset(viewer) - StartOffset);
 			}
 			else
 			{
@@ -2916,13 +3183,23 @@ namespace Lyrious.UILib.Setlists
 
 		private void OnSoundPlayingChanged() => Dispatcher.UIThread.Post(() =>
 		{
+			// Played or stopped in the waveform view: told when it closes (see OpenWaveform).
+			if (!waveformShown)
+			{
+				TellSoundPlaying();
+			}
+		});
+
+		/// <summary>Tells when one of the song's sound files has started or stopped playing since it was last told (see <see cref="MediaPlayingChanged"/>).</summary>
+		private void TellSoundPlaying()
+		{
 			var plays = SongSoundPlays;
 			if (plays != songSoundPlayed)
 			{
 				songSoundPlayed = plays;
 				MediaPlayingChanged?.Invoke(plays);
 			}
-		});
+		}
 
 		// This view started a sound playing (in the app): it's stopped when the view goes away.
 		private bool startedSound;
@@ -3013,8 +3290,59 @@ namespace Lyrious.UILib.Setlists
 			return true;
 		}
 
+		/// <summary>
+		/// The line of the lyrics shown (the band's or the member's own, from 0, without the header) the song
+		/// is at: while it plays, the line in the middle of the view; else the first line below the toolbar.
+		/// Null when it isn't known (not shown with rows, or on the header).
+		/// </summary>
+		private int? ReadingLine()
+		{
+			if (scroller is not { } viewer || lyricsContent == null || shownRows.Count == 0)
+			{
+				return null;
+			}
+
+			var y = IsAutoScrolling ? viewer.Viewport.Height / 2 : RoomForToolbar + 1;
+			if (viewer.TranslatePoint(new Point(0, y), lyricsContent) is not { } at)
+			{
+				return null;
+			}
+
+			(Control Row, int Line)? reading = null;
+			foreach (var row in shownRows)
+			{
+				if (row.Row.TranslatePoint(default, lyricsContent) is { } top && top.Y <= at.Y)
+				{
+					reading = row;
+				}
+			}
+
+			return reading is { } found && found.Line - headerLines is var line and >= 0 ? line : null;
+		}
+
+		/// <summary>Where line <paramref name="line"/> (from 0) of <paramref name="text"/> starts; its end when there are fewer lines.</summary>
+		private static int StartOfLine(string text, int line)
+		{
+			var index = 0;
+			for (var i = 0; i < line; i++)
+			{
+				var next = text.IndexOf('\n', index);
+				if (next < 0)
+				{
+					return text.Length;
+				}
+
+				index = next + 1;
+			}
+
+			return index;
+		}
+
 		private void ShowEditor()
 		{
+			// The line the song is at, and in whose lyrics, for the editor's caret (taken before the lyrics go).
+			var startLine = ReadingLine();
+			var startInMine = rowsAreMine;
 			SetAutoScroll(false);
 			StopNudge();
 			scroller = null;
@@ -3024,9 +3352,9 @@ namespace Lyrious.UILib.Setlists
 			var originalKey = KeyChoice(song.OriginalKey, NoOriginalKey);
 			var beat = BeatChoice(song.Beat);
 			var tempo = new NumericUpDown { Value = (decimal)Math.Clamp(song.Tempo, 20, 300), Minimum = 20, Maximum = 300, Increment = 1, FormatString = "0", MinWidth = 140 };
-			var editor = new TextBox
+			// Its tags in brackets dimmed (see LyricsTextBox).
+			var editor = new LyricsTextBox
 			{
-				Text = song.Lyrics,
 				AcceptsReturn = true,
 				TextWrapping = TextWrapping.Wrap,
 				MaxLength = MaxLyricsLength,
@@ -3044,10 +3372,121 @@ namespace Lyrious.UILib.Setlists
 			var canHaveMine = SaveMySetting != null && song.Id != Guid.Empty;
 			var editingMine = canHaveMine && mySetting.HasLyrics && !ShowBandLyrics;
 			Guid? editingMember = null;
-			if (editingMine)
+
+			// The chords are edited as the lyrics show them: in the playing key, moved by the member's own
+			// transpose or capo too; they're kept in the original key, so they're moved back when taken from
+			// the box. The keys and transpose are those when the editor opened. A text left as it was is kept
+			// as it was stored (moving the chords there and back could spell some of them otherwise, e.g. A# as Bb).
+			var shownSemitones = Transpose.Semitones(song.OriginalKey, song.PlayingKey) + mySetting.ActiveTranspose;
+			var (openKey, openOriginalKey) = (ShownKey, song.OriginalKey);
+			string? loadedStored = null;
+			string? loadedShown = null;
+			void Load(string? stored)
 			{
-				editor.Text = myText;
+				loadedStored = stored ?? "";
+				loadedShown = shownSemitones == 0 ? loadedStored : Transpose.Chords(loadedStored, shownSemitones, openKey);
+				editor.Text = loadedShown;
 			}
+
+			string FromBox()
+			{
+				var typed = editor.Text ?? "";
+				if (typed == loadedShown && loadedStored != null)
+				{
+					return loadedStored;
+				}
+
+				return shownSemitones == 0 ? typed : Transpose.Chords(typed, -shownSemitones, openOriginalKey);
+			}
+
+			Load(editingMine ? myText : song.Lyrics);
+			// The caret is put by the editor itself (at the line the song is at, or kept by the tools below).
+			TextBoxFocus.KeepCaret(editor);
+
+			// Tools for the lyrics, right above the box: all chords a semitone down or up (only the text:
+			// the song's keys and the member's transpose stay), and the bar marks all relative or all
+			// absolute. With a selection, they change only what's selected.
+			// They don't take the focus: the box keeps it, and what's selected in it (see TextBoxFocus.KeepsFocusProperty).
+			var chordsDown = new Button { Content = "−", MinWidth = 36, HorizontalContentAlignment = HorizontalAlignment.Center, Focusable = false };
+			var chordsUp = new Button { Content = "+", MinWidth = 36, HorizontalContentAlignment = HorizontalAlignment.Center, Focusable = false };
+			var flipBars = new Button { Focusable = false };
+			ToolTip.SetTip(chordsDown, L.T("All chords a semitone down (or the selected ones); the song's key and transpose stay"));
+			ToolTip.SetTip(chordsUp, L.T("All chords a semitone up (or the selected ones); the song's key and transpose stay"));
+			ToolTip.SetTip(flipBars, L.T("The bar marks all relative ([+4]: bars after the mark before) or all absolute ([12]: bar 12 of the song), or the selected ones; each stays at the same place"));
+			// The selection (start before end); the whole text when nothing is selected.
+			(int Start, int End) Selected()
+			{
+				var (a, b) = (editor.SelectionStart, editor.SelectionEnd);
+				return (Math.Min(a, b), Math.Max(a, b));
+			}
+
+			// The flip makes the marks the kind there are fewer of (relative when they're mostly absolute).
+			bool FlipToRelative()
+			{
+				var (start, end) = Selected();
+				var (relative, absolute) = ChordPro.CountBarMarks(editor.Text ?? "", start, end);
+				return absolute >= relative;
+			}
+
+			void ShowFlipBars()
+			{
+				var (start, end) = Selected();
+				var (relative, absolute) = ChordPro.CountBarMarks(editor.Text ?? "", start, end);
+				flipBars.IsEnabled = relative + absolute > 0;
+				flipBars.Content = absolute >= relative ? L.T("Bars → relative") : L.T("Bars → absolute");
+			}
+
+			// Changes the selection (or the whole text) with change, and selects what it became.
+			void ChangeText(Func<string, int, int, string> change)
+			{
+				var text = editor.Text ?? "";
+				var (start, end) = Selected();
+				var whole = start == end;
+				var changed = change(text, whole ? 0 : start, whole ? text.Length : end);
+				var newEnd = whole ? changed.Length : end + changed.Length - text.Length;
+				editor.Text = changed;
+				editor.Focus();
+				if (!whole)
+				{
+					editor.SelectionStart = start;
+					editor.SelectionEnd = newEnd;
+				}
+
+				ShowFlipBars();
+			}
+
+			// Chords moved within part of the text, the rest as it is.
+			string MoveChords(string text, int start, int end, int semitones)
+				=> text[..start] + Transpose.Chords(text[start..end], semitones, openKey) + text[end..];
+
+			chordsDown.Click += (_, _) => ChangeText((text, start, end) => MoveChords(text, start, end, -1));
+			chordsUp.Click += (_, _) => ChangeText((text, start, end) => MoveChords(text, start, end, 1));
+			flipBars.Click += (_, _) =>
+			{
+				var toRelative = FlipToRelative();
+				var beatsPerBar = ChordPro.BeatsPerBar(song.Beat);
+				ChangeText((text, start, end) => ChordPro.FlipBarMarks(text, start, start == 0 && end == text.Length ? 0 : end, toRelative, song.Tempo, beatsPerBar));
+			};
+			editor.TextChanged += (_, _) => ShowFlipBars();
+			editor.PropertyChanged += (_, e) =>
+			{
+				if (e.Property == TextBox.SelectionStartProperty || e.Property == TextBox.SelectionEndProperty)
+				{
+					ShowFlipBars();
+				}
+			};
+			ShowFlipBars();
+			var lyricsTools = new StackPanel
+			{
+				Orientation = Orientation.Horizontal,
+				Spacing = 6,
+				HorizontalAlignment = HorizontalAlignment.Right,
+				VerticalAlignment = VerticalAlignment.Top,
+				Margin = new Thickness(8, 0, 0, 8),
+				Children = { chordsDown, chordsUp, flipBars },
+			};
+			lyricsTools.SetValue(TextBoxFocus.KeepsFocusProperty, true);
+			DockPanel.SetDock(lyricsTools, Dock.Right);
 
 			// Other members' lyrics, as stored and as typed here.
 			var membersLyrics = new List<MemberLyrics>();
@@ -3126,15 +3565,15 @@ namespace Lyrious.UILib.Setlists
 			{
 				if (editingMember is { } m)
 				{
-					memberTexts[m] = editor.Text ?? "";
+					memberTexts[m] = FromBox();
 				}
 				else if (editingMine)
 				{
-					myText = editor.Text ?? "";
+					myText = FromBox();
 				}
 				else
 				{
-					bandText = editor.Text ?? "";
+					bandText = FromBox();
 				}
 			}
 
@@ -3145,9 +3584,9 @@ namespace Lyrious.UILib.Setlists
 					KeepTyped();
 					editingMine = mine;
 					editingMember = member;
-					editor.Text = member is { } m
+					Load(member is { } m
 						? memberTexts.TryGetValue(m, out var theirs) && !string.IsNullOrWhiteSpace(theirs) ? theirs : bandText
-						: mine ? (string.IsNullOrWhiteSpace(myText) ? bandText : myText) : bandText;
+						: mine ? (string.IsNullOrWhiteSpace(myText) ? bandText : myText) : bandText);
 					editor.Focus();
 				}
 
@@ -3178,7 +3617,7 @@ namespace Lyrious.UILib.Setlists
 
 				editingMine = false;
 				editingMember = null;
-				editor.Text = bandText;
+				Load(bandText);
 				ShowLyricsChoice();
 			};
 			ShowLyricsChoice();
@@ -3805,7 +4244,7 @@ namespace Lyrious.UILib.Setlists
 			{
 				Margin = new Thickness(0, 0, 0, 16),
 				RowDefinitions = new RowDefinitions("Auto,*"),
-				Children = { new StackPanel { Children = { error, midiNotes, lyricsChoice } }, editor },
+				Children = { new StackPanel { Children = { error, midiNotes, new DockPanel { Children = { lyricsTools, lyricsChoice } } } }, editor },
 			};
 
 			// A song without a name yet (a new one) starts in the name's box, others in the lyrics.
@@ -3817,7 +4256,18 @@ namespace Lyrious.UILib.Setlists
 			else
 			{
 				ShowNameText();
+				// The caret at the start of the line the song is at (in the lyrics it was shown in), in sight.
+				var caret = startLine is { } line && startInMine == editingMine ? StartOfLine(editor.Text ?? "", line) : (int?)null;
 				editor.Focus();
+				if (caret is { } index)
+				{
+					Dispatcher.UIThread.Post(() =>
+					{
+						// (Putting the caret there scrolls the box to it.)
+						editor.SelectionStart = editor.SelectionEnd = index;
+						editor.CaretIndex = index;
+					}, DispatcherPriority.Loaded);
+				}
 			}
 		}
 

@@ -199,6 +199,8 @@ namespace Lyrious.UILib.Setlists
 			// Play at the far right with back-to-start just left of it; the next song fills the rest from the left.
 			DockPanel.SetDock(playPause, Dock.Right);
 			DockPanel.SetDock(restart, Dock.Right);
+			// The bar counter between back to start and band sync (docked from the right edge in, as they are).
+			DockPanel.SetDock(barCounter, Dock.Right);
 			DockPanel.SetDock(bandSync, Dock.Right);
 			// The MIDI setup, just left of the band icon (while MIDI is on, here or on another device).
 			DockPanel.SetDock(midi, Dock.Right);
@@ -226,7 +228,7 @@ namespace Lyrious.UILib.Setlists
 				ShowNext();
 			};
 			barTimer.Tick += (_, _) => ShowBarAndBeat();
-			var row = new DockPanel { Children = { playPause, restart, bandSync, midi, barCounter, nextSlot } };
+			var row = new DockPanel { Children = { playPause, restart, barCounter, bandSync, midi, nextSlot } };
 
 			// The media file's progress above the buttons, while one plays: slower and faster at the left,
 			// lower and higher at the right, the time played and the length beside the bar.

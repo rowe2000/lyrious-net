@@ -51,6 +51,7 @@ public sealed class HttpSetlistService : ISetlistService
         live.PlaybackChanged += (groupId, playing) => PlaybackChanged?.Invoke(groupId, playing);
         live.PlaybackPositionChanged += (groupId, position) => PlaybackPositionChanged?.Invoke(groupId, position);
         live.SongSelected += OnSongSelected;
+        live.OutsideSongSelected += OnOutsideSongSelected;
         live.MemberConnectionChanged += (memberId, connected) => MemberConnectionChanged?.Invoke(memberId, connected);
         live.SettingsChanged += settings => MySettingsChanged?.Invoke(settings);
         live.Reconnected += () => { if (cache is { } c) _ = engine.SyncAsync(c); };
@@ -1511,11 +1512,39 @@ public sealed class HttpSetlistService : ISetlistService
         }
     }
 
-    private static JsonObject SelectionFields(Guid? setlistId, Guid? setlistItemId) => new()
+    /// <summary>The band's current setlist and song, as stored: a setlist item, or (played from outside the setlist) a song.</summary>
+    private static JsonObject SelectionFields(Guid? setlistId, Guid? setlistItemId, Guid? songId = null) => new()
     {
         ["currentSetlistId"] = setlistId?.ToString(),
         ["currentSetlistItemId"] = setlistItemId?.ToString(),
+        ["currentSongId"] = songId?.ToString(),
     };
+
+    public async Task SelectOutsideSongAsync(Guid groupId, Guid? setlistId, Guid songId, CancellationToken cancellationToken = default)
+    {
+        // Told at once (waited for, so a play sent right after can't overtake it), then stored.
+        try
+        {
+            await live.SelectOutsideSongAsync(groupId, setlistId, songId);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Couldn't announce the song played: {ex.Message}");
+        }
+
+        await UpdateGroupAsync(groupId, SelectionFields(setlistId, null, songId));
+    }
+
+    /// <summary>Another member plays a song from outside the band's setlist: shown at once, before the stored group arrives.</summary>
+    private void OnOutsideSongSelected(Guid groupId, Guid? setlistId, Guid songId)
+    {
+        if (cache is not { } current || current.MergeFields("group", groupId, SelectionFields(setlistId, null, songId)) is not { } group)
+        {
+            return;
+        }
+
+        GroupChanged?.Invoke(ToSummary(As(group, ClientJsonContext.Default.GroupDto)));
+    }
 
     /// <summary>Another member picked a band's current song: shown at once, before the stored group arrives.</summary>
     private void OnSongSelected(Guid groupId, Guid? setlistId, Guid? setlistItemId)
@@ -1722,7 +1751,7 @@ public sealed class HttpSetlistService : ISetlistService
 
     private static string Limit(string value, int max) => value.Length > max ? value[..max] : value;
 
-    private static GroupSummary ToSummary(GroupDto group) => new(group.Id, group.Name, group.CurrentSetlistId, group.CurrentSetlistItemId, group.IsPrivate, group.MidiExpressions, group.MidiCommands, group.LyricsHeader, group.NextSongOnStopAtEnd);
+    private static GroupSummary ToSummary(GroupDto group) => new(group.Id, group.Name, group.CurrentSetlistId, group.CurrentSetlistItemId, group.IsPrivate, group.MidiExpressions, group.MidiCommands, group.LyricsHeader, group.NextSongOnStopAtEnd, group.CurrentSongId);
 
     private static SetlistSummary ToSummary(SetlistDto setlist) => new(setlist.Id, setlist.Name, setlist.GroupId);
 

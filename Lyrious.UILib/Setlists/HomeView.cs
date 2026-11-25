@@ -216,6 +216,17 @@ namespace Lyrious.UILib.Setlists
 			// clear of the corners at the sides, so narrow windows don't put text under the buttons.
 			topRow = new Grid { Margin = new Thickness(4), VerticalAlignment = VerticalAlignment.Top, Children = { menuButton, setlistButton } };
 			drawerButtons = (menuButton, setlistButton);
+			// A press on a drawer's button while the other drawer is open: that one closes and this one opens,
+			// in the same press (the open drawer would otherwise take it, only to close). First, before the swipes.
+			AddHandler(PointerPressedEvent, OnDrawerSwitchPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+			AddHandler(PointerReleasedEvent, (_, e) =>
+			{
+				if (drawerSwitch == e.Pointer)
+				{
+					drawerSwitch = null;
+					e.Handled = true; // Else it would close the drawer just opened.
+				}
+			}, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 			// Swiping sideways on the lyrics: another song, or from the edges, the drawers (see OnSwipe*).
 			AddHandler(PointerPressedEvent, OnSwipePressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 			AddHandler(PointerMovedEvent, OnSwipeMoved, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -656,6 +667,15 @@ namespace Lyrious.UILib.Setlists
 
 			try
 			{
+				// A song played from outside the band's setlist (the songbook, a search, or the songbook shown
+				// as the setlist here): the band's current song first, so the others open it before it plays.
+				if (playing && currentGroup is { } group && currentSongId is { } songId
+				    && (currentEntryId == null || currentSetlist is { } shown && IsSongbookSetlist(shown)))
+				{
+					var bandSetlist = currentSetlist is { } setlist && !IsSongbookSetlist(setlist) ? setlist.Id : group.CurrentSetlistId;
+					await service.SelectOutsideSongAsync(group.Id, bandSetlist, songId);
+				}
+
 				// Where in the song first: the others go there, then start or stop.
 				await SendPlaybackPositionAsync();
 				await service.SendPlaybackAsync(playing);
@@ -1167,8 +1187,20 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		// While the band's song from outside its setlist is being opened here (see FollowOutsideSongAsync):
+		// a play or stop and a place in the song that came meanwhile, applied once it shows.
+		private bool openingBandSong;
+		private (Guid GroupId, bool Playing)? heldPlayback;
+		private (Guid GroupId, double Position)? heldPosition;
+
 		private void OnPlaybackChanged(Guid groupId, bool playing) => Dispatcher.UIThread.Post(() =>
 		{
+			if (openingBandSong)
+			{
+				heldPlayback = (groupId, playing);
+				return;
+			}
+
 			// Only with band sync on, for the joined band, on its lyrics page (not while editing). Focus
 			// mode follows, as when pressing play/pause here. Not sent on, so it doesn't bounce back and forth.
 			// Not when the member chose not to follow play and stop (Settings → Band sync).
@@ -1185,6 +1217,12 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		private void OnPlaybackPositionChanged(Guid groupId, double position) => Dispatcher.UIThread.Post(() =>
 		{
+			if (openingBandSong)
+			{
+				heldPosition = (groupId, position);
+				return;
+			}
+
 			if (bandSync && PlaybackSettings.FollowPosition && currentGroup?.Id == groupId && page.Content is LyricScrollView { IsEditing: false } lyrics)
 			{
 				lyrics.GoToPlayPosition(position);
@@ -1311,6 +1349,21 @@ namespace Lyrious.UILib.Setlists
 			// Only what the member chose to follow (Settings → Band sync): the setlist, the song, or both.
 			var followSetlist = PlaybackSettings.FollowSetlist;
 			var followSong = PlaybackSettings.FollowSong;
+
+			// The band plays a song from outside its setlist (no setlist item current): that song.
+			if (followSong && group.CurrentSetlistItemId == null && group.CurrentSongId is { } outside && outside != currentSongId)
+			{
+				// The song can't change while playing: follow once playing stops (as below).
+				if (IsPlaying)
+				{
+					pendingFollow = group;
+					pendingCatchUp |= catchUp;
+					return;
+				}
+
+				await FollowOutsideSongAsync(group, outside, followSetlist && group.CurrentSetlistId is { } bandSetlist && bandSetlist != currentSetlist?.Id);
+				return;
+			}
 			var setlistChanged = followSetlist && (catchUp
 				? group.CurrentSetlistId != currentSetlist?.Id
 				: group.CurrentSetlistId is { } newSetlistId && newSetlistId != currentSetlist?.Id);
@@ -1393,6 +1446,62 @@ namespace Lyrious.UILib.Setlists
 			catch (Exception ex)
 			{
 				System.Diagnostics.Debug.WriteLine($"Couldn't follow the band's setlist or song: {ex.Message}");
+			}
+		}
+
+		/// <summary>
+		/// Opens the song the band plays from outside its setlist, from the band's songbook (its setlist
+		/// too, when following it and it changed). Pages where the member is busy aren't replaced: the
+		/// current song changes. A play or place in the song that comes meanwhile is held and applied once
+		/// it shows, so the band's play doesn't start the song shown before.
+		/// </summary>
+		private async Task FollowOutsideSongAsync(GroupSummary group, Guid songId, bool setlistChanged)
+		{
+			openingBandSong = true;
+			try
+			{
+				var song = (await service.GetSongbookSongsAsync(group.Id)).FirstOrDefault(s => s.Id == songId);
+				if (song == null || currentGroup?.Id != group.Id)
+				{
+					return; // Not in the band's songbook (any more).
+				}
+
+				if (setlistChanged && group.CurrentSetlistId is { } setlistId && await service.GetSetlistAsync(setlistId) is { } setlist)
+				{
+					SetCurrentSetlist(setlist);
+					playbackEntries = [];
+					RefreshSetlistDrawer(reload: true);
+				}
+
+				if (page.Content is SetlistsView or NoSongView or LyricScrollView { IsEditing: false })
+				{
+					ShowSongbookLyrics(group, song);
+				}
+				else
+				{
+					SetCurrentSong(song, null);
+					RefreshSetlistDrawer();
+				}
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't follow the band's song: {ex.Message}");
+			}
+			finally
+			{
+				openingBandSong = false;
+				// What came meanwhile, now that the song shows.
+				if (heldPosition is { } position)
+				{
+					heldPosition = null;
+					OnPlaybackPositionChanged(position.GroupId, position.Position);
+				}
+
+				if (heldPlayback is { } playback)
+				{
+					heldPlayback = null;
+					OnPlaybackChanged(playback.GroupId, playback.Playing);
+				}
 			}
 		}
 
@@ -3768,8 +3877,52 @@ namespace Lyrious.UILib.Setlists
 		private static readonly BoxShadows SlideShadow = BoxShadows.Parse("0 0 18 0 #70000000");
 
 		/// <summary>A press on the page: perhaps a swipe (from an edge on any page, for a drawer; elsewhere on the lyrics, not while editing, for another song).</summary>
+		// The press that switched drawers (see OnDrawerSwitchPressed): not a swipe, and its release is swallowed.
+		private Avalonia.Input.IPointer? drawerSwitch;
+
+		/// <summary>
+		/// A press on one drawer's button while the other drawer slides over the page (open, not pinned): the
+		/// open one closes and the pressed one opens, as its button does, all in this press.
+		/// </summary>
+		private void OnDrawerSwitchPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+		{
+			drawerSwitch = null;
+			if (e.Pointer.Type == Avalonia.Input.PointerType.Mouse && !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+			{
+				return;
+			}
+
+			var (menuButton, setlistButton) = drawerButtons;
+			foreach (var (open, button) in new[] { (menuDrawer, setlistButton), (setlistDrawer, menuButton) })
+			{
+				if (!open.IsPaneOpen || IsPinned(open) || !button.IsEffectivelyVisible)
+				{
+					continue;
+				}
+
+				// By where it was pressed: the open drawer covers the button (it would get the press).
+				var at = e.GetPosition(button);
+				if (at.X < 0 || at.Y < 0 || at.X > button.Bounds.Width || at.Y > button.Bounds.Height)
+				{
+					continue;
+				}
+
+				e.Handled = true;
+				drawerSwitch = e.Pointer;
+				open.IsPaneOpen = false;
+				button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+				return;
+			}
+		}
+
 		private void OnSwipePressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
 		{
+			// The press that switched drawers isn't a swipe.
+			if (drawerSwitch == e.Pointer)
+			{
+				return;
+			}
+
 			swipe = null;
 			drawerSwipe = null;
 			if (slideTimer == null)

@@ -89,7 +89,36 @@ namespace Lyrious.UILib
 			TextBoxFocus.Register();
 			FullScreen.Register();
 			UiScale.RegisterPopups();
+			PassClicksThroughPopups();
 			StartMainView();
+		}
+
+		// Whether pop-ups already pass their closing click through (see PassClicksThroughPopups): a property's
+		// default can be set only once, and a host may start the app's framework more than once.
+		private static bool clicksPassThroughPopups;
+
+		/// <summary>
+		/// A click that closes a pop-up or menu (outside it) also does what it was on (e.g. opens a drawer),
+		/// instead of only closing it.
+		/// </summary>
+		private static void PassClicksThroughPopups()
+		{
+			if (clicksPassThroughPopups)
+			{
+				return;
+			}
+
+			clicksPassThroughPopups = true;
+			Avalonia.Controls.Primitives.PopupFlyoutBase.OverlayDismissEventPassThroughProperty.OverrideDefaultValue<Avalonia.Controls.Flyout>(true);
+			Avalonia.Controls.Primitives.PopupFlyoutBase.OverlayDismissEventPassThroughProperty.OverrideDefaultValue<Avalonia.Controls.MenuFlyout>(true);
+			// A pop-up's own default can't be changed (it's the property's owner): set as it opens, unless set for it.
+			Avalonia.Controls.Primitives.Popup.IsOpenProperty.Changed.AddClassHandler<Avalonia.Controls.Primitives.Popup>((popup, e) =>
+			{
+				if (e.NewValue is true && !popup.IsSet(Avalonia.Controls.Primitives.Popup.OverlayDismissEventPassThroughProperty))
+				{
+					popup.SetCurrentValue(Avalonia.Controls.Primitives.Popup.OverlayDismissEventPassThroughProperty, true);
+				}
+			});
 		}
 
 		private void StartMainView()

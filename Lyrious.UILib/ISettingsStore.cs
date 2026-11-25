@@ -24,6 +24,10 @@ namespace Lyrious.UILib
 		/// <summary>The Lyrious server the apps use until another is chosen on the Sync page.</summary>
 		public const string DefaultServer = "https://www.lyrious.se";
 
+		/// <summary>The server address as it's kept (see <see cref="Host"/>): none for <see cref="DefaultServer"/> (any case, with or without a closing "/").</summary>
+		public static string? HostToKeep(string address)
+			=> string.Equals(address.Trim().TrimEnd('/'), DefaultServer, System.StringComparison.OrdinalIgnoreCase) ? null : address;
+
 		public const string Host = "host";
 
 		/// <summary>"false" stops following and sending the band's song, setlist and play/stop (on by default).</summary>

@@ -35,7 +35,7 @@ internal sealed partial class Program
         if (fromQuery)
         {
             // Given in the address: remembered as the host, so it's needed only once.
-            settings.Set(SettingKeys.Host, apiBaseUrl.AbsoluteUri.TrimEnd('/'));
+            settings.Set(SettingKeys.Host, SettingKeys.HostToKeep(apiBaseUrl.AbsoluteUri.TrimEnd('/')));
         }
         // The offline cache and offline logins, kept apart from the settings.
         var offline = new BrowserSettingsStore("lyrious.offline.");

@@ -51,6 +51,12 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
     /// </summary>
     public event Action<Guid, Guid?, Guid?>? SongSelected;
 
+    /// <summary>
+    /// Raised on a background thread when another member plays a song from outside the band's current
+    /// setlist (groupId, setlistId, songId), before the change is stored.
+    /// </summary>
+    public event Action<Guid, Guid?, Guid>? OutsideSongSelected;
+
     /// <summary>Raised on a background thread when a bandmate comes online (true) or goes offline.</summary>
     public event Action<Guid, bool>? MemberConnectionChanged;
 
@@ -90,6 +96,7 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
             connection.On<Guid, bool>("PlaybackChanged", (groupId, playing) => PlaybackChanged?.Invoke(groupId, playing));
             connection.On<Guid, double>("PlaybackPositionChanged", (groupId, position) => PlaybackPositionChanged?.Invoke(groupId, position));
             connection.On<Guid, Guid?, Guid?>("SongSelected", (groupId, setlistId, itemId) => SongSelected?.Invoke(groupId, setlistId, itemId));
+            connection.On<Guid, Guid?, Guid>("OutsideSongSelected", (groupId, setlistId, songId) => OutsideSongSelected?.Invoke(groupId, setlistId, songId));
             connection.On<Guid, bool>("MemberConnectionChanged", (memberId, connected) => MemberConnectionChanged?.Invoke(memberId, connected));
             connection.On<string>("SettingsChanged", settings => SettingsChanged?.Invoke(settings));
             connection.Reconnected += _ =>
@@ -138,6 +145,18 @@ internal sealed class LiveUpdates(HttpAuthService auth) : IAsyncDisposable
         if (connection is { State: HubConnectionState.Connected })
         {
             await connection.SendAsync("SelectSong", groupId, setlistId, setlistItemId);
+        }
+    }
+
+    /// <summary>
+    /// Tells the band's other members at once that this member plays a song from outside the band's
+    /// current setlist (if connected), ahead of the stored change. A server without it ignores it.
+    /// </summary>
+    public async Task SelectOutsideSongAsync(Guid groupId, Guid? setlistId, Guid songId)
+    {
+        if (connection is { State: HubConnectionState.Connected })
+        {
+            await connection.SendAsync("SelectOutsideSong", groupId, setlistId, songId);
         }
     }
 

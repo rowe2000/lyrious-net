@@ -322,13 +322,13 @@ namespace Lyrious.UILib
 				if (SameHost(address, current))
 				{
 					// Unchanged, but remembered: it may only have come from the page's address (Web's ?api=).
-					App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
+					App.Settings.Set(SettingKeys.Host, SettingKeys.HostToKeep(auth.ServerAddress));
 					home.LeavePage();
 					return;
 				}
 
 				auth.UseServer(Tidy(address));
-				App.Settings.Set(SettingKeys.Host, auth.ServerAddress);
+				App.Settings.Set(SettingKeys.Host, SettingKeys.HostToKeep(auth.ServerAddress));
 				home.Close();
 				ShowLogin(L.T("Now syncing with {0}. Log in to continue.", auth.ServerAddress), null);
 			};

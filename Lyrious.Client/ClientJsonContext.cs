@@ -60,7 +60,9 @@ internal sealed record GroupDto(
     // The header above every song's lyrics, in ChordPro with placeholders; null for the default, empty for none.
     string? LyricsHeader = null,
     // Whether stopping a song at the end of its lyrics goes on to the next song; null (unset) is yes.
-    bool? NextSongOnStopAtEnd = null);
+    bool? NextSongOnStopAtEnd = null,
+    // The band's current song when played from outside its current setlist (no setlist item then); null otherwise.
+    System.Guid? CurrentSongId = null);
 
 internal sealed record SetlistDto(System.Guid Id, string Name, System.Guid GroupId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum);
 

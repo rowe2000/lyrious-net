@@ -633,6 +633,31 @@ globalThis.lyriousSounds = (() => {
             const blob = await run("readonly", store => store.get(id));
             return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
         },
+        // How loud the sound is over time: the loudest sample (all channels) in each 1/rate second, as
+        // the bytes of 32-bit floats (copyTo hands them over); null when it isn't here or the browser
+        // can't decode it.
+        wave: async (id, rate) => {
+            const blob = await run("readonly", store => store.get(id));
+            if (!blob) return null;
+            try {
+                const decoder = new OfflineAudioContext(1, 1, 44100);
+                const buffer = await decoder.decodeAudioData(await blob.arrayBuffer());
+                const perSlice = buffer.sampleRate / rate;
+                const levels = new Float32Array(Math.ceil(buffer.length / perSlice));
+                for (let c = 0; c < buffer.numberOfChannels; c++) {
+                    const data = buffer.getChannelData(c);
+                    for (let i = 0; i < data.length; i++) {
+                        const size = Math.abs(data[i]);
+                        const slice = Math.floor(i / perSlice);
+                        if (size > levels[slice]) levels[slice] = size;
+                    }
+                }
+                return new Uint8Array(levels.buffer);
+            } catch (error) {
+                console.warn("The browser couldn't decode the sound:", error);
+                return null;
+            }
+        },
         length: bytes => bytes.length,
         copyTo: (bytes, view) => view.set(bytes),
         // [{ id, size }] as JSON.

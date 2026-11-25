@@ -130,6 +130,15 @@ namespace Lyrious.UILib
 				return;
 			}
 
+			// Tools for the text box (see KeepsFocusProperty): the text box keeps the focus and its selection.
+			for (var at = e.Source as Visual; at != null; at = at.GetVisualParent())
+			{
+				if (at.GetValue(KeepsFocusProperty))
+				{
+					return;
+				}
+			}
+
 			// There's no "no focus": it goes to what was pressed, if that takes the focus, else to the
 			// page's root.
 			if (FocusableAncestor(e.Source as Visual) is { } target)
@@ -242,6 +251,11 @@ namespace Lyrious.UILib
 			box.DetachedFromVisualTree += OnDetached;
 			// After the text box's own handling of the focus (Tab selects all, a click puts the caret where
 			// it was clicked), and of the press that gave it.
+			if (box.GetValue(KeepCaretProperty))
+			{
+				return; // It puts its caret itself.
+			}
+
 			Avalonia.Threading.Dispatcher.UIThread.Post(() =>
 			{
 				if (ReferenceEquals(focused, box))
@@ -250,6 +264,21 @@ namespace Lyrious.UILib
 				}
 			}, Avalonia.Threading.DispatcherPriority.Background);
 		}
+
+		/// <summary>
+		/// Tools for a text box (e.g. buttons that change its selected text): pressing them leaves the focus
+		/// (and so the selection) in the text box. Their buttons shouldn't take the focus either.
+		/// </summary>
+		public static readonly AttachedProperty<bool> KeepsFocusProperty = AvaloniaProperty.RegisterAttached<Visual, bool>("KeepsFocus", typeof(TextBoxFocus));
+
+		/// <summary>
+		/// A text box that puts its caret where it wants when it gets the focus (not at the end): e.g. the
+		/// lyrics editor, at the line the song is at.
+		/// </summary>
+		public static readonly AttachedProperty<bool> KeepCaretProperty = AvaloniaProperty.RegisterAttached<TextBox, bool>("KeepCaret", typeof(TextBoxFocus));
+
+		/// <summary>Leaves the caret of <paramref name="box"/> alone when it gets the focus (see <see cref="KeepCaretProperty"/>).</summary>
+		public static void KeepCaret(TextBox box) => box.SetValue(KeepCaretProperty, true);
 
 		/// <summary>The caret at the end of the text box's text, nothing selected.</summary>
 		private static void CaretAtEnd(TextBox box)

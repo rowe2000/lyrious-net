@@ -66,8 +66,22 @@ namespace Lyrious.UILib
 			};
 			DisabledButtons(light, Color.Parse("#1B1B1B"));
 			DisabledButtons(dark, Color.Parse("#FFFFFF"));
+			// Pointed at and pressed, a button gets darker in the dark theme (a shade of black over it) and
+			// lighter in the light one (white): as highlighted buttons do (see ColorSettings).
+			PointedAtButtons(light, Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF));
+			PointedAtButtons(dark, Color.FromArgb(0x40, 0, 0, 0), Color.FromArgb(0x66, 0, 0, 0));
 			resources.ThemeDictionaries[ThemeVariant.Light] = light;
 			resources.ThemeDictionaries[ThemeVariant.Dark] = dark;
+		}
+
+		/// <summary>The fill of plain, repeat and (unchecked) toggle buttons pointed at, and pressed.</summary>
+		private static void PointedAtButtons(ResourceDictionary theme, Color pointedAt, Color pressed)
+		{
+			foreach (var button in new[] { "Button", "RepeatButton", "ToggleButton" })
+			{
+				theme[button + "BackgroundPointerOver"] = new SolidColorBrush(pointedAt);
+				theme[button + "BackgroundPressed"] = new SolidColorBrush(pressed);
+			}
 		}
 
 		/// <summary>

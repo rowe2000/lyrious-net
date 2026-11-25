@@ -128,6 +128,36 @@ internal sealed partial class BrowserSoundStore : ISoundStore
     [JSImport("globalThis.lyriousSounds.save")]
     private static partial Task SaveNow(string id, [JSMarshalAs<JSType.MemoryView>] ArraySegment<byte> bytes, string type);
 
+    /// <summary>
+    /// How loud the sound is over time, decoded by the browser; an Ogg Opus file (as the app records)
+    /// the browser can't decode (e.g. Safari) is decoded by the app itself.
+    /// </summary>
+    public async Task<SoundWave?> ReadWaveAsync(string id)
+    {
+        using (var bytes = await WaveNow(id, SoundWave.DefaultRate))
+        {
+            if (bytes != null)
+            {
+                var data = new byte[GetLength(bytes)];
+                CopyTo(bytes, data);
+                return new SoundWave(SoundWave.DefaultRate, System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(data).ToArray());
+            }
+        }
+
+        if (await OpenAsync(id) is { } content)
+        {
+            await using (content)
+            {
+                return SoundWave.FromOggOpus(content);
+            }
+        }
+
+        return null;
+    }
+
+    [JSImport("globalThis.lyriousSounds.wave")]
+    private static partial Task<JSObject?> WaveNow(string id, int rate);
+
     [JSImport("globalThis.lyriousSounds.load")]
     private static partial Task<JSObject?> LoadNow(string id);
 

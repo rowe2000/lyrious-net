@@ -118,6 +118,14 @@ public sealed class Group : Entity, IName
 	[DataMember] public Guid? CurrentPlayId { get; set; }
 	[DataMember] public Guid? CurrentSetlistItemId { get; set; }
 
+	/// <summary>
+	/// The band's current song when it's played from outside the current setlist (e.g. from the
+	/// songbook): its id, with no setlist item current. Null when the current song is the setlist's
+	/// (<see cref="CurrentSetlistItemId"/>), which wins when both are set (apps that don't know this
+	/// leave it as it was).
+	/// </summary>
+	[DataMember] public Guid? CurrentSongId { get; set; }
+
 	[JsonIgnore] public Setlist? CurrentSetlist { get; set; }
 	[JsonIgnore] public SetlistItem? CurrentSetlistItem { get; set; }
 	[JsonIgnore] public Play? CurrentPlay { get; set; }

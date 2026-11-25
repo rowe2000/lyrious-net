@@ -50,7 +50,8 @@ namespace Lyrious.UILib.Setlists
 		public const string Gap = "lyrics-gap";
 	}
 
-	public sealed record RenderedLyrics(Control Content, IReadOnlyList<TimeMarker> Markers);
+	/// <param name="Rows">Each line's row (its first, when it has more), with the line's number in the text (from 0), top to bottom; lines that show nothing aren't there.</param>
+	public sealed record RenderedLyrics(Control Content, IReadOnlyList<TimeMarker> Markers, IReadOnlyList<(Control Row, int Line)> Rows);
 
 	public static partial class ChordPro
 	{
@@ -208,195 +209,209 @@ namespace Lyrious.UILib.Setlists
 			var root = new StackPanel();
 			var current = root;
 			var inTab = false;
+			var rows = new List<(Control Row, int Line)>();
 
 			for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
 			{
-				var line = lines[lineIndex].TrimEnd();
-				var trimmed = line.Trim();
-
-				if (!inTab && HeadingLine().Match(trimmed) is { Success: true } heading)
+				// What this line adds to the panel it goes in: its first row is the line's (see Rows).
+				var into = current;
+				var rowsBefore = current.Children.Count;
+				try
 				{
-					var level = heading.Groups[1].Length;
-					var headingText = heading.Groups[2].Value;
+					var line = lines[lineIndex].TrimEnd();
+					var trimmed = line.Trim();
 
-					// Headings of other levels further on the line ("#Title ####tags"): side by side.
-					var parts = HeadingParts(level, headingText);
-					if (parts.Count > 1)
+					if (!inTab && HeadingLine().Match(trimmed) is { Success: true } heading)
 					{
-						var row = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, fontSize * 0.5, 0, fontSize * 0.2) };
-						foreach (var (partLevel, partText) in parts)
+						var level = heading.Groups[1].Length;
+						var headingText = heading.Groups[2].Value;
+
+						// Headings of other levels further on the line ("#Title ####tags"): side by side.
+						var parts = HeadingParts(level, headingText);
+						if (parts.Count > 1)
 						{
-							var part = BracketTag().Matches(partText).Any(tag => IsChord(tag.Groups[1].Value))
-								? HeadingStyle(ChordLine(partText, Math.Round(fontSize * HeadingScale(partLevel)), lineHeight * HeadingScale(partLevel), Resolve, markers, compact: true), partLevel, fontSize)
-								: (Control)Heading(partLevel, BracketTag().Replace(partText, "").Trim(), fontSize);
-							// In the row's room (not each its own), on the row's bottom, a space apart.
-							part.Margin = new Thickness(0, 0, fontSize * 0.5, 0);
-							part.VerticalAlignment = VerticalAlignment.Bottom;
-							row.Children.Add(part);
-						}
-
-						row.Classes.Add(LyricsClasses.Heading);
-						Mark(TimesOn(trimmed[..trimmed.IndexOf('#')]), row);
-						current.Children.Add(row);
-						continue;
-					}
-
-					headingText = parts.Count == 1 ? parts[0].Text : headingText;
-					if (BracketTag().Matches(headingText).Any(tag => IsChord(tag.Groups[1].Value)))
-					{
-						// Chords in the heading: over its words, as on a lyrics line, in the heading's size and colour.
-						// The time tags before the '#' come first (a '+' tag counts from the one before it).
-						var before = TimesOn(trimmed[..trimmed.IndexOf('#')]);
-						// Compact: when the heading wraps, its lines are as close as plain text's.
-						var row = HeadingStyle(ChordLine(headingText, Math.Round(fontSize * HeadingScale(level)), lineHeight * HeadingScale(level), Resolve, markers, compact: true), level, fontSize);
-						Mark(before, row);
-						current.Children.Add(row);
-						continue;
-					}
-
-					var headingBlock = Heading(level, BracketTag().Replace(headingText, "").Trim(), fontSize);
-					Mark(TimesOn(line), headingBlock);
-					current.Children.Add(headingBlock);
-					continue;
-				}
-
-				if (!inTab && LeadingTimeTags().Replace(trimmed, "").StartsWith('#'))
-				{
-					// Only '#'s (no heading after them, or more than six): nothing to show. A time tag
-					// before it still marks its place.
-					if (TimesOn(line) is { Count: > 0 } commentTimes)
-					{
-						var place = new Border { Height = 0 };
-						Mark(commentTimes, place);
-						current.Children.Add(place);
-					}
-
-					continue;
-				}
-
-				if (Directives(trimmed) is { } directives)
-				{
-					// Several on a line ("{c: Intro} {c: x2}"): their notes side by side, in the order
-					// written. A chorus or tab starting or ending among them does so where it's written.
-					var notes = new List<Control>();
-					void ShowNotes()
-					{
-						if (notes.Count == 1)
-						{
-							current.Children.Add(notes[0]);
-						}
-						else if (notes.Count > 1)
-						{
-							var row = new WrapPanel { Orientation = Orientation.Horizontal };
-							foreach (var note in notes)
+							var row = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, fontSize * 0.5, 0, fontSize * 0.2) };
+							foreach (var (partLevel, partText) in parts)
 							{
-								note.Margin = new Thickness(0, 4, fontSize * 0.6, 4);
-								note.VerticalAlignment = VerticalAlignment.Bottom;
-								row.Children.Add(note);
+								var part = BracketTag().Matches(partText).Any(tag => IsChord(tag.Groups[1].Value))
+									? HeadingStyle(ChordLine(partText, Math.Round(fontSize * HeadingScale(partLevel)), lineHeight * HeadingScale(partLevel), Resolve, markers, compact: true), partLevel, fontSize)
+									: (Control)Heading(partLevel, BracketTag().Replace(partText, "").Trim(), fontSize);
+								// In the row's room (not each its own), on the row's bottom, a space apart.
+								part.Margin = new Thickness(0, 0, fontSize * 0.5, 0);
+								part.VerticalAlignment = VerticalAlignment.Bottom;
+								row.Children.Add(part);
 							}
 
+							row.Classes.Add(LyricsClasses.Heading);
+							Mark(TimesOn(trimmed[..trimmed.IndexOf('#')]), row);
 							current.Children.Add(row);
+							continue;
 						}
 
-						notes.Clear();
+						headingText = parts.Count == 1 ? parts[0].Text : headingText;
+						if (BracketTag().Matches(headingText).Any(tag => IsChord(tag.Groups[1].Value)))
+						{
+							// Chords in the heading: over its words, as on a lyrics line, in the heading's size and colour.
+							// The time tags before the '#' come first (a '+' tag counts from the one before it).
+							var before = TimesOn(trimmed[..trimmed.IndexOf('#')]);
+							// Compact: when the heading wraps, its lines are as close as plain text's.
+							var row = HeadingStyle(ChordLine(headingText, Math.Round(fontSize * HeadingScale(level)), lineHeight * HeadingScale(level), Resolve, markers, compact: true), level, fontSize);
+							Mark(before, row);
+							current.Children.Add(row);
+							continue;
+						}
+
+						var headingBlock = Heading(level, BracketTag().Replace(headingText, "").Trim(), fontSize);
+						Mark(TimesOn(line), headingBlock);
+						current.Children.Add(headingBlock);
+						continue;
 					}
 
-					foreach (var (name, value) in directives)
+					if (!inTab && LeadingTimeTags().Replace(trimmed, "").StartsWith('#'))
 					{
-						if (name is "start_of_chorus" or "soc" or "end_of_chorus" or "eoc" or "start_of_tab" or "sot" or "end_of_tab" or "eot")
+						// Only '#'s (no heading after them, or more than six): nothing to show. A time tag
+						// before it still marks its place.
+						if (TimesOn(line) is { Count: > 0 } commentTimes)
 						{
-							ShowNotes();
+							var place = new Border { Height = 0 };
+							Mark(commentTimes, place);
+							current.Children.Add(place);
 						}
 
-						switch (name)
+						continue;
+					}
+
+					if (Directives(trimmed) is { } directives)
+					{
+						// Several on a line ("{c: Intro} {c: x2}"): their notes side by side, in the order
+						// written. A chorus or tab starting or ending among them does so where it's written.
+						var notes = new List<Control>();
+						void ShowNotes()
 						{
-							case "start_of_chorus" or "soc":
-								current = new StackPanel();
-								var chorus = new Border
+							if (notes.Count == 1)
+							{
+								current.Children.Add(notes[0]);
+							}
+							else if (notes.Count > 1)
+							{
+								var row = new WrapPanel { Orientation = Orientation.Horizontal };
+								foreach (var note in notes)
 								{
-									BorderThickness = new Thickness(3, 0, 0, 0),
-									Padding = new Thickness(16, 0, 0, 0),
-									Margin = new Thickness(0, 4),
-									Child = current,
-								};
-								chorus.Bind(Border.BorderBrushProperty, chorus.GetResourceObservable(LyriousTheme.ChordBrush));
-								root.Children.Add(chorus);
-								break;
-							case "end_of_chorus" or "eoc":
-								current = root;
-								break;
-							case "start_of_tab" or "sot":
-								inTab = true;
-								break;
-							case "end_of_tab" or "eot":
-								inTab = false;
-								break;
-							case "comment" or "c" or "comment_italic" or "ci" or "comment_box" or "cb" or "highlight":
-								notes.Add(Note(value, fontSize));
-								break;
-							case "chorus":
-								notes.Add(Note(value.Length > 0 ? value : "Chorus", fontSize));
-								break;
-							case "capo":
-								notes.Add(Note($"Capo {value}", fontSize));
-								break;
+									note.Margin = new Thickness(0, 4, fontSize * 0.6, 4);
+									note.VerticalAlignment = VerticalAlignment.Bottom;
+									row.Children.Add(note);
+								}
+
+								current.Children.Add(row);
+							}
+
+							notes.Clear();
+						}
+
+						foreach (var (name, value) in directives)
+						{
+							if (name is "start_of_chorus" or "soc" or "end_of_chorus" or "eoc" or "start_of_tab" or "sot" or "end_of_tab" or "eot")
+							{
+								ShowNotes();
+							}
+
+							switch (name)
+							{
+								case "start_of_chorus" or "soc":
+									current = new StackPanel();
+									var chorus = new Border
+									{
+										BorderThickness = new Thickness(3, 0, 0, 0),
+										Padding = new Thickness(16, 0, 0, 0),
+										Margin = new Thickness(0, 4),
+										Child = current,
+									};
+									chorus.Bind(Border.BorderBrushProperty, chorus.GetResourceObservable(LyriousTheme.ChordBrush));
+									root.Children.Add(chorus);
+									break;
+								case "end_of_chorus" or "eoc":
+									current = root;
+									break;
+								case "start_of_tab" or "sot":
+									inTab = true;
+									break;
+								case "end_of_tab" or "eot":
+									inTab = false;
+									break;
+								case "comment" or "c" or "comment_italic" or "ci" or "comment_box" or "cb" or "highlight":
+									notes.Add(Note(value, fontSize));
+									break;
+								case "chorus":
+									notes.Add(Note(value.Length > 0 ? value : "Chorus", fontSize));
+									break;
+								case "capo":
+									notes.Add(Note($"Capo {value}", fontSize));
+									break;
+							}
+						}
+
+						ShowNotes();
+						continue;
+					}
+
+					if (inTab)
+					{
+						current.Children.Add(new TextBlock { Text = line.Length > 0 ? line : " ", FontFamily = new FontFamily("Menlo, Consolas, Courier New, monospace"), FontSize = fontSize * 0.7 });
+					}
+					else if (trimmed.Length == 0)
+					{
+						current.Children.Add(new Border { Height = lineHeight * 0.6, Classes = { LyricsClasses.Gap } });
+					}
+					else if (chordGrid && (barLines[lineIndex] || BracketTag().Matches(line).Any(tag => IsChord(tag.Groups[1].Value))))
+					{
+						// The chords in their columns, the line's words below them; the time tags mark the row.
+						var row = GridRow(GridCells(line, barLines[lineIndex]), gridColumns, fontSize);
+						Mark(TimesOn(line), row);
+						current.Children.Add(row);
+						// Without its tags (and the spaces the bar marks leave doubled).
+						var words = Regex.Replace(BracketTag().Replace(line, ""), @"[ \t]{2,}", " ").Trim();
+						if (words.Length > 0)
+						{
+							var block = new TextBlock { FontSize = fontSize, LineHeight = lineHeight, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
+							SetStyledText(block, words, Emphasis(words), 0, words.Length);
+							current.Children.Add(block);
 						}
 					}
-
-					ShowNotes();
-					continue;
-				}
-
-				if (inTab)
-				{
-					current.Children.Add(new TextBlock { Text = line.Length > 0 ? line : " ", FontFamily = new FontFamily("Menlo, Consolas, Courier New, monospace"), FontSize = fontSize * 0.7 });
-				}
-				else if (trimmed.Length == 0)
-				{
-					current.Children.Add(new Border { Height = lineHeight * 0.6, Classes = { LyricsClasses.Gap } });
-				}
-				else if (chordGrid && (barLines[lineIndex] || BracketTag().Matches(line).Any(tag => IsChord(tag.Groups[1].Value))))
-				{
-					// The chords in their columns, the line's words below them; the time tags mark the row.
-					var row = GridRow(GridCells(line, barLines[lineIndex]), gridColumns, fontSize);
-					Mark(TimesOn(line), row);
-					current.Children.Add(row);
-					// Without its tags (and the spaces the bar marks leave doubled).
-					var words = Regex.Replace(BracketTag().Replace(line, ""), @"[ \t]{2,}", " ").Trim();
-					if (words.Length > 0)
+					else if (BracketTag().Matches(line).Any(tag => IsChord(tag.Groups[1].Value)))
 					{
-						var block = new TextBlock { FontSize = fontSize, LineHeight = lineHeight, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
-						SetStyledText(block, words, Emphasis(words), 0, words.Length);
-						current.Children.Add(block);
+						current.Children.Add(ChordLine(line, fontSize, lineHeight, Resolve, markers));
+					}
+					else
+					{
+						// No chords; other programs' tags (if any) are left out. A line of only time tags
+						// still marks its place, with an empty line.
+						var words = BracketTag().Replace(line, "");
+						var times = TimesOn(line);
+						if (words.Trim().Length > 0)
+						{
+							var block = new TextBlock { FontSize = fontSize, LineHeight = lineHeight, TextWrapping = TextWrapping.Wrap };
+							SetStyledText(block, words, Emphasis(words), 0, words.Length);
+							Mark(times, block);
+							current.Children.Add(block);
+						}
+						else if (times.Count > 0)
+						{
+							var place = new Border { Height = 0 };
+							Mark(times, place);
+							current.Children.Add(place);
+						}
 					}
 				}
-				else if (BracketTag().Matches(line).Any(tag => IsChord(tag.Groups[1].Value)))
+				finally
 				{
-					current.Children.Add(ChordLine(line, fontSize, lineHeight, Resolve, markers));
-				}
-				else
-				{
-					// No chords; other programs' tags (if any) are left out. A line of only time tags
-					// still marks its place, with an empty line.
-					var words = BracketTag().Replace(line, "");
-					var times = TimesOn(line);
-					if (words.Trim().Length > 0)
+					if (ReferenceEquals(into, current) && current.Children.Count > rowsBefore)
 					{
-						var block = new TextBlock { FontSize = fontSize, LineHeight = lineHeight, TextWrapping = TextWrapping.Wrap };
-						SetStyledText(block, words, Emphasis(words), 0, words.Length);
-						Mark(times, block);
-						current.Children.Add(block);
-					}
-					else if (times.Count > 0)
-					{
-						var place = new Border { Height = 0 };
-						Mark(times, place);
-						current.Children.Add(place);
+						rows.Add((current.Children[rowsBefore], lineIndex));
 					}
 				}
 			}
 
-			return new RenderedLyrics(root, markers);
+			return new RenderedLyrics(root, markers, rows);
 		}
 
 		/// <summary>
@@ -828,6 +843,142 @@ namespace Lyrious.UILib.Setlists
 		/// block ({sot} … {eot}, where it's part of the tab), on a {directive} line, and inside a
 		/// bracket tag.
 		/// </summary>
+		/// <summary>The bar marks between <paramref name="start"/> and <paramref name="end"/> (all of them when that's empty): how many are relative ("[+4]") and how many absolute ("[12]").</summary>
+		public static (int Relative, int Absolute) CountBarMarks(string text, int start, int end)
+		{
+			var (relative, absolute) = (0, 0);
+			foreach (var mark in Marks(text))
+			{
+				if (mark.IsBars && Within(mark, start, end))
+				{
+					if (mark.Relative)
+					{
+						relative++;
+					}
+					else
+					{
+						absolute++;
+					}
+				}
+			}
+
+			return (relative, absolute);
+		}
+
+		/// <summary>
+		/// The text with its bar marks between <paramref name="start"/> and <paramref name="end"/> (all of
+		/// them when that's empty) made relative ("[+4]": bars after the time mark before it) or absolute
+		/// ("[12]": bar 12 from the song's start), each standing for the same place as before. Where they
+		/// are is counted along the whole song: time marks ("[1:23]", with the tempo and beats per bar)
+		/// and bar lines ("|", one bar each; the first is bar 1) count, but stay as they are, and so does a
+		/// mark that wouldn't come out a whole number of bars (after a time mark between bars).
+		/// </summary>
+		public static string FlipBarMarks(string text, int start, int end, bool toRelative, double tempo, int beatsPerBar)
+		{
+			var barSeconds = tempo > 0 ? 60.0 / tempo * Math.Max(1, beatsPerBar) : 0;
+			var changes = new List<(int At, int Length, string Text)>();
+			// Where the last time mark (or bar line) is, in bars from the song's start; null before the first.
+			double? previous = null;
+			foreach (var mark in Marks(text))
+			{
+				double? place;
+				if (mark.IsBarLine)
+				{
+					place = previous is { } before ? before + 1 : 0;
+				}
+				else if (mark.IsBars)
+				{
+					place = mark.Relative ? (previous ?? 0) + mark.Bars : Math.Max(0, mark.Bars - 1);
+					if (Within(mark, start, end) && mark.Relative != toRelative)
+					{
+						var replaced = toRelative ? place.Value - (previous ?? 0) : place.Value + 1;
+						if (Math.Abs(replaced - Math.Round(replaced)) < 1e-6 && replaced >= 0)
+						{
+							changes.Add((mark.At, mark.Length, toRelative ? $"[+{Math.Round(replaced)}]" : $"[{Math.Round(replaced)}]"));
+						}
+					}
+				}
+				else
+				{
+					// A time ("[1:23]", "[+0:08]"): in bars at the tempo (unknown without one).
+					place = barSeconds > 0 && TimeOf(mark.Tag, tempo, beatsPerBar, previous is { } before2 ? TimeSpan.FromSeconds(before2 * barSeconds) : null) is { } time
+						? time.TotalSeconds / barSeconds
+						: null;
+				}
+
+				previous = place ?? previous;
+			}
+
+			var result = new System.Text.StringBuilder(text);
+			foreach (var (at, length, replacement) in changes.OrderByDescending(change => change.At))
+			{
+				result.Remove(at, length).Insert(at, replacement);
+			}
+
+			return result.ToString();
+		}
+
+		/// <summary>A time mark ("[1:23]", "[12]", "[+4]") or a bar line ("|") in the text, where it is and what it is.</summary>
+		private sealed record Mark(int At, int Length, string Tag, bool IsBarLine)
+		{
+			public bool Relative => Tag.StartsWith('+');
+
+			/// <summary>Whether it counts bars ("[12]", "[+4]"), not a time.</summary>
+			public bool IsBars => !IsBarLine && !Tag.Contains(':') && int.TryParse(Tag.TrimStart('+'), out _);
+
+			public int Bars => int.TryParse(Tag.TrimStart('+'), out var bars) ? bars : 0;
+		}
+
+		/// <summary>Whether a mark lies between two places in the text (anywhere when they're the same).</summary>
+		private static bool Within(Mark mark, int start, int end)
+			=> start == end || (mark.At >= Math.Min(start, end) && mark.At + mark.Length <= Math.Max(start, end));
+
+		/// <summary>The text's time marks and bar lines, in order (not inside tab blocks; a '|' inside a tag isn't a bar line).</summary>
+		private static IEnumerable<Mark> Marks(string text)
+		{
+			var inTab = false;
+			var lineStart = 0;
+			while (lineStart <= text.Length)
+			{
+				var lineEnd = text.IndexOf('\n', lineStart);
+				if (lineEnd < 0)
+				{
+					lineEnd = text.Length;
+				}
+
+				var line = text[lineStart..lineEnd].TrimEnd('\r');
+				if (Directives(line) is { } directives)
+				{
+					foreach (var (name, _) in directives)
+					{
+						inTab = name is "start_of_tab" or "sot" || (inTab && name is not ("end_of_tab" or "eot"));
+					}
+				}
+				else if (!inTab)
+				{
+					for (var at = 0; at < line.Length; at++)
+					{
+						if (line[at] == '[' && line.IndexOf(']', at) is var close and >= 0)
+						{
+							var tag = line[(at + 1)..close];
+							if (IsTimeTag(tag))
+							{
+								yield return new Mark(lineStart + at, close - at + 1, tag.Trim(), false);
+							}
+
+							at = close;
+						}
+						else if (line[at] == '|')
+						{
+							yield return new Mark(lineStart + at, 1, "|", true);
+						}
+					}
+				}
+
+				lineStart = lineEnd + 1;
+			}
+		}
+
 		private static string ExpandBarMarks(string text)
 		{
 			if (!text.Contains('|'))

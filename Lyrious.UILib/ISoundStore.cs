@@ -70,6 +70,12 @@ namespace Lyrious.UILib
 		void Seek(TimeSpan position)
 		{
 		}
+
+		/// <summary>
+		/// How loud the sound is over time (decoded here), for its waveform and finding its tempo; null
+		/// when it isn't on this device or can't be decoded here.
+		/// </summary>
+		Task<SoundWave?> ReadWaveAsync(string id) => Task.FromResult<SoundWave?>(null);
 	}
 
 	/// <summary>A sound kept on this device: its id (see <see cref="Setlists.SoundFile"/>) and its size in bytes.</summary>

@@ -12,14 +12,18 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>Where a song's media link goes: a site, or a sound file kept on the device.</summary>
 	public enum MediaSite { Other, Spotify, YouTube, Sound }
 
-	/// <summary>A sound file on the device (see <see cref="ISoundStore"/>): its id there, and its file name as it was added.</summary>
-	public sealed record SoundFile(string Id, string Name);
+	/// <summary>
+	/// A sound file on the device (see <see cref="ISoundStore"/>): its id there, its file name as it was
+	/// added, and where in it the song starts and stops (seconds from its start; null for its start and
+	/// its end), set in the waveform view (see <see cref="WaveformView"/>).
+	/// </summary>
+	public sealed record SoundFile(string Id, string Name, double? Start = null, double? Stop = null);
 
 	/// <summary>
 	/// A song's media link (a recording to listen to or watch): which site it's on, its icon, and
 	/// searches on Spotify and YouTube for a song.
 	/// </summary>
-	public static class MediaLinks
+	public static partial class MediaLinks
 	{
 		// Line drawings in a 24 × 24 box, like the app's other icons.
 		private const string NoteIcon = "M9,18 V5 L19,3 V16 M9,18 A3,3 0 1 1 3,18 A3,3 0 1 1 9,18 M19,16 A3,3 0 1 1 13,16 A3,3 0 1 1 19,16";
@@ -41,13 +45,25 @@ namespace Lyrious.UILib.Setlists
 
 		public static bool IsSoundFile(string fileName) => Array.Exists(SoundExtensions, extension => fileName.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
 
-		/// <summary>The media link of a sound file kept on the device, at most <paramref name="maxLength"/> long.</summary>
+		/// <summary>
+		/// The media link of a sound file kept on the device, at most <paramref name="maxLength"/> long (the
+		/// name shortened if need be): "sound:id/name", and where the song starts and stops in it, as a
+		/// media fragment ("#t=12.5,245" in seconds; one left out is the sound's start or end).
+		/// </summary>
 		public static string SoundLink(SoundFile sound, int maxLength)
 		{
+			string Seconds(double? value) => value is { } seconds ? Math.Round(seconds, 2).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "";
+			var times = sound.Start is > 0 || sound.Stop != null ? $"#t={Seconds(sound.Start is > 0 ? sound.Start : null)},{Seconds(sound.Stop)}" : "";
 			// One link per line (see Split): a line break in the name would split it.
-			var link = $"{SoundPrefix}{sound.Id}/{sound.Name.ReplaceLineEndings(" ")}";
-			return link.Length > maxLength ? link[..maxLength] : link;
+			var start = $"{SoundPrefix}{sound.Id}/";
+			var name = sound.Name.ReplaceLineEndings(" ");
+			var room = Math.Max(0, maxLength - start.Length - times.Length);
+			return start + (name.Length > room ? name[..room] : name) + times;
 		}
+
+		// A sound link's start and stop at its end: "#t=12.5,245", either part left out.
+		[System.Text.RegularExpressions.GeneratedRegex(@"#t=(?<start>\d+(?:\.\d+)?)?,(?<stop>\d+(?:\.\d+)?)?$")]
+		private static partial System.Text.RegularExpressions.Regex SoundTimes();
 
 		/// <summary>
 		/// A song's media links: its media link field holds one per line (a Spotify or YouTube link, a
@@ -122,9 +138,19 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var rest = text[SoundPrefix.Length..];
+			double? start = null, stop = null;
+			if (SoundTimes().Match(rest) is { Success: true } times)
+			{
+				static double? Seconds(System.Text.RegularExpressions.Group group)
+					=> group.Success ? double.Parse(group.Value, System.Globalization.CultureInfo.InvariantCulture) : null;
+				start = Seconds(times.Groups["start"]);
+				stop = Seconds(times.Groups["stop"]);
+				rest = rest[..times.Index];
+			}
+
 			var slash = rest.IndexOf('/');
 			var id = slash < 0 ? rest : rest[..slash];
-			return id.Length == 0 ? null : new SoundFile(id, slash < 0 ? id : rest[(slash + 1)..]);
+			return id.Length == 0 ? null : new SoundFile(id, slash < 0 ? id : rest[(slash + 1)..], start, stop);
 		}
 
 		/// <summary>A new id for a sound file: unique, with the file's extension (so a player knows what it is).</summary>

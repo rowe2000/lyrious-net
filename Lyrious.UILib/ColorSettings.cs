@@ -19,7 +19,8 @@ namespace Lyrious.UILib
 		public static Color? Highlight
 		{
 			get => Read(SettingKeys.HighlightColor);
-			set => Write(SettingKeys.HighlightColor, value);
+			// The default purple picked by hand is the default: nothing kept.
+			set => Write(SettingKeys.HighlightColor, value == DefaultHighlight ? null : value);
 		}
 
 		/// <summary>Chords above the lyrics, and the bar beside a chorus. Null for the theme's (yellow in the dark theme, blue in the light one).</summary>
@@ -78,10 +79,14 @@ namespace Lyrious.UILib
 			}
 
 			// The text and icons on the highlight (highlighted buttons, the current row, checked toggles):
-			// black on a light fill, white on a dark one, as each theme fills with it (the light theme with
-			// Dark1, the dark theme with Light2). So they can be read whatever highlight was chosen.
-			SetOnHighlight(resources, Avalonia.Styling.ThemeVariant.Light, Shade(highlight, -0.2));
-			SetOnHighlight(resources, Avalonia.Styling.ThemeVariant.Dark, Shade(highlight, 0.4));
+			// black on a light fill, white on a dark one. So they can be read whatever highlight was chosen.
+			SetOnHighlight(resources, Avalonia.Styling.ThemeVariant.Light, highlight);
+			SetOnHighlight(resources, Avalonia.Styling.ThemeVariant.Dark, highlight);
+
+			// Highlighted buttons and checked toggles are the highlight itself (in both themes); pointed at
+			// and pressed, a step (and two) darker in the dark theme, lighter in the light one.
+			SetHighlightFill(resources, Avalonia.Styling.ThemeVariant.Light, highlight, Shade(highlight, 0.15), Shade(highlight, 0.3));
+			SetHighlightFill(resources, Avalonia.Styling.ThemeVariant.Dark, highlight, Shade(highlight, -0.15), Shade(highlight, -0.3));
 
 			// Top-level entries win over the light/dark ones in LyriousTheme.
 			SetBrush(resources, LyriousTheme.SelectionBrush, Highlight);
@@ -97,6 +102,36 @@ namespace Lyrious.UILib
 			"AccentButtonForeground", "AccentButtonForegroundPointerOver", "AccentButtonForegroundPressed",
 			"ToggleButtonForegroundChecked", "ToggleButtonForegroundCheckedPointerOver", "ToggleButtonForegroundCheckedPressed",
 		];
+
+		/// <summary>
+		/// The theme's fills of the highlight (highlighted buttons, checked toggles): as they are, pointed at
+		/// and pressed (see <see cref="Apply"/>).
+		/// </summary>
+		private static void SetHighlightFill(Avalonia.Controls.IResourceDictionary resources, Avalonia.Styling.ThemeVariant theme, Color normal, Color pointedAt, Color pressed)
+		{
+			var dictionary = ThemeDictionary(resources, theme);
+			foreach (var (state, color) in new[] { ("", normal), ("PointerOver", pointedAt), ("Pressed", pressed) })
+			{
+				var brush = new SolidColorBrush(color);
+				dictionary["AccentButtonBackground" + state] = brush;
+				dictionary["AccentButtonBorderBrush" + state] = brush;
+				dictionary["ToggleButtonBackgroundChecked" + state] = brush;
+				dictionary["ToggleButtonBorderBrushChecked" + state] = brush;
+			}
+		}
+
+		/// <summary>The app's resources for one theme (made the first time).</summary>
+		private static Avalonia.Controls.IResourceDictionary ThemeDictionary(Avalonia.Controls.IResourceDictionary resources, Avalonia.Styling.ThemeVariant theme)
+		{
+			if (!resources.ThemeDictionaries.TryGetValue(theme, out var provider) || provider is not Avalonia.Controls.IResourceDictionary dictionary)
+			{
+				var created = new Avalonia.Controls.ResourceDictionary();
+				resources.ThemeDictionaries[theme] = created;
+				dictionary = created;
+			}
+
+			return dictionary;
+		}
 
 		/// <summary>The theme's colour for text and icons on a fill of the highlight: black or white, whichever reads better.</summary>
 		private static void SetOnHighlight(Avalonia.Controls.IResourceDictionary resources, Avalonia.Styling.ThemeVariant theme, Color fill)
