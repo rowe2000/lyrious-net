@@ -292,12 +292,15 @@ namespace Lyrious.UILib.Setlists
 				},
 			};
 
+			// The name and status, or the box to change the name in while it's edited (see EditButton).
+			var infoHost = new ContentControl { Content = info, VerticalAlignment = VerticalAlignment.Center };
+
 			var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
 			if (isAdmin)
 			{
 				// The pencil: another member's name (their own isn't an admin's matter).
 				// (A gap of its size for the member themselves, so the role boxes line up.)
-				Control edit = member.IsMe ? new Border { Width = 32 } : EditButton(group, member);
+				Control edit = member.IsMe ? new Border { Width = 32 } : EditButton(group, member, infoHost, info);
 				tools.Children.Add(edit);
 
 				var role = new ComboBox { Width = 130, VerticalAlignment = VerticalAlignment.Center, IsEnabled = !lastAdmin };
@@ -355,47 +358,83 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			DockPanel.SetDock(tools, Dock.Right);
-			return new DockPanel { Children = { tools, info } };
+			return new DockPanel { Children = { tools, infoHost } };
 		}
 
-		/// <summary>A pencil that opens a small popup to change the member's name: a box with ✓ (or Enter) and ✕.</summary>
-		private Button EditButton(GroupSummary group, GroupMember member)
+		/// <summary>
+		/// A pencil that changes the member's name in place: a box with their name takes the place of
+		/// the name, status and last login, with ✓ in it once the name is changed (or Enter). Everything
+		/// else on the page is disabled meanwhile; a click outside the box, or Escape, cancels.
+		/// </summary>
+		/// <param name="infoHost">Where the name and status show, and the box while editing.</param>
+		/// <param name="info">The name and status, shown again when editing ends.</param>
+		private Button EditButton(GroupSummary group, GroupMember member, ContentControl infoHost, Control info)
 		{
-			var button = PageLayout.EditButton(L.T("Edit {0}", member.Name), () => { });
-			var nameBox = new TextBox { Text = member.Name, PlaceholderText = L.T("Name"), MaxLength = 100, MinWidth = 220 };
+			Button? button = null;
+			button = PageLayout.EditButton(L.T("Edit {0}", member.Name), () => EditName(group, member, infoHost, info, button!));
+			return button;
+		}
+
+		/// <summary>Shows the box to change <paramref name="member"/>'s name in <paramref name="infoHost"/> (see <see cref="EditButton"/>).</summary>
+		/// <param name="pencil">The pencil that started it: out of sight while editing (its room kept, so the role box stays put).</param>
+		private void EditName(GroupSummary group, GroupMember member, ContentControl infoHost, Control info, Control pencil)
+		{
+			pencil.Opacity = 0;
+			var nameBox = new TextBox { Text = member.Name, PlaceholderText = L.T("Name"), MaxLength = 100, VerticalAlignment = VerticalAlignment.Center };
 			// The ✓ in the box, once the name is changed.
 			var save = PageLayout.OkButton(L.T("Save the name"));
 			PageLayout.OkInBox(nameBox, save, () => !string.IsNullOrWhiteSpace(nameBox.Text) && nameBox.Text.Trim() != member.Name);
-			// The ✕ beside the box.
-			var cancel = PageLayout.CancelButton(L.T("Cancel"));
-			cancel.Margin = new Thickness(4, 0, 0, 0);
-			DockPanel.SetDock(cancel, Dock.Right);
-			var flyout = new Flyout
-			{
-				Content = new StackPanel
-				{
-					Spacing = 12,
-					MaxWidth = 280,
-					Children =
-					{
-						new TextBlock { Text = L.T("Name"), FontSize = 13, Opacity = 0.75 },
-						new DockPanel { Children = { cancel, nameBox } },
-					},
-				},
-			};
 
-			void Save()
+			// Everything else on the page is disabled (not hidden) while editing: the siblings of the box
+			// and of each panel it's in, up to the page. Those already disabled stay so afterwards.
+			var disabled = new List<Control>();
+			for (Control? at = infoHost; at != null && at != this; at = at.Parent as Control)
 			{
-				var name = nameBox.Text?.Trim() ?? string.Empty;
-				if (name.Length == 0)
+				if (at.Parent is Panel panel)
+				{
+					foreach (var sibling in panel.Children)
+					{
+						if (sibling != at && sibling.IsEnabled)
+						{
+							sibling.IsEnabled = false;
+							disabled.Add(sibling);
+						}
+					}
+				}
+			}
+
+			var top = TopLevel.GetTopLevel(this);
+			var done = false;
+
+			void Finish(bool keep)
+			{
+				if (done)
 				{
 					return;
 				}
 
-				flyout.Hide();
-				if (name != member.Name)
+				done = true;
+				top?.RemoveHandler(PointerPressedEvent, OnPressed);
+				foreach (var control in disabled)
+				{
+					control.IsEnabled = true;
+				}
+
+				infoHost.Content = info;
+				pencil.Opacity = 1;
+				var name = nameBox.Text?.Trim() ?? string.Empty;
+				if (keep && name.Length > 0 && name != member.Name)
 				{
 					MemberRenameRequested?.Invoke(group, member, name);
+				}
+			}
+
+			// A press anywhere but in the box (its ✓ included) cancels.
+			void OnPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+			{
+				if (e.Source is not Visual pressed || (pressed != nameBox && !Avalonia.VisualTree.VisualExtensions.IsVisualAncestorOf(nameBox, pressed)))
+				{
+					Finish(keep: false);
 				}
 			}
 
@@ -404,20 +443,25 @@ namespace Lyrious.UILib.Setlists
 				if (e.Key == Avalonia.Input.Key.Enter)
 				{
 					e.Handled = true;
-					Save();
+					Finish(keep: true);
+				}
+				else if (e.Key == Avalonia.Input.Key.Escape)
+				{
+					e.Handled = true;
+					Finish(keep: false);
 				}
 			};
-			save.Click += (_, _) => Save();
-			cancel.Click += (_, _) => flyout.Hide();
-			// Opened again after a cancel: the name as it is.
-			flyout.Opened += (_, _) =>
+			save.Click += (_, _) => Finish(keep: true);
+			// The page shown anew (or closed) meanwhile: only the watch on presses is left to remove.
+			nameBox.DetachedFromVisualTree += (_, _) => Finish(keep: false);
+
+			infoHost.Content = nameBox;
+			top?.AddHandler(PointerPressedEvent, OnPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+			Avalonia.Threading.Dispatcher.UIThread.Post(() =>
 			{
-				nameBox.Text = member.Name;
 				nameBox.Focus();
 				nameBox.SelectAll();
-			};
-			button.Flyout = flyout;
-			return button;
+			});
 		}
 
 		/// <summary>✕ that asks first, then removes the member from the band.</summary>

@@ -2,7 +2,9 @@
 <html lang="en">
 <!--
   The product site at the root of the server (www.lyrious.se): what Lyrious is, with links to log in
-  to the web app at /app/ (see Lyrious.Api/Program.cs). One page, no scripts or outside files.
+  to the web app at /app/ (see Lyrious.Api/Program.cs). One page, no outside files. In English or
+  Swedish (the script at the end): the language chosen with the switch, else ?lang=sv or ?lang=en,
+  else the browser's.
 -->
 <head>
     <meta charset="UTF-8">
@@ -350,6 +352,8 @@
             <a class="link" href="#features">Features</a>
             <a class="link" href="#band">For the band</a>
             <a class="link" href="#get">Get Lyrious</a>
+            <!-- The other language (see the script at the end). -->
+            <a class="link" id="language" href="?lang=sv" hreflang="sv" lang="sv">Svenska</a>
             <a class="button" href="/app/">Log in</a>
         </nav>
     </div>
@@ -474,6 +478,95 @@
         <span><a href="/app/">Log in</a></span>
     </div>
 </footer>
+<script>
+    // The page in Swedish: each English text (and the image description, title and description) is
+    // looked up here by its words, as the app does (Lyrious.UILib/Localization/Swedish.cs).
+    (() => {
+        const swedish = {
+            "Lyrious – setlists, songbooks and lyrics for bands": "Lyrious – låtlistor, sångböcker och låttexter för band",
+            "Lyrious keeps your band's setlists, songbook and lyrics with chords in one place. The lyrics scroll in time with the song, and the whole band follows along live.": "Lyrious samlar bandets låtlistor, sångbok och texter med ackord på ett ställe. Texterna rullar i takt med låten, och hela bandet följer med live.",
+            "Features": "Funktioner",
+            "For the band": "För bandet",
+            "Get Lyrious": "Skaffa Lyrious",
+            "Log in": "Logga in",
+            "For bands, on stage and at rehearsal": "För band, på scen och på repet",
+            "Every song, every chord, the whole band in time.": "Varje låt, varje ackord, hela bandet i takt.",
+            "Lyrious keeps your band's setlists, songbook and lyrics with chords in one place. The lyrics scroll in time with the song, and everyone in the band follows along live, on their own screen.": "Lyrious samlar bandets låtlistor, sångbok och texter med ackord på ett ställe. Texterna rullar i takt med låten, och alla i bandet följer med live, på sin egen skärm.",
+            "Log in to Lyrious": "Logga in på Lyrious",
+            "See what it does": "Se vad den gör",
+            "Lyrious playing Amazing Grace: the lyrics and chords scroll by, with the next song in the toolbar below.": "Lyrious spelar Amazing Grace: texten och ackorden rullar förbi, med nästa låt i verktygsfältet nedanför.",
+            "Everything the band needs to play": "Allt bandet behöver för att spela",
+            "From the first rehearsal to the last encore: the songs, the order you play them in, and the lyrics and chords right in front of you.": "Från första repet till sista extranumret: låtarna, ordningen ni spelar dem i, och texterna och ackorden rakt framför dig.",
+            "Lyrics that scroll in time": "Texter som rullar i takt",
+            "Set the tempo and press play: the lyrics move at the pace of the song, so your hands stay on your instrument.": "Ställ in tempot och tryck på spela: texten rör sig i låtens takt, så att händerna stannar på instrumentet.",
+            "Setlists for every gig": "Låtlistor för varje spelning",
+            "Put songs in order for tonight's show, reuse them for the next, and step to the next song with one tap.": "Lägg låtarna i ordning för kvällens spelning, använd listan igen nästa gång och gå till nästa låt med ett tryck.",
+            "The band's songbook": "Bandets sångbok",
+            "All your songs, with lyrics, chords, key, tempo and tags. Import a SongbookPro backup to get started in minutes.": "Alla era låtar, med text, ackord, tonart, tempo och taggar. Importera en säkerhetskopia från SongbookPro och kom igång på några minuter.",
+            "Transpose and capo": "Transponering och capo",
+            "Change the key of any song for your voice, or show the chords with a capo. Your own settings, without changing the band's.": "Byt tonart på vilken låt som helst för din röst, eller visa ackorden med capo. Dina egna inställningar, utan att ändra bandets.",
+            "Play along with the record": "Spela med skivan",
+            "Link a song to its sound file, Spotify or YouTube, and the lyrics follow the music as it plays.": "Länka en låt till dess ljudfil, Spotify eller YouTube, så följer texten musiken medan den spelas.",
+            "Works offline": "Fungerar offline",
+            "No signal backstage? Lyrious keeps your songs on the device and syncs the changes when you're back online.": "Ingen täckning backstage? Lyrious sparar låtarna på enheten och synkar ändringarna när du är online igen.",
+            "Play together, live": "Spela tillsammans, live",
+            "When one of you picks the next song or presses play, everyone's screen follows. No more shouting song names across the stage.": "När någon av er väljer nästa låt eller trycker på spela följer allas skärmar med. Inget mer ropande av låtnamn över scenen.",
+            "Create your band": "Skapa ditt band",
+            "Make an account, start a band and invite the others by email.": "Skapa ett konto, starta ett band och bjud in de andra via e-post.",
+            "Fill the songbook": "Fyll sångboken",
+            "Write or paste lyrics with chords, or import the songs you already have.": "Skriv eller klistra in texter med ackord, eller importera låtarna ni redan har.",
+            "Build tonight's setlist": "Gör kvällens låtlista",
+            "Pick the songs and put them in order. Everyone in the band sees it at once.": "Välj låtarna och lägg dem i ordning. Alla i bandet ser den direkt.",
+            "Play": "Spela",
+            "Join the band and turn on band sync: the song, the scrolling and the next song stay the same for everyone.": "Gå med i bandet och slå på bandsynk: låten, rullningen och nästa låt är desamma för alla.",
+            "On the screens you already have": "På skärmarna du redan har",
+            "Use Lyrious right in your browser, on a laptop, tablet or phone, and install it as an app from there. Apps for phones, tablets and computers are coming.": "Använd Lyrious direkt i webbläsaren, på en laptop, surfplatta eller telefon, och installera den som app därifrån. Appar för telefoner, surfplattor och datorer är på väg.",
+            "Web browser": "Webbläsare",
+            "iPad and iPhone": "iPad och iPhone",
+            "Coming": "Kommer snart",
+            "Ready for the next gig?": "Redo för nästa spelning?",
+            "Log in, or create an account for your band. It takes a minute.": "Logga in, eller skapa ett konto för ditt band. Det tar en minut.",
+        };
+
+        // The language: chosen with the switch (kept in this browser), else ?lang=, else the browser's.
+        const asked = new URLSearchParams(location.search).get("lang");
+        let saved = null;
+        try {
+            if (asked === "sv" || asked === "en") localStorage.setItem("lyrious-site-language", asked);
+            saved = localStorage.getItem("lyrious-site-language");
+        } catch { /* no storage: from the address or the browser */ }
+        const chosen = asked === "sv" || asked === "en" ? asked : saved;
+        const browser = (navigator.languages && navigator.languages[0]) || navigator.language || "";
+        const inSwedish = chosen ? chosen === "sv" : /^sv\b/i.test(browser);
+
+        // The switch offers the other language.
+        const toggle = document.getElementById("language");
+        if (!inSwedish) return;
+        toggle.textContent = "English";
+        toggle.href = "?lang=en";
+        toggle.hreflang = toggle.lang = "en";
+
+        document.documentElement.lang = "sv";
+        const words = text => text.replace(/\s+/g, " ").trim();
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const key = words(node.nodeValue);
+            if (key && node.parentElement !== toggle && Object.hasOwn(swedish, key)) {
+                // Spaces around it stay (e.g. before "Coming").
+                node.nodeValue = node.nodeValue.replace(/\S[\s\S]*\S|\S/, swedish[key]);
+            }
+        }
+
+        for (const image of document.querySelectorAll("img[alt]")) {
+            const key = words(image.alt);
+            if (Object.hasOwn(swedish, key)) image.alt = swedish[key];
+        }
+
+        document.title = swedish[words(document.title)] ?? document.title;
+        const description = document.querySelector('meta[name="description"]');
+        if (description) description.content = swedish[words(description.content)] ?? description.content;
+    })();
+</script>
 </body>
 
 </html>

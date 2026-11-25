@@ -930,7 +930,26 @@ public sealed class HttpSetlistService : ISetlistService
 
         response.EnsureSuccessStatusCode();
         var member = await response.Content.ReadFromJsonAsync(ClientJsonContext.Default.MemberDto, cancellationToken);
+        if (member != null)
+        {
+            await KeepMemberAsync(member);
+        }
+
         return member == null ? null : new FoundMember(member.Id, !string.IsNullOrWhiteSpace(member.Name) ? member.Name : member.UserName ?? "", member.UserName ?? "");
+    }
+
+    /// <summary>
+    /// Keeps a member the server just told about (found to invite, or made) with the others, unless
+    /// they're known here already: so once invited, the band's list shows them by name at once, not as
+    /// "Unknown" until the server's live update about them arrives.
+    /// </summary>
+    private async Task KeepMemberAsync(MemberDto member)
+    {
+        var current = await CacheAsync();
+        if (current.Find("member", member.Id) == null)
+        {
+            current.Merge("member", [Node(member, ClientJsonContext.Default.MemberDto)]);
+        }
     }
 
     public async Task InviteMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default)
@@ -984,6 +1003,7 @@ public sealed class HttpSetlistService : ISetlistService
 
         var member = await response.Content.ReadFromJsonAsync(ClientJsonContext.Default.MemberDto, cancellationToken)
                      ?? throw new InvalidOperationException(L.T("The server sent an unexpected answer."));
+        await KeepMemberAsync(member);
         return new FoundMember(member.Id, !string.IsNullOrWhiteSpace(member.Name) ? member.Name : member.UserName ?? "", member.UserName ?? "");
     }
 
