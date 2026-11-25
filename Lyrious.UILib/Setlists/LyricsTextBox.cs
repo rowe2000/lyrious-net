@@ -13,7 +13,8 @@ namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
 	/// The lyrics editor's text box: as any text box, but its tags in brackets ("[G]", "[12]",
-	/// "[1:23]") show in a dimmed text colour, so the words stand out. A text box draws its text in one
+	/// "[1:23]") show in a dimmed text colour, so the words stand out, and a chord in one ("[Am7]") in
+	/// the chord colour (as the lyrics show chords; the brackets dimmed). A text box draws its text in one
 	/// colour only, so the text is drawn again over it, coloured, in the same place (in the text box's
 	/// own scrolling panel, wrapped the same way); the text box's own text is see-through, its caret and
 	/// selection as before. A click inside a tag selects what's in it (between the brackets), to type over.
@@ -32,6 +33,8 @@ namespace Lyrious.UILib.Setlists
 		{
 			TextChanged += (_, _) => ShowColored();
 			ActualThemeVariantChanged += (_, _) => ShowColored();
+			// The chord colour as the member chooses it (Settings › Colors) too.
+			this.GetResourceObservable(LyriousTheme.ChordBrush).Subscribe(new ResourceWatch(ShowColored));
 		}
 
 		protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
@@ -103,6 +106,7 @@ namespace Lyrious.UILib.Setlists
 				: Colors.White;
 			var words = new SolidColorBrush(color);
 			var tags = new SolidColorBrush(color, TagOpacity);
+			var chords = this.TryFindResource(LyriousTheme.ChordBrush, ActualThemeVariant, out var chord) && chord is IBrush chordBrush ? chordBrush : words;
 			var inlines = new InlineCollection();
 			var at = 0;
 			foreach (Match tag in Tag().Matches(text))
@@ -112,7 +116,18 @@ namespace Lyrious.UILib.Setlists
 					inlines.Add(new Run(text[at..tag.Index]) { Foreground = words });
 				}
 
-				inlines.Add(new Run(tag.Value) { Foreground = tags });
+				// A chord: its name in the chord colour, the brackets dimmed. Other tags (bars, times) dimmed.
+				var inside = tag.Value[1..^1];
+				if (ChordPro.IsChord(inside))
+				{
+					inlines.Add(new Run("[") { Foreground = tags });
+					inlines.Add(new Run(inside) { Foreground = chords });
+					inlines.Add(new Run("]") { Foreground = tags });
+				}
+				else
+				{
+					inlines.Add(new Run(tag.Value) { Foreground = tags });
+				}
 				at = tag.Index + tag.Length;
 			}
 
@@ -122,6 +137,20 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			colored.Inlines = inlines;
+		}
+
+		/// <summary>Calls back on each change of a resource (an observer of its value).</summary>
+		private sealed class ResourceWatch(Action changed) : IObserver<object?>
+		{
+			public void OnNext(object? value) => changed();
+
+			public void OnError(Exception error)
+			{
+			}
+
+			public void OnCompleted()
+			{
+			}
 		}
 
 		// A tag: from "[" to the next "]" on the same line.

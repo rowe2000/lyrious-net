@@ -19,6 +19,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when the user picks a song.</summary>
 		public event Action<SetlistEntry>? SongSelected;
 
+		/// <summary>Raised when a Spotify song's link is dropped on a song's row: the song and the link.</summary>
+		public event Action<SongDetails, string>? SpotifyLinkDropped;
+
 
 		/// <summary>Raised with the songs in their new order when the member moved one.</summary>
 		public event Action<IReadOnlyList<SetlistEntry>>? SongsMoved;
@@ -148,6 +151,7 @@ namespace Lyrious.UILib.Setlists
 					spacing: SongsView.SongListSpacing,
 					toolsBelow: true);
 				// The count follows the search: "12 of 47 songs" while it leaves some out.
+				list.SpotifyLinkDropped += (entry, link) => SpotifyLinkDropped?.Invoke(entry.Song, link);
 				search.Filtered = Dim;
 				search.Use(list, shown);
 				Dim();

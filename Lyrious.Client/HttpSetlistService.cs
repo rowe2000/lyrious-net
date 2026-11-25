@@ -1658,9 +1658,9 @@ public sealed class HttpSetlistService : ISetlistService
         foreach (var item in results.EnumerateArray())
         {
             // A free tab's page is on tabs.ultimate-guitar.com; the paid versions lead to a sales page.
-            if (UltimateGuitarValue(item, "song_name") is not { Length: > 0 } title
-                || UltimateGuitarValue(item, "type") is not { Length: > 0 } type
-                || !Uri.TryCreate(UltimateGuitarValue(item, "tab_url"), UriKind.Absolute, out var link)
+            if (JsonText(item, "song_name") is not { Length: > 0 } title
+                || JsonText(item, "type") is not { Length: > 0 } type
+                || !Uri.TryCreate(JsonText(item, "tab_url"), UriKind.Absolute, out var link)
                 || !link.Host.Equals("tabs.ultimate-guitar.com", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -1668,7 +1668,7 @@ public sealed class HttpSetlistService : ISetlistService
 
             double? rating = item.TryGetProperty("rating", out var r) && r.ValueKind == JsonValueKind.Number ? r.GetDouble() : null;
             var votes = item.TryGetProperty("votes", out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0;
-            found.Add(new UltimateGuitarSong(title.Trim(), UltimateGuitarValue(item, "artist_name")?.Trim() ?? "", type, link, rating, votes));
+            found.Add(new UltimateGuitarSong(title.Trim(), JsonText(item, "artist_name")?.Trim() ?? "", type, link, rating, votes));
         }
 
         return found;
@@ -1700,7 +1700,7 @@ public sealed class HttpSetlistService : ISetlistService
         var data = json.RootElement.GetProperty("store").GetProperty("page").GetProperty("data");
         if (!data.TryGetProperty("tab_view", out var view)
             || !view.TryGetProperty("wiki_tab", out var wiki)
-            || UltimateGuitarValue(wiki, "content") is not { Length: > 0 } content)
+            || JsonText(wiki, "content") is not { Length: > 0 } content)
         {
             throw new InvalidOperationException(L.T("This page on Ultimate Guitar has no chords or tab to show."));
         }
@@ -1708,14 +1708,82 @@ public sealed class HttpSetlistService : ISetlistService
         var tab = data.TryGetProperty("tab", out var t) ? t : default;
         var meta = view.TryGetProperty("meta", out var m) && m.ValueKind == JsonValueKind.Object ? m : default;
         var capo = meta.ValueKind == JsonValueKind.Object && meta.TryGetProperty("capo", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt32() : 0;
-        var key = (meta.ValueKind == JsonValueKind.Object ? UltimateGuitarValue(meta, "tonality") : null)
-                  ?? (tab.ValueKind == JsonValueKind.Object ? UltimateGuitarValue(tab, "tonality_name") : null) ?? "";
+        var key = (meta.ValueKind == JsonValueKind.Object ? JsonText(meta, "tonality") : null)
+                  ?? (tab.ValueKind == JsonValueKind.Object ? JsonText(tab, "tonality_name") : null) ?? "";
         return new UltimateGuitarTab(
-            (tab.ValueKind == JsonValueKind.Object ? UltimateGuitarValue(tab, "song_name") : null)?.Trim() ?? "",
-            (tab.ValueKind == JsonValueKind.Object ? UltimateGuitarValue(tab, "artist_name") : null)?.Trim() ?? "",
+            (tab.ValueKind == JsonValueKind.Object ? JsonText(tab, "song_name") : null)?.Trim() ?? "",
+            (tab.ValueKind == JsonValueKind.Object ? JsonText(tab, "artist_name") : null)?.Trim() ?? "",
             key.Trim(),
             capo,
             content);
+    }
+
+    /// <summary>Spotify's embed pages (the player shown on other sites), whose data has a playlist's or album's tracks.</summary>
+    private static readonly HttpClient Spotify = CreateSpotifyClient();
+
+    private static HttpClient CreateSpotifyClient()
+    {
+        var client = new HttpClient { BaseAddress = new Uri("https://open.spotify.com/"), Timeout = TimeSpan.FromSeconds(20) };
+        if (!OperatingSystem.IsBrowser())
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Lyrious/1.0");
+        }
+
+        return client;
+    }
+
+    /// <summary>
+    /// A Spotify playlist's or album's name and tracks, from its embed page: its data ("__NEXT_DATA__")
+    /// has the entity with its track list (title, artists, length, link). Needs an internet connection.
+    /// </summary>
+    public async Task<SpotifyCollection> GetSpotifyCollectionAsync(string kind, string id, CancellationToken cancellationToken = default)
+    {
+        if (OperatingSystem.IsBrowser())
+        {
+            throw new PlatformNotSupportedException(L.T("Spotify can't be read from a browser."));
+        }
+
+        using var response = await Spotify.GetAsync($"embed/{Uri.EscapeDataString(kind)}/{Uri.EscapeDataString(id)}", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(L.T("Spotify answered {0} {1}.", (int)response.StatusCode, response.ReasonPhrase), null, response.StatusCode);
+        }
+
+        var page = await response.Content.ReadAsStringAsync(cancellationToken);
+        var data = System.Text.RegularExpressions.Regex.Match(page, "<script id=\"__NEXT_DATA__\" type=\"application/json\">(.*?)</script>", System.Text.RegularExpressions.RegexOptions.Singleline);
+        if (!data.Success)
+        {
+            throw new InvalidOperationException(L.T("Spotify's page looks different than expected, so its songs can't be read."));
+        }
+
+        using var json = JsonDocument.Parse(data.Groups[1].Value);
+        if (!json.RootElement.TryGetProperty("props", out var props) || !props.TryGetProperty("pageProps", out var pageProps)
+            || !pageProps.TryGetProperty("state", out var state) || !state.TryGetProperty("data", out var stateData)
+            || !stateData.TryGetProperty("entity", out var entity))
+        {
+            throw new InvalidOperationException(L.T("Spotify's page looks different than expected, so its songs can't be read."));
+        }
+
+        var tracks = new List<SpotifyTrack>();
+        if (entity.TryGetProperty("trackList", out var list) && list.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var track in list.EnumerateArray())
+            {
+                if (JsonText(track, "title") is not { Length: > 0 } title)
+                {
+                    continue;
+                }
+
+                // "Artist, Other artist" (with non-breaking spaces after the commas).
+                var artist = (JsonText(track, "subtitle") ?? "").Replace('\u00A0', ' ').Trim();
+                var duration = track.TryGetProperty("duration", out var ms) && ms.ValueKind == JsonValueKind.Number ? TimeSpan.FromMilliseconds(ms.GetDouble()) : TimeSpan.Zero;
+                var uri = JsonText(track, "uri") ?? "";
+                var link = uri.StartsWith("spotify:track:", StringComparison.Ordinal) ? "https://open.spotify.com/track/" + uri["spotify:track:".Length..] : "";
+                tracks.Add(new SpotifyTrack(title.Trim(), artist, duration, link));
+            }
+        }
+
+        return new SpotifyCollection((JsonText(entity, "name") ?? JsonText(entity, "title") ?? "").Trim(), tracks);
     }
 
     /// <summary>
@@ -1743,8 +1811,8 @@ public sealed class HttpSetlistService : ISetlistService
         throw new InvalidOperationException(L.T("Ultimate Guitar's page looks different than expected, so it can't be read."));
     }
 
-    /// <summary>A text property of Ultimate Guitar's data; null when it's missing or not text.</summary>
-    private static string? UltimateGuitarValue(JsonElement item, string name)
+    /// <summary>A text property of a page's data (Ultimate Guitar's, Spotify's); null when it's missing or not text.</summary>
+    private static string? JsonText(JsonElement item, string name)
         => item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     // ---- Conversions ----

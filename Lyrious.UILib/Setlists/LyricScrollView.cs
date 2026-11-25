@@ -658,6 +658,31 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The song's name.</summary>
 		public string SongName => song.Name;
 
+		/// <summary>The song's artist (empty if not set).</summary>
+		public string SongArtist => song.Artist;
+
+		/// <summary>Raised when the globe beside "no lyrics yet" is pressed: to find the song's lyrics online (see <see cref="EditWithLyrics"/>).</summary>
+		public event Action? FindOnlineRequested;
+
+		/// <summary>
+		/// Puts <paramref name="lyrics"/> (e.g. found online) in the editor's lyrics box, opening the editor
+		/// unless it's open (then what else was typed there stays). The song's original and playing key
+		/// become the key of their first chord (when they have chords), and they're saved as they are, in
+		/// that key; all only with Save.
+		/// </summary>
+		public void EditWithLyrics(string lyrics)
+		{
+			if (!IsEditing || bringIntoEditor == null)
+			{
+				ShowEditor();
+			}
+
+			bringIntoEditor?.Invoke(lyrics);
+		}
+
+		// Brings lyrics into the open editor (see EditWithLyrics, made by ShowEditor); null when it isn't open.
+		private Action<string>? bringIntoEditor;
+
 		/// <summary>Keeps the sound the member's keyboard plays the song with (see <see cref="MidiSound"/>; empty for none) in their own settings for it.</summary>
 		public void SetMidiSound(string sound)
 		{
@@ -2041,6 +2066,25 @@ namespace Lyrious.UILib.Setlists
 					Opacity = hasLyrics ? 1 : 0.7,
 					TextWrapping = TextWrapping.Wrap,
 				};
+
+				// No lyrics yet: the globe, to find them online and bring them into the editor (a stored song's;
+				// shown before the page connects to it, as the lyrics are made when the view is).
+				if (!hasLyrics && song.Id != Guid.Empty && !WithoutToolbar)
+				{
+					var findOnline = new Button
+					{
+						Content = new StackPanel
+						{
+							Orientation = Orientation.Horizontal,
+							Spacing = 6,
+							Children = { AppIcons.Create(AppIcons.FindOnline, 18), new TextBlock { Text = L.T("Find online…"), VerticalAlignment = VerticalAlignment.Center } },
+						},
+						HorizontalAlignment = HorizontalAlignment.Left,
+					};
+					ToolTip.SetTip(findOnline, L.T("Searches for the song's lyrics online; the ones you pick go into the editor, to save"));
+					findOnline.Click += (_, _) => FindOnlineRequested?.Invoke();
+					text = new StackPanel { Spacing = 12, Children = { text, findOnline } };
+				}
 			}
 
 			text.Margin = new Thickness(0, 0, 0, 48);
@@ -2159,6 +2203,7 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			titleActions.Content = lyricsActions;
+			bringIntoEditor = null; // The editor's closed.
 			ShowMySettingButtons(hasChords);
 			// The link may have been changed in the editor.
 			showMediaLink();
@@ -3410,6 +3455,38 @@ namespace Lyrious.UILib.Setlists
 			var chordsDown = new Button { Content = "−", MinWidth = 36, HorizontalContentAlignment = HorizontalAlignment.Center, Focusable = false };
 			var chordsUp = new Button { Content = "+", MinWidth = 36, HorizontalContentAlignment = HorizontalAlignment.Center, Focusable = false };
 			var flipBars = new Button { Focusable = false };
+			// The box emptied: the globe, to find the lyrics online (they come into this box, see EditWithLyrics).
+			var findOnline = new Button
+			{
+				Focusable = false,
+				Content = new StackPanel
+				{
+					Orientation = Orientation.Horizontal,
+					Spacing = 6,
+					Children = { AppIcons.Create(AppIcons.FindOnline, 18), new TextBlock { Text = L.T("Find online…"), VerticalAlignment = VerticalAlignment.Center } },
+				},
+			};
+			ToolTip.SetTip(findOnline, L.T("Searches for the song's lyrics online; the ones you pick go into the editor, to save"));
+			findOnline.Click += (_, _) => FindOnlineRequested?.Invoke();
+			void ShowFindOnline() => findOnline.IsVisible = string.IsNullOrWhiteSpace(editor.Text) && song.Id != Guid.Empty;
+			editor.TextChanged += (_, _) => ShowFindOnline();
+			ShowFindOnline();
+
+			// Lyrics brought in (found online): in the box in their own key, which becomes the song's
+			// original and playing key (their first chord's), so they're saved as they are (not moved back).
+			bringIntoEditor = brought =>
+			{
+				if (ChordPro.FirstChordKey(brought) is { } broughtKey)
+				{
+					originalKey.Text = broughtKey;
+					key.Text = broughtKey;
+					shownSemitones = 0;
+				}
+
+				loadedShown = null;
+				editor.Text = brought;
+				editor.Focus();
+			};
 			ToolTip.SetTip(chordsDown, L.T("All chords a semitone down (or the selected ones); the song's key and transpose stay"));
 			ToolTip.SetTip(chordsUp, L.T("All chords a semitone up (or the selected ones); the song's key and transpose stay"));
 			ToolTip.SetTip(flipBars, L.T("The bar marks all relative ([+4]: bars after the mark before) or all absolute ([12]: bar 12 of the song), or the selected ones; each stays at the same place"));
@@ -3483,7 +3560,7 @@ namespace Lyrious.UILib.Setlists
 				HorizontalAlignment = HorizontalAlignment.Right,
 				VerticalAlignment = VerticalAlignment.Top,
 				Margin = new Thickness(8, 0, 0, 8),
-				Children = { chordsDown, chordsUp, flipBars },
+				Children = { findOnline, chordsDown, chordsUp, flipBars },
 			};
 			lyricsTools.SetValue(TextBoxFocus.KeepsFocusProperty, true);
 			DockPanel.SetDock(lyricsTools, Dock.Right);

@@ -3116,6 +3116,30 @@ namespace Lyrious.UILib.Setlists
 					ForgetBackTo<SetlistsView>();
 					ShowSetlists(group, await service.GetSetlistsAsync(group.Id), replace: true, selectedSetlistId: view.SelectedSetlistId);
 				});
+			// A Spotify song's link dropped on a song: added to its media links.
+			view.SpotifyLinkDropped += (song, link) => _ = RunAsync(() => AddSongLinkAsync(song, link, async () =>
+			{
+				ForgetBackTo<SetlistsView>();
+				ShowSetlists(group, await service.GetSetlistsAsync(group.Id), replace: true, selectedSetlistId: view.SelectedSetlistId);
+			}));
+			// A Spotify playlist or album link dropped on it: a new setlist of its songs (see ImportSpotifyAsync).
+			view.AddHandler(Avalonia.Input.DragDrop.DragOverEvent, (_, e) =>
+			{
+				if (MediaLinks.SpotifyCollection(Avalonia.Input.DataTransferExtensions.TryGetText(e.DataTransfer)) != null)
+				{
+					e.DragEffects = Avalonia.Input.DragDropEffects.Copy;
+					e.Handled = true;
+				}
+			}, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+			view.AddHandler(Avalonia.Input.DragDrop.DropEvent, (_, e) =>
+			{
+				if (MediaLinks.SpotifyCollection(Avalonia.Input.DataTransferExtensions.TryGetText(e.DataTransfer)) is { } collection)
+				{
+					e.Handled = true;
+					_ = RunAsync(() => ImportSpotifyAsync(group, collection.Kind, collection.Id));
+				}
+			}, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+			Avalonia.Input.DragDrop.SetAllowDrop(view, true);
 			ShowPage(view, replace);
 		}
 
@@ -3145,6 +3169,11 @@ namespace Lyrious.UILib.Setlists
 			view.SongsMoved += order => MoveSongs(setlist, order);
 			view.AddSongsRequested += () => _ = RunAsync(async () =>
 				ShowAddSongs(group, setlist, await service.GetSongbookSongsAsync(group.Id), entries.Select(entry => entry.Song.Id).ToHashSet()));
+			view.SpotifyLinkDropped += (song, link) => _ = RunAsync(() => AddSongLinkAsync(song, link, async () =>
+			{
+				ForgetBackTo<SetlistView>();
+				await ShowSetlistAsync(group, setlist);
+			}));
 			// Sound files dropped on it: linked to its songs (see LinkDroppedSounds).
 			LinkDroppedSounds(
 				view,
@@ -3444,6 +3473,11 @@ namespace Lyrious.UILib.Setlists
 				ShowNotice(L.Plural(songs.Count, "Deleted {0} song", "Deleted {0} songs"));
 				await ShowSongsAsync(group, replace: true);
 			});
+			view.SpotifyLinkDropped += (song, link) => _ = RunAsync(() => AddSongLinkAsync(song, link, async () =>
+			{
+				ForgetBackTo<SongsView>();
+				await ShowSongsAsync(group, replace: true);
+			}));
 			// Sound files dropped on it: linked to its songs (see LinkDroppedSounds).
 			LinkDroppedSounds(
 				view,
@@ -3547,9 +3581,10 @@ namespace Lyrious.UILib.Setlists
 			view.AddRequested += found => _ = RunAsync(async () =>
 			{
 				var song = await service.CreateSongAsync(group.Id, found.Title, found.Lyrics, found.Duration);
-				// The artist and the key, when the song came with them.
+				// The artist, and the key: the first chord's in its lyrics (else the one it came with), as the
+				// original key and the playing key alike.
 				var artist = found.Artist.Trim();
-				var key = found.Key.Trim();
+				var key = (ChordPro.FirstChordKey(found.Lyrics) ?? found.Key).Trim();
 				if (artist.Length > 0 || key.Length > 0)
 				{
 					song = await service.UpdateSongAsync(song with
@@ -3675,6 +3710,8 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="groupId">The band the song is shown from (its MIDI commands are sent when it starts and stops).</param>
 		private void ShowLyricsPage(LyricScrollView view, Guid groupId)
 		{
+			// No lyrics yet: the globe finds them online, and the ones picked go into its editor.
+			view.FindOnlineRequested += () => _ = RunAsync(() => FindLyricsOnlineAsync(view, groupId));
 			// From the transpose dialog (capo or transpose is chosen there); its ✕ comes back to the song.
 			view.SettingsRequested += ShowCapoSettings;
 			// A tap on the lyrics shows the toolbars when they're hidden; it hides them only while the
@@ -4813,6 +4850,111 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>Shows a page; with <paramref name="replace"/>, the current one isn't kept to go back to.</summary>
+		/// <summary>
+		/// Find online for a song without lyrics, searching its name and artist: the result picked goes into
+		/// the song's editor (back on its page), to save, instead of becoming a new song.
+		/// </summary>
+		private async Task FindLyricsOnlineAsync(LyricScrollView lyrics, Guid groupId)
+		{
+			var names = (await service.GetSongbookSongsAsync(groupId)).Select(song => song.Name).ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+			var view = new InternetSongView(query => service.SearchInternetAsync(query), names, L.T("Add to this song"),
+				service.CanSearchUltimateGuitar ? query => service.SearchUltimateGuitarAsync(query) : null,
+				link => service.GetUltimateGuitarTabAsync(link));
+			view.AddRequested += found =>
+			{
+				page.Content = lyrics;
+				lyrics.EditWithLyrics(found.Lyrics);
+			};
+			page.Content = view;
+			// "Song name - Artist" (only the name when there's no artist).
+			view.SearchFor(string.IsNullOrWhiteSpace(lyrics.SongArtist) ? lyrics.SongName : $"{lyrics.SongName.Trim()} - {lyrics.SongArtist.Trim()}");
+		}
+
+		/// <summary>
+		/// A new setlist of a Spotify playlist's or album's songs, in its order and named after it: each
+		/// track found in the band's songbook by its title (the one by the same artist when there are more),
+		/// else added to it (its title, artist, length and Spotify link); a song found gets the track's link
+		/// after its other media links (unless it has it already). Then the setlist shows, with what was done as a notice. Not in a browser (it can't
+		/// read Spotify's pages).
+		/// </summary>
+		// The longest a song's media link field can be (as the lyrics page keeps it).
+		private const int MaxSongMediaLinkLength = 500;
+
+		/// <summary>
+		/// A link (a Spotify song's, dropped on its row) added to the song's media links, after the others;
+		/// then the list shown again (<paramref name="refresh"/>), with what was done as a notice. Nothing when
+		/// the song has it already, or there's no room for another link.
+		/// </summary>
+		private async Task AddSongLinkAsync(SongDetails song, string link, Func<Task> refresh)
+		{
+			if (MediaLinks.With(song.MediaLink, link, MaxSongMediaLinkLength, out var problem) is not { } field)
+			{
+				ShowNotice(L.T(problem!));
+				return;
+			}
+
+			if (field == song.MediaLink)
+			{
+				ShowNotice(L.T("{0} has that link already", song.Name));
+				return;
+			}
+
+			var saved = await service.UpdateSongAsync(song with { MediaLink = field });
+			SongEdited(saved);
+			ShowNotice(L.T("Added the Spotify link to {0}", song.Name));
+			await refresh();
+		}
+
+		private async Task ImportSpotifyAsync(GroupSummary group, string kind, string id)
+		{
+			if (!service.CanSearchUltimateGuitar)
+			{
+				ShowNotice(L.T("Spotify can't be read from a browser: drop the link in the Lyrious app on a computer, phone or tablet."));
+				return;
+			}
+
+			var collection = await service.GetSpotifyCollectionAsync(kind, id);
+			if (collection.Tracks.Count == 0)
+			{
+				ShowNotice(L.T("No songs were found in that Spotify link."));
+				return;
+			}
+
+			var songbook = (await service.GetSongbookSongsAsync(group.Id)).ToList();
+			var songIds = new List<Guid>();
+			var added = 0;
+			foreach (var track in collection.Tracks)
+			{
+				var song = SongTitles.Find(songbook, track.Title, track.Artist);
+				if (song == null)
+				{
+					song = await service.CreateSongAsync(group.Id, SongTitles.Clean(track.Title), "", track.Duration);
+					var artist = track.Artist.Length > 100 ? track.Artist[..100] : track.Artist;
+					song = await service.UpdateSongAsync(song with { Artist = artist, MediaLink = track.Link });
+					songbook.Add(song);
+					added++;
+				}
+				else if (track.Link.Length > 0 && MediaLinks.With(song.MediaLink, track.Link, MaxSongMediaLinkLength, out _) is { } withLink && withLink != song.MediaLink)
+				{
+					// The track's link after the song's other media (a sound file, another link), unless it's there
+					// already or there's no room left for it.
+					song = await service.UpdateSongAsync(song with { MediaLink = withLink });
+				}
+
+				if (!songIds.Contains(song.Id))
+				{
+					songIds.Add(song.Id);
+				}
+			}
+
+			var name = collection.Name.Length > 0 ? collection.Name : L.T("From Spotify");
+			var setlist = await service.CreateSetlistAsync(group.Id, name);
+			await service.AddSongsAsync(setlist.Id, songIds);
+			ShowNotice(L.T("Made the setlist {0}: {1}, {2} of them new in the songbook", name, L.Plural(songIds.Count, "{0} song", "{0} songs"), added));
+			ForgetBackTo<SetlistsView>();
+			ShowSetlists(group, await service.GetSetlistsAsync(group.Id), replace: true, selectedSetlistId: setlist.Id);
+		}
+
 		/// <summary>
 		/// Lets sound files be dropped on <paramref name="view"/> (a songbook or a setlist) to be linked to
 		/// its songs: each file is matched by its name to one of them, and the proposals are shown on a

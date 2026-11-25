@@ -84,8 +84,9 @@ namespace Lyrious.UILib.Setlists
 			var current = groups.FirstOrDefault(group => group.Id == currentGroupId);
 			var shown = groups.FirstOrDefault(group => group.Id == selectedGroupId) ?? current ?? groups.FirstOrDefault();
 
-			// The other bands above the details, flowing left to right.
+			// The other bands above the details, flowing left to right; a double-click on one joins it.
 			otherBands.IsVisible = groups.Count > 1 && !singleBand;
+			otherBands.AddHandler(PointerPressedEvent, OnBandsPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 			ShowBand(shown);
 			if (embedded)
 			{
@@ -123,7 +124,8 @@ namespace Lyrious.UILib.Setlists
 			foreach (var band in groups)
 			{
 				// As wide as the name (and the joined band's ♩); the one shown below is highlighted.
-				var button = new Button { Content = GroupContent(band, joined: band.Id == currentGroupId), Padding = new Thickness(12, 6) };
+				var button = new Button { Content = GroupContent(band, joined: band.Id == currentGroupId), Padding = new Thickness(12, 6), Tag = band };
+				ToolTip.SetTip(button, L.T("Click to show it, double-click to join it"));
 				if (band.Id == group?.Id)
 				{
 					button.Classes.Add("accent");
@@ -134,6 +136,25 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				otherBands.Children.Add(button);
+			}
+		}
+
+		/// <summary>
+		/// A double-click on a band's button (see the constructor): joins it, as Join does (accepting an
+		/// invitation), when the member is in it and hasn't joined it already.
+		/// </summary>
+		private void OnBandsPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+		{
+			// The second press of a double-click (the first showed the band, making the buttons anew).
+			if (e.ClickCount != 2 || Avalonia.VisualTree.VisualExtensions.FindAncestorOfType<Button>(e.Source as Avalonia.Visual, includeSelf: true) is not { Tag: GroupSummary band })
+			{
+				return;
+			}
+
+			if (band.Id != currentGroupId && MembersOf(band).Any(member => member.IsMe))
+			{
+				e.Handled = true;
+				GroupSelected?.Invoke(band);
 			}
 		}
 

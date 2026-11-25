@@ -43,6 +43,9 @@ namespace Lyrious.UILib.Setlists
 		public event Action<SetlistSummary, Button>? AddSongsRequested;
 
 		/// <summary>Raised when the user makes a setlist the current one.</summary>
+		/// <summary>Raised when a Spotify song's link is dropped on a song's row: the song and the link.</summary>
+		public event Action<SongDetails, string>? SpotifyLinkDropped;
+
 		public event Action<SetlistSummary>? SetlistMadeCurrent;
 
 		/// <summary>Raised with the name when the user adds a setlist.</summary>
@@ -88,6 +91,8 @@ namespace Lyrious.UILib.Setlists
 			var (addButton, nameRow) = PageLayout.AddByName(L.T("Add setlist"), L.T("Name of the new setlist"), name => SetlistCreateRequested?.Invoke(name));
 
 			otherSetlists.IsVisible = setlists.Count > 1;
+			// A double-click on a setlist plays it.
+			otherSetlists.AddHandler(PointerPressedEvent, OnSetlistsPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 			var shown = setlists.FirstOrDefault(setlist => setlist.Id == selectedSetlistId)
 				?? setlists.FirstOrDefault(setlist => setlist.Id == currentSetlistId)
 				?? setlists.FirstOrDefault();
@@ -120,7 +125,8 @@ namespace Lyrious.UILib.Setlists
 			foreach (var other in setlists)
 			{
 				// As wide as the name (and the current setlist's check); the one shown below is highlighted.
-				var button = new Button { Content = PageLayout.RowContent(other.Name, other.Id == CurrentSetlistId), Padding = new Thickness(12, 6) };
+				var button = new Button { Content = PageLayout.RowContent(other.Name, other.Id == CurrentSetlistId), Padding = new Thickness(12, 6), Tag = other };
+				ToolTip.SetTip(button, L.T("Click to show it, double-click to play it"));
 				if (other.Id == setlist?.Id)
 				{
 					button.Classes.Add("accent");
@@ -131,6 +137,22 @@ namespace Lyrious.UILib.Setlists
 				}
 
 				otherSetlists.Children.Add(button);
+			}
+		}
+
+		/// <summary>
+		/// A double-click on a setlist's button (see the constructor): plays it, as its Play does (the band's
+		/// current setlist), unless it's the current one already.
+		/// </summary>
+		private void OnSetlistsPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+		{
+			// The second press of a double-click (the first showed the setlist, making the buttons anew).
+			if (e.ClickCount == 2
+			    && Avalonia.VisualTree.VisualExtensions.FindAncestorOfType<Button>(e.Source as Avalonia.Visual, includeSelf: true) is { Tag: SetlistSummary setlist }
+			    && setlist.Id != CurrentSetlistId)
+			{
+				e.Handled = true;
+				SetlistMadeCurrent?.Invoke(setlist);
 			}
 		}
 
@@ -339,6 +361,7 @@ namespace Lyrious.UILib.Setlists
 			// The check tool, then the songs.
 			songs.Content = new DockPanel { Children = { checkRow, list } };
 			// The count follows the search: "12 of 47 songs" while it leaves some out.
+			list.SpotifyLinkDropped += (entry, link) => SpotifyLinkDropped?.Invoke(entry.Song, link);
 			search.Filtered = Dim;
 			search.Use(list, entries);
 			Dim();

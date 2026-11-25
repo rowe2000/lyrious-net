@@ -843,6 +843,29 @@ namespace Lyrious.UILib.Setlists
 		/// block ({sot} … {eot}, where it's part of the tab), on a {directive} line, and inside a
 		/// bracket tag.
 		/// </summary>
+		/// <summary>
+		/// The key of the lyrics' first chord tag: its root, minor kept ("[Am7]" is Am, "[G/B]" G, "[Bbmaj7]"
+		/// Bb, "[F#m]" F#m); null when there's no chord.
+		/// </summary>
+		public static string? FirstChordKey(string lyrics)
+		{
+			foreach (Match tag in BracketTag().Matches(lyrics))
+			{
+				var chord = tag.Groups[1].Value.Trim();
+				if (IsChord(chord) && ChordKey().Match(chord) is { Success: true } key)
+				{
+					// The root's sharp or flat as written; "b" (a flat) only right after the letter.
+					return char.ToUpperInvariant(key.Groups["root"].Value[0]) + key.Groups["root"].Value[1..] + (key.Groups["minor"].Success ? "m" : "");
+				}
+			}
+
+			return null;
+		}
+
+		// A chord's root (a letter, then # or b) and whether it's minor ("m", not "maj").
+		[GeneratedRegex(@"^(?<root>[A-Ga-g][#b]?)(?<minor>m(?!aj))?")]
+		private static partial Regex ChordKey();
+
 		/// <summary>The bar marks between <paramref name="start"/> and <paramref name="end"/> (all of them when that's empty): how many are relative ("[+4]") and how many absolute ("[12]").</summary>
 		public static (int Relative, int Absolute) CountBarMarks(string text, int start, int end)
 		{

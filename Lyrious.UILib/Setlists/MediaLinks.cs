@@ -263,6 +263,23 @@ namespace Lyrious.UILib.Setlists
 		/// The track or episode in a Spotify link (open.spotify.com/track/…, also with an
 		/// "intl-xx" part, or spotify:track:…); null for anything else.
 		/// </summary>
+		/// <summary>A Spotify playlist's or album's kind ("playlist", "album") and id in a link to it; null when it's no such link.</summary>
+		public static (string Kind, string Id)? SpotifyCollection(string? link)
+		{
+			if (!Uri.TryCreate(link?.Trim(), UriKind.Absolute, out var uri) || SiteOf(uri) != MediaSite.Spotify)
+			{
+				return null;
+			}
+
+			var parts = uri.Scheme == "spotify"
+				? uri.OriginalString.Split(':', StringSplitOptions.RemoveEmptyEntries).Skip(1).ToArray()
+				: uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries)
+					.SkipWhile(part => part.StartsWith("intl-", StringComparison.OrdinalIgnoreCase) || part.Equals("embed", StringComparison.OrdinalIgnoreCase)).ToArray();
+			return parts is [var kind, var id, ..] && kind.ToLowerInvariant() is "playlist" or "album" && id.Length > 0
+				? (kind.ToLowerInvariant(), id)
+				: null;
+		}
+
 		private static (string Kind, string Id)? SpotifyItem(Uri uri)
 		{
 			var parts = uri.Scheme == "spotify"

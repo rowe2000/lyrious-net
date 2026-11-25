@@ -51,6 +51,16 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when another row is selected (a click).</summary>
 		public event Action<T?>? SelectionChanged;
 
+		/// <summary>Raised when a Spotify song's link (a track) is dropped on an item's row: the item and the link.</summary>
+		public event Action<T, string>? SpotifyLinkDropped;
+
+		/// <summary>The dragged text, if it's a link to a Spotify song (a track, not a playlist or album, which the page takes); else null.</summary>
+		private static string? SpotifySongLink(Avalonia.Input.DragEventArgs e)
+		{
+			var text = Avalonia.Input.DataTransferExtensions.TryGetText(e.DataTransfer)?.Trim();
+			return MediaLinks.Parse(text) is { } uri && MediaLinks.SiteOf(uri) == MediaSite.Spotify && MediaLinks.SpotifyCollection(text) == null ? text : null;
+		}
+
 		/// <param name="content">What a row shows for an item.</param>
 		/// <param name="isCurrent">Whether the item is the current one (blue highlight).</param>
 		/// <param name="tools">The buttons of the toolbar shown beside the selected row.</param>
@@ -137,6 +147,25 @@ namespace Lyrious.UILib.Setlists
 			{
 				button.Classes.Add("accent");
 			}
+
+			// A Spotify song's link dropped on the row: for this item (see SpotifyLinkDropped).
+			Avalonia.Input.DragDrop.SetAllowDrop(button, true);
+			button.AddHandler(Avalonia.Input.DragDrop.DragOverEvent, (_, e) =>
+			{
+				if (SpotifyLinkDropped != null && SpotifySongLink(e) != null)
+				{
+					e.DragEffects = Avalonia.Input.DragDropEffects.Copy;
+					e.Handled = true;
+				}
+			});
+			button.AddHandler(Avalonia.Input.DragDrop.DropEvent, (_, e) =>
+			{
+				if (SpotifyLinkDropped is { } dropped && SpotifySongLink(e) is { } link)
+				{
+					e.Handled = true;
+					dropped(item, link);
+				}
+			});
 
 			if (activateOnClick)
 			{

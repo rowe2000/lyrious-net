@@ -92,6 +92,11 @@ namespace Lyrious.UILib.Setlists
 			lrclibSource.IsChecked = lrclibChosen;
 			lrclibSource.IsCheckedChanged += (_, _) =>
 			{
+				if (choosingSource)
+				{
+					return;
+				}
+
 				lrclibChosen = lrclibSource.IsChecked == true;
 				// What was searched, searched again in the source chosen.
 				if (searched)
@@ -156,6 +161,33 @@ namespace Lyrious.UILib.Setlists
 			ForgetSearch();
 			AddRequested?.Invoke(song);
 		}
+
+		/// <summary>
+		/// Searches for <paramref name="words"/> straight away (e.g. a song's name and artist) in the default
+		/// source: Ultimate Guitar, or LRCLIB where Ultimate Guitar can't be searched here (a browser), so the
+		/// results show here either way.
+		/// </summary>
+		public void SearchFor(string words)
+		{
+			query.Text = words.Trim();
+			// (Its text-changed event may not have come yet, the page not being on screen yet.)
+			searchButton.IsEnabled = !string.IsNullOrWhiteSpace(query.Text);
+			var useLrclib = searchUltimateGuitar == null;
+			if (lrclibChosen != useLrclib)
+			{
+				// The buttons show it, without searching for the change (searched just below).
+				choosingSource = true;
+				lrclibChosen = useLrclib;
+				ultimateGuitarSource.IsChecked = !useLrclib;
+				lrclibSource.IsChecked = useLrclib;
+				choosingSource = false;
+			}
+
+			_ = SearchAsync();
+		}
+
+		// Whether the source is being set by SearchFor (so its change isn't a search of its own).
+		private bool choosingSource;
 
 		protected override void OnLoaded(Avalonia.Interactivity.RoutedEventArgs e)
 		{

@@ -275,6 +275,12 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		Task<UltimateGuitarTab> GetUltimateGuitarTabAsync(Uri link, CancellationToken cancellationToken = default);
 
+		/// <summary>
+		/// A Spotify playlist's or album's name and tracks (see <see cref="MediaLinks.SpotifyCollection"/>),
+		/// from its page there. Not in a browser (<see cref="CanSearchUltimateGuitar"/>, which goes for this too).
+		/// </summary>
+		Task<SpotifyCollection> GetSpotifyCollectionAsync(string kind, string id, CancellationToken cancellationToken = default);
+
 		/// <summary>Whether <see cref="SearchUltimateGuitarAsync"/> works here (not in a browser).</summary>
 		bool CanSearchUltimateGuitar => !OperatingSystem.IsBrowser();
 
@@ -412,6 +418,12 @@ namespace Lyrious.UILib.Setlists
 	/// </summary>
 	public sealed record UltimateGuitarSong(string Title, string Artist, string Type, Uri Link, double? Rating, int Votes);
 
+	/// <summary>A Spotify playlist or album: its name and its tracks, in order.</summary>
+	public sealed record SpotifyCollection(string Name, IReadOnlyList<SpotifyTrack> Tracks);
+
+	/// <summary>A track of a Spotify playlist or album: its title, artists, length and link to it.</summary>
+	public sealed record SpotifyTrack(string Title, string Artist, TimeSpan Duration, string Link);
+
 	/// <summary>A song's chords or tab from Ultimate Guitar: title, artist, key (empty if none), capo (0 if none), and its text in Ultimate Guitar's format.</summary>
 	public sealed record UltimateGuitarTab(string Title, string Artist, string Key, int Capo, string Content);
 
@@ -498,6 +510,7 @@ namespace Lyrious.UILib.Setlists
 		public Task<IReadOnlyList<InternetSong>> SearchInternetAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<UltimateGuitarSong>> SearchUltimateGuitarAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<UltimateGuitarTab> GetUltimateGuitarTabAsync(Uri link, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<SpotifyCollection> GetSpotifyCollectionAsync(string kind, string id, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SongDetails> CreateSongAsync(Guid groupId, string name, string lyrics, TimeSpan duration, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteSongAsync(Guid songId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SongDetails> UpdateSongAsync(SongDetails song, CancellationToken cancellationToken = default) => throw NotConnected();

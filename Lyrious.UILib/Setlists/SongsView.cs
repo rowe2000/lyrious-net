@@ -53,6 +53,9 @@ namespace Lyrious.UILib.Setlists
 		// A list (three lines) with a plus at its lower right.
 		private const string AddToSetlistIcon = "M4,7 H15 M4,12 H12 M4,17 H10 M17,13 V21 M13,17 H21";
 
+		/// <summary>Raised when a Spotify song's link is dropped on a song's row: the song and the link.</summary>
+		public event Action<SongDetails, string>? SpotifyLinkDropped;
+
 		/// <summary>Raised when the user wants to find a song on the internet.</summary>
 		public event Action? InternetSearchRequested;
 
@@ -785,6 +788,7 @@ namespace Lyrious.UILib.Setlists
 				// The selected song's tools under it, so the songs keep the whole width.
 				toolsBelow: true);
 			songList = list;
+			list.SpotifyLinkDropped += (song, link) => SpotifyLinkDropped?.Invoke(song, link);
 			DimCheckBoxes();
 			return list;
 		}
