@@ -186,7 +186,7 @@ namespace Lyrious.UILib.Setlists
 				}
 			});
 			chooseSongButton.IsEnabled = false;
-			findSongButton = DrawerItem(L.T("Find song online"));
+			findSongButton = DrawerItem(L.T("Find online"));
 			findSongButton.IsEnabled = false;
 			findSongButton.Click += (_, _) => OpenInternetSearch();
 			playlogButton = DrawerItem(L.T("Sessions"));
@@ -1790,7 +1790,7 @@ namespace Lyrious.UILib.Setlists
 						return Task.CompletedTask;
 					}),
 					Item(L.T("Import from file…"), ImportSongToSetlistAsync),
-					Item(L.T("Find on the internet…"), (group, setlist) => RunAsync(async () =>
+					Item(L.T("Find online…"), (group, setlist) => RunAsync(async () =>
 						ShowInternetSearch(group, await service.GetSongbookSongsAsync(group.Id), setlist))),
 				},
 			};
@@ -3354,13 +3354,23 @@ namespace Lyrious.UILib.Setlists
 		{
 			var names = songbook.Select(song => song.Name).ToHashSet(StringComparer.CurrentCultureIgnoreCase);
 			var addText = addToSetlist == null ? L.T("Add to songbook") : L.T("Add to {0}", addToSetlist.Name);
-			var view = new InternetSongView(query => service.SearchInternetAsync(query), names, addText);
+			var view = new InternetSongView(query => service.SearchInternetAsync(query), names, addText,
+				service.CanSearchUltimateGuitar ? query => service.SearchUltimateGuitarAsync(query) : null,
+				link => service.GetUltimateGuitarTabAsync(link));
 			view.AddRequested += found => _ = RunAsync(async () =>
 			{
 				var song = await service.CreateSongAsync(group.Id, found.Title, found.Lyrics, found.Duration);
-				if (!string.IsNullOrWhiteSpace(found.Artist))
+				// The artist and the key, when the song came with them.
+				var artist = found.Artist.Trim();
+				var key = found.Key.Trim();
+				if (artist.Length > 0 || key.Length > 0)
 				{
-					song = await service.UpdateSongAsync(song with { Artist = found.Artist.Trim() });
+					song = await service.UpdateSongAsync(song with
+					{
+						Artist = artist.Length > 0 ? artist : song.Artist,
+						PlayingKey = key.Length > 0 ? key : song.PlayingKey,
+						OriginalKey = key.Length > 0 ? key : song.OriginalKey,
+					});
 				}
 
 				if (addToSetlist == null)

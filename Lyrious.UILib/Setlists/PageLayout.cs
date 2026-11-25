@@ -32,8 +32,52 @@ namespace Lyrious.UILib.Setlists
 		/// <paramref name="closable"/> adds a ✕ at the far right that goes back to the page before.
 		/// </summary>
 		/// <paramref name="icon"/> (see <see cref="AppIcons"/>) is drawn before the title, as on the left drawer's item for the page.
-		public static Control Page(string title, Control content, string? backText = null, Action? back = null, string? subtitle = null, Control? titleAction = null, bool closable = false, string? icon = null)
-			=> Page(title, content, backText != null && back != null ? BackLink(backText, back) : null, subtitle, WithClose(titleAction, closable), icon);
+		/// <param name="previous">Shows the previous of something (e.g. the previous search result): a button after the back link; null when there's none.</param>
+		/// <param name="next">Shows the next of it: a button after that; null when there's none. Neither given, neither button shows.</param>
+		/// <param name="place">Which one this is (from 1) of how many, shown between the previous and next buttons, e.g. "1 (12)".</param>
+		public static Control Page(string title, Control content, string? backText = null, Action? back = null, string? subtitle = null, Control? titleAction = null, bool closable = false, string? icon = null,
+			Action? previous = null, Action? next = null, (int Number, int Count)? place = null)
+			=> Page(title, content, HeaderLinks(backText, back, previous, next, place), subtitle, WithClose(titleAction, closable), icon);
+
+		/// <summary>
+		/// What goes above a page's title: the back link, then the previous and next buttons (icons only,
+		/// the one there's nothing for disabled) with which one this is between them; null when there's
+		/// none of them.
+		/// </summary>
+		private static Control? HeaderLinks(string? backText, Action? back, Action? previous, Action? next, (int Number, int Count)? place)
+		{
+			var links = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+			if (backText != null && back != null)
+			{
+				var backLink = HeaderLink(backText, back);
+				backLink.Margin = new Thickness(0, 0, 16, 0);
+				backLink.VerticalAlignment = VerticalAlignment.Center;
+				links.Children.Add(backLink);
+			}
+
+			if (previous != null || next != null)
+			{
+				foreach (var (step, iconData, description) in new[] { (previous, PreviousIcon, L.T("Previous")), (next, NextIcon, L.T("Next")) })
+				{
+					var button = HomeView.IconButton(iconData, description);
+					button.IsEnabled = step != null;
+					button.Click += (_, _) => step?.Invoke();
+					links.Children.Add(button);
+					// Between the two: which one this is, of how many.
+					if (step == previous && place is { } shown)
+					{
+						links.Children.Add(new TextBlock
+						{
+							Text = L.T("{0} ({1})", shown.Number, shown.Count),
+							VerticalAlignment = VerticalAlignment.Center,
+							Margin = new Thickness(4, 0),
+						});
+					}
+				}
+			}
+
+			return links.Children.Count > 0 ? links : null;
+		}
 
 		/// <summary>The title's action with a ✕ after it (raising <see cref="CloseRequestedEvent"/>), when closable.</summary>
 		private static Control? WithClose(Control? titleAction, bool closable)
@@ -544,13 +588,31 @@ namespace Lyrious.UILib.Setlists
 			});
 		}
 
-		/// <summary>A back link for a page header, e.g. "‹ Setlist 1".</summary>
-		private static HyperlinkButton BackLink(string text, Action back)
+		/// <summary>
+		/// The back link in a page header: a left chevron, then where it goes (e.g. "Search results"), in
+		/// the text's colour (white in the dark theme) rather than a link's.
+		/// </summary>
+		private static HyperlinkButton HeaderLink(string text, Action click)
 		{
-			var link = new HyperlinkButton { Content = text, Padding = new Thickness(0) };
-			link.Click += (_, _) => back();
+			var content = new StackPanel
+			{
+				Orientation = Orientation.Horizontal,
+				Spacing = 4,
+				Children = { AppIcons.Create(BackIcon, 16), new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center } },
+			};
+			// On the content, so the link's own colour (also when pointed at) doesn't reach it.
+			content.Bind(Avalonia.Controls.Documents.TextElement.ForegroundProperty, content.GetResourceObservable(LyriousTheme.ForegroundBrush));
+			var link = new HyperlinkButton { Content = content, Padding = new Thickness(0) };
+			link.Click += (_, _) => click();
 			return link;
 		}
+
+		// A chevron pointing left: back.
+		private const string BackIcon = "M15,6 L9,12 L15,18";
+
+		// The previous and next buttons: arrows, so they aren't taken for the back link's chevron.
+		private const string PreviousIcon = "M19,12 H5 M11,6 L5,12 L11,18";
+		private const string NextIcon = "M5,12 H19 M13,6 L19,12 L13,18";
 
 		/// <summary>A full-width, left-aligned button for one list row (easy to tap on phones).</summary>
 		public static Button ListRow(string text, string? detail, Action onClick)

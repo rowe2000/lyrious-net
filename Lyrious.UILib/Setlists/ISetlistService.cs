@@ -262,6 +262,22 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Searches an online lyrics database by title and/or artist.</summary>
 		Task<IReadOnlyList<InternetSong>> SearchInternetAsync(string query, CancellationToken cancellationToken = default);
 
+		/// <summary>
+		/// Searches Ultimate Guitar by title and/or artist: its free chords and tabs (the first page of
+		/// its results). Not in a browser, which doesn't let a page read another site
+		/// (<see cref="CanSearchUltimateGuitar"/>).
+		/// </summary>
+		Task<IReadOnlyList<UltimateGuitarSong>> SearchUltimateGuitarAsync(string query, CancellationToken cancellationToken = default);
+
+		/// <summary>
+		/// A song's chords or tab from its page on Ultimate Guitar (one of <see cref="SearchUltimateGuitarAsync"/>'s
+		/// links), in Ultimate Guitar's own format (see <see cref="UltimateGuitarText"/>). Not in a browser.
+		/// </summary>
+		Task<UltimateGuitarTab> GetUltimateGuitarTabAsync(Uri link, CancellationToken cancellationToken = default);
+
+		/// <summary>Whether <see cref="SearchUltimateGuitarAsync"/> works here (not in a browser).</summary>
+		bool CanSearchUltimateGuitar => !OperatingSystem.IsBrowser();
+
 		/// <summary>Adds a song to the group's songbook (its first one) and returns it.</summary>
 		Task<SongDetails> CreateSongAsync(Guid groupId, string name, string lyrics, TimeSpan duration, CancellationToken cancellationToken = default);
 
@@ -379,8 +395,17 @@ namespace Lyrious.UILib.Setlists
 
 	public sealed record SongDetails(Guid Id, string Name, string PlayingKey, float Tempo, string Beat, string Lyrics, string MediaLink = "", string Tags = "", string OriginalKey = "", string Artist = "");
 
-	/// <summary>A song found online: title, artist, album, length and plain lyrics (empty if the database has none).</summary>
-	public sealed record InternetSong(string Title, string Artist, string Album, TimeSpan Duration, string Lyrics, bool Instrumental);
+	/// <summary>A song found online: title, artist, album, length and plain lyrics (empty if the database has none), and its key when known.</summary>
+	public sealed record InternetSong(string Title, string Artist, string Album, TimeSpan Duration, string Lyrics, bool Instrumental, string Key = "");
+
+	/// <summary>
+	/// A song found on Ultimate Guitar: title, artist, what it is (Chords, Tab, Ukulele, Bass…), its
+	/// page there, and its rating (out of 5, null if none) and how many rated it.
+	/// </summary>
+	public sealed record UltimateGuitarSong(string Title, string Artist, string Type, Uri Link, double? Rating, int Votes);
+
+	/// <summary>A song's chords or tab from Ultimate Guitar: title, artist, key (empty if none), capo (0 if none), and its text in Ultimate Guitar's format.</summary>
+	public sealed record UltimateGuitarTab(string Title, string Artist, string Key, int Capo, string Content);
 
 	/// <summary>A band's playlog: the songs played on one occasion (e.g. a gig or a rehearsal), in order.</summary>
 	public sealed record PlaylogSummary(Guid Id, DateTime CreatedAt, IReadOnlyList<PlayEntry> Plays);
@@ -463,6 +488,8 @@ namespace Lyrious.UILib.Setlists
 		public Task AddPlayTimeAsync(Guid playId, TimeSpan time, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task SetPlayRecordingAsync(Guid playId, string recording, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<InternetSong>> SearchInternetAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<IReadOnlyList<UltimateGuitarSong>> SearchUltimateGuitarAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<UltimateGuitarTab> GetUltimateGuitarTabAsync(Uri link, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SongDetails> CreateSongAsync(Guid groupId, string name, string lyrics, TimeSpan duration, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteSongAsync(Guid songId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SongDetails> UpdateSongAsync(SongDetails song, CancellationToken cancellationToken = default) => throw NotConnected();

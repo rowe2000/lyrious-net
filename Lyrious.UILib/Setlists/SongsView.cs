@@ -403,7 +403,7 @@ namespace Lyrious.UILib.Setlists
 			empty.Click += (_, _) => showNameRow();
 			var import = new MenuItem { Header = L.T("Import from file…") };
 			import.Click += (_, _) => _ = ImportAsync();
-			var internet = new MenuItem { Header = L.T("Find on the internet…") };
+			var internet = new MenuItem { Header = L.T("Find online…") };
 			internet.Click += (_, _) => InternetSearchRequested?.Invoke();
 			addButton.Flyout = new MenuFlyout { Items = { empty, import, internet } };
 

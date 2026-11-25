@@ -33,7 +33,7 @@ namespace Lyrious.UILib
 
 		public static void AddTo(IResourceDictionary resources)
 		{
-			resources.ThemeDictionaries[ThemeVariant.Light] = new ResourceDictionary
+			var light = new ResourceDictionary
 			{
 				[ErrorBrush] = new SolidColorBrush(Color.Parse("#C42B1C")),
 				[CardBrush] = new SolidColorBrush(Color.Parse("#F3F3F3")),
@@ -49,7 +49,7 @@ namespace Lyrious.UILib
 				[DrawerBrush] = new SolidColorBrush(Color.Parse("#E4E4E4")),
 				[DrawerItemBrush] = new SolidColorBrush(Color.Parse("#99FFFFFF")),
 			};
-			resources.ThemeDictionaries[ThemeVariant.Dark] = new ResourceDictionary
+			var dark = new ResourceDictionary
 			{
 				[ErrorBrush] = new SolidColorBrush(Color.Parse("#FF99A4")),
 				[CardBrush] = new SolidColorBrush(Color.Parse("#2B2B2B")),
@@ -64,6 +64,34 @@ namespace Lyrious.UILib
 				[DrawerBrush] = new SolidColorBrush(Color.Parse("#151515")),
 				[DrawerItemBrush] = new SolidColorBrush(Color.Parse("#99000000")),
 			};
+			DisabledButtons(light, Color.Parse("#1B1B1B"));
+			DisabledButtons(dark, Color.Parse("#FFFFFF"));
+			resources.ThemeDictionaries[ThemeVariant.Light] = light;
+			resources.ThemeDictionaries[ThemeVariant.Dark] = dark;
+		}
+
+		/// <summary>
+		/// A button that can't be used has no background or border, and its text (and icon) in a dimmed
+		/// text colour: plain, accent, repeat and toggle buttons (checked or not), in place of the theme's
+		/// grey box.
+		/// </summary>
+		private static void DisabledButtons(ResourceDictionary theme, Color text)
+		{
+			var none = new SolidColorBrush(Colors.Transparent);
+			var dimmed = new SolidColorBrush(text, 0.4);
+			foreach (var button in new[] { "Button", "AccentButton", "RepeatButton", "ToggleButton" })
+			{
+				theme[button + "BackgroundDisabled"] = none;
+				theme[button + "BorderBrushDisabled"] = none;
+				theme[button + "ForegroundDisabled"] = dimmed;
+			}
+
+			foreach (var state in new[] { "Checked", "Indeterminate" })
+			{
+				theme["ToggleButtonBackground" + state + "Disabled"] = none;
+				theme["ToggleButtonBorderBrush" + state + "Disabled"] = none;
+				theme["ToggleButtonForeground" + state + "Disabled"] = dimmed;
+			}
 		}
 	}
 }

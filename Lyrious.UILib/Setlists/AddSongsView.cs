@@ -47,7 +47,7 @@ namespace Lyrious.UILib.Setlists
 			var rows = songbook.Select(song => (Control)SongRow(song, songsInSetlist.Contains(song.Id), Toggle)).ToArray();
 
 			// At the top: find a song that isn't in the songbook yet.
-			var internet = new Button { Content = L.T("Find song on the internet…"), Margin = new Thickness(0, 0, 0, 16) };
+			var internet = new Button { Content = L.T("Find online…"), Margin = new Thickness(0, 0, 0, 16) };
 			internet.Click += (_, _) => InternetSearchRequested?.Invoke();
 			DockPanel.SetDock(internet, Dock.Top);
 

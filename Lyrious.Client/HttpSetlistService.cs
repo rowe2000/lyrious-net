@@ -1579,6 +1579,145 @@ public sealed class HttpSetlistService : ISetlistService
             .ToArray();
     }
 
+    /// <summary>Ultimate Guitar, for its search (see <see cref="SearchUltimateGuitarAsync"/>).</summary>
+    private static readonly HttpClient UltimateGuitar = CreateUltimateGuitarClient();
+
+    private static HttpClient CreateUltimateGuitarClient()
+    {
+        var client = new HttpClient { BaseAddress = new Uri("https://www.ultimate-guitar.com/"), Timeout = TimeSpan.FromSeconds(20) };
+        // The app says who it is, as it does to LRCLIB.
+        if (!OperatingSystem.IsBrowser())
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Lyrious/1.0");
+        }
+
+        return client;
+    }
+
+    /// <summary>
+    /// Searches Ultimate Guitar: its search page, whose results are in the page as data (the
+    /// "js-store" element's data-content). Only its free chords and tabs, not the paid versions
+    /// ("Pro", "Official"), which have no page of their own. Needs an internet connection.
+    /// </summary>
+    public async Task<IReadOnlyList<UltimateGuitarSong>> SearchUltimateGuitarAsync(string query, CancellationToken cancellationToken = default)
+    {
+        if (OperatingSystem.IsBrowser())
+        {
+            throw new PlatformNotSupportedException(L.T("Ultimate Guitar can't be searched from a browser."));
+        }
+
+        using var response = await UltimateGuitar.GetAsync($"search.php?search_type=title&value={Uri.EscapeDataString(query.Trim())}", cancellationToken);
+        // Nothing found is answered with "not found".
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return [];
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(L.T("Ultimate Guitar answered {0} {1}.", (int)response.StatusCode, response.ReasonPhrase), null, response.StatusCode);
+        }
+
+        using var json = await UltimateGuitarPageDataAsync(response, cancellationToken);
+        var data = json.RootElement.GetProperty("store").GetProperty("page").GetProperty("data");
+        if (!data.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var found = new List<UltimateGuitarSong>();
+        foreach (var item in results.EnumerateArray())
+        {
+            // A free tab's page is on tabs.ultimate-guitar.com; the paid versions lead to a sales page.
+            if (UltimateGuitarValue(item, "song_name") is not { Length: > 0 } title
+                || UltimateGuitarValue(item, "type") is not { Length: > 0 } type
+                || !Uri.TryCreate(UltimateGuitarValue(item, "tab_url"), UriKind.Absolute, out var link)
+                || !link.Host.Equals("tabs.ultimate-guitar.com", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            double? rating = item.TryGetProperty("rating", out var r) && r.ValueKind == JsonValueKind.Number ? r.GetDouble() : null;
+            var votes = item.TryGetProperty("votes", out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0;
+            found.Add(new UltimateGuitarSong(title.Trim(), UltimateGuitarValue(item, "artist_name")?.Trim() ?? "", type, link, rating, votes));
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// A song's chords or tab from its page on Ultimate Guitar, whose song is in the page as data (as the
+    /// search's results are). Only its tab pages (tabs.ultimate-guitar.com). Needs an internet connection.
+    /// </summary>
+    public async Task<UltimateGuitarTab> GetUltimateGuitarTabAsync(Uri link, CancellationToken cancellationToken = default)
+    {
+        if (OperatingSystem.IsBrowser())
+        {
+            throw new PlatformNotSupportedException(L.T("Ultimate Guitar can't be searched from a browser."));
+        }
+
+        if (link.Scheme != Uri.UriSchemeHttps || !link.Host.Equals("tabs.ultimate-guitar.com", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(L.T("That isn't a song's page on Ultimate Guitar."), nameof(link));
+        }
+
+        using var response = await UltimateGuitar.GetAsync(link, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(L.T("Ultimate Guitar answered {0} {1}.", (int)response.StatusCode, response.ReasonPhrase), null, response.StatusCode);
+        }
+
+        using var json = await UltimateGuitarPageDataAsync(response, cancellationToken);
+        var data = json.RootElement.GetProperty("store").GetProperty("page").GetProperty("data");
+        if (!data.TryGetProperty("tab_view", out var view)
+            || !view.TryGetProperty("wiki_tab", out var wiki)
+            || UltimateGuitarValue(wiki, "content") is not { Length: > 0 } content)
+        {
+            throw new InvalidOperationException(L.T("This page on Ultimate Guitar has no chords or tab to show."));
+        }
+
+        var tab = data.TryGetProperty("tab", out var t) ? t : default;
+        var meta = view.TryGetProperty("meta", out var m) && m.ValueKind == JsonValueKind.Object ? m : default;
+        var capo = meta.ValueKind == JsonValueKind.Object && meta.TryGetProperty("capo", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt32() : 0;
+        var key = (meta.ValueKind == JsonValueKind.Object ? UltimateGuitarValue(meta, "tonality") : null)
+                  ?? (tab.ValueKind == JsonValueKind.Object ? UltimateGuitarValue(tab, "tonality_name") : null) ?? "";
+        return new UltimateGuitarTab(
+            (tab.ValueKind == JsonValueKind.Object ? UltimateGuitarValue(tab, "song_name") : null)?.Trim() ?? "",
+            (tab.ValueKind == JsonValueKind.Object ? UltimateGuitarValue(tab, "artist_name") : null)?.Trim() ?? "",
+            key.Trim(),
+            capo,
+            content);
+    }
+
+    /// <summary>
+    /// The data in a page of Ultimate Guitar: its "js-store" element's data-content, whose store.page.data
+    /// has the page's search results or song. Throws when the page has none (it looks different than expected).
+    /// </summary>
+    private static async Task<JsonDocument> UltimateGuitarPageDataAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var page = await response.Content.ReadAsStringAsync(cancellationToken);
+        var store = System.Text.RegularExpressions.Regex.Match(page, "class=\"js-store\"\\s+data-content=\"([^\"]*)\"");
+        if (store.Success)
+        {
+            var json = JsonDocument.Parse(System.Net.WebUtility.HtmlDecode(store.Groups[1].Value));
+            if (json.RootElement.TryGetProperty("store", out var storeData)
+                && storeData.TryGetProperty("page", out var pageData)
+                && pageData.TryGetProperty("data", out var data)
+                && data.ValueKind == JsonValueKind.Object)
+            {
+                return json;
+            }
+
+            json.Dispose();
+        }
+
+        throw new InvalidOperationException(L.T("Ultimate Guitar's page looks different than expected, so it can't be read."));
+    }
+
+    /// <summary>A text property of Ultimate Guitar's data; null when it's missing or not text.</summary>
+    private static string? UltimateGuitarValue(JsonElement item, string name)
+        => item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
     // ---- Conversions ----
 
     private static string Limit(string value, int max) => value.Length > max ? value[..max] : value;

@@ -12,23 +12,37 @@ using Lyrious.UILib.Localization;
 namespace Lyrious.UILib.Setlists
 {
 	/// <summary>
-	/// Finds a song on the internet (an online lyrics database): search by title and/or artist,
-	/// pick a result to read its lyrics, then add it to the band's songbook. The results are kept
-	/// while previewing, so going back doesn't search again. The same search can also be opened on
-	/// Ultimate Guitar in the browser: it has no API and doesn't allow automated searches, so its
-	/// results can't be shown here.
+	/// Finds a song online, by title and/or artist, on the source chosen: Ultimate Guitar (the default),
+	/// whose chords and tabs show in the lyrics view, just for the user until added; or LRCLIB, a lyrics
+	/// database, whose lyrics show as text. A result picked can be added to the band's songbook. The
+	/// results are kept while previewing, so going back doesn't search again. In a browser, which can't
+	/// read another site, an Ultimate Guitar search opens there instead.
 	/// </summary>
 	public sealed class InternetSongView : UserControl
 	{
 		private readonly Func<string, Task<IReadOnlyList<InternetSong>>> search;
+		// Searches Ultimate Guitar; null where it can't be (a browser): the search opens there instead.
+		private readonly Func<string, Task<IReadOnlyList<UltimateGuitarSong>>>? searchUltimateGuitar;
+		// Reads a song's chords or tab from its page on Ultimate Guitar (with the search).
+		private readonly Func<Uri, Task<UltimateGuitarTab>>? getUltimateGuitarTab;
 		private readonly IReadOnlySet<string> songbookNames;
 		private readonly TextBox query = PageLayout.WithClearButton(new TextBox { PlaceholderText = L.T("Title and/or artist") });
 		// In the box, at its right end after the ✕ (see the constructor).
 		private readonly Button searchButton = HomeView.IconButton(AppIcons.Search, L.T("Search"));
-		private readonly Button ultimateGuitarButton = new() { Content = L.T("Search on Ultimate Guitar ↗"), IsEnabled = false, Margin = new Thickness(0, 0, 0, 16) };
+		// Where to search: Ultimate Guitar (chords and tabs) or LRCLIB (lyrics).
+		private readonly RadioButton ultimateGuitarSource = new() { Content = "Ultimate Guitar", GroupName = "find-online-source" };
+		private readonly RadioButton lrclibSource = new() { Content = "LRCLIB", GroupName = "find-online-source" };
+		// The source chosen, while the app runs: Ultimate Guitar unless LRCLIB was chosen.
+		private static bool lrclibChosen;
+		// Whether something was searched, so changing the source searches it there too.
+		private bool searched;
 		private readonly ContentControl results = new();
 		private readonly Control searchPage;
 		private IReadOnlyList<InternetSong> lastResults = [];
+		private IReadOnlyList<UltimateGuitarSong> lastUltimateGuitarResults = [];
+		// Counts the songs shown from Ultimate Guitar, so one that's still loading when the next is
+		// asked for doesn't show over it.
+		private int ultimateGuitarShown;
 		private readonly string addText;
 
 		/// <summary>Raised when the user wants the chosen song added to the songbook.</summary>
@@ -37,10 +51,15 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="search">Searches the online database; throws if it can't be reached.</param>
 		/// <param name="songbookNames">Names already in the songbook (any case), to mark results the band has.</param>
 		/// <param name="addText">The text of the add button in the preview, e.g. "Add to songbook".</param>
-		public InternetSongView(Func<string, Task<IReadOnlyList<InternetSong>>> search, IReadOnlySet<string> songbookNames, string addText = "Add to songbook")
+		/// <param name="searchUltimateGuitar">Searches Ultimate Guitar; null where it can't be (the search then opens in the browser).</param>
+		/// <param name="getUltimateGuitarTab">Reads a found song's chords or tab from Ultimate Guitar, to show it.</param>
+		public InternetSongView(Func<string, Task<IReadOnlyList<InternetSong>>> search, IReadOnlySet<string> songbookNames, string addText = "Add to songbook",
+			Func<string, Task<IReadOnlyList<UltimateGuitarSong>>>? searchUltimateGuitar = null, Func<Uri, Task<UltimateGuitarTab>>? getUltimateGuitarTab = null)
 		{
 			this.addText = addText;
 			this.search = search;
+			this.searchUltimateGuitar = searchUltimateGuitar;
+			this.getUltimateGuitarTab = getUltimateGuitarTab;
 			this.songbookNames = songbookNames;
 
 			// The search button in the box, at its right end after the ✕ (which clears the box).
@@ -56,10 +75,32 @@ namespace Lyrious.UILib.Setlists
 				Children = { clear, searchButton },
 			};
 			searchButton.Click += (_, _) => _ = SearchAsync();
-			query.TextChanged += (_, _) => searchButton.IsEnabled = ultimateGuitarButton.IsEnabled = !string.IsNullOrWhiteSpace(query.Text);
-			ToolTip.SetTip(ultimateGuitarButton, L.T("Opens the search in your browser, to copy chords or lyrics into a song"));
-			ultimateGuitarButton.Click += (_, _) => _ = OpenUltimateGuitarAsync();
-			DockPanel.SetDock(ultimateGuitarButton, Dock.Top);
+			query.TextChanged += (_, _) => searchButton.IsEnabled = !string.IsNullOrWhiteSpace(query.Text);
+
+			// The source: Ultimate Guitar's chords and tabs, or LRCLIB's lyrics.
+			ToolTip.SetTip(ultimateGuitarSource, searchUltimateGuitar != null
+				? L.T("Chords and tabs from Ultimate Guitar: pick one to see it here with its chords, only for you, and add it if you like")
+				: L.T("Opens the search on Ultimate Guitar in your browser, to copy chords or lyrics into a song"));
+			ToolTip.SetTip(lrclibSource, L.T("Lyrics (without chords) from LRCLIB, a free lyrics database (lrclib.net)"));
+			ultimateGuitarSource.IsChecked = !lrclibChosen;
+			lrclibSource.IsChecked = lrclibChosen;
+			lrclibSource.IsCheckedChanged += (_, _) =>
+			{
+				lrclibChosen = lrclibSource.IsChecked == true;
+				// What was searched, searched again in the source chosen.
+				if (searched)
+				{
+					_ = SearchAsync();
+				}
+			};
+			var sources = new StackPanel
+			{
+				Orientation = Avalonia.Layout.Orientation.Horizontal,
+				Spacing = 16,
+				Margin = new Thickness(0, 0, 0, 16),
+				Children = { ultimateGuitarSource, lrclibSource },
+			};
+			DockPanel.SetDock(sources, Dock.Top);
 			query.KeyDown += (_, e) =>
 			{
 				if (e.Key == Key.Enter)
@@ -72,11 +113,10 @@ namespace Lyrious.UILib.Setlists
 			query.Margin = new Thickness(0, 0, 0, 16);
 			DockPanel.SetDock(query, Dock.Top);
 
-			results.Content = Message(L.T("Search for a song to add its lyrics to the songbook."));
+			results.Content = Message(L.T("Search for a song: its chords on Ultimate Guitar, or its lyrics on LRCLIB."));
 			searchPage = PageLayout.Page(
-				L.T("Find song online"),
-				new DockPanel { Children = { query, ultimateGuitarButton, results } },
-				subtitle: L.T("Lyrics from LRCLIB (lrclib.net)"),
+				L.T("Find online"),
+				new DockPanel { Children = { query, sources, results } },
 				closable: true,
 				icon: AppIcons.FindOnline);
 			Content = searchPage;
@@ -88,7 +128,19 @@ namespace Lyrious.UILib.Setlists
 			query.Focus();
 		}
 
-		private async Task SearchAsync()
+		/// <summary>Searches the source chosen: Ultimate Guitar (in the browser where it can't be searched here) or LRCLIB.</summary>
+		private Task SearchAsync()
+		{
+			if (lrclibChosen)
+			{
+				return SearchLrclibAsync();
+			}
+
+			return searchUltimateGuitar != null ? SearchUltimateGuitarAsync() : OpenUltimateGuitarAsync();
+		}
+
+		/// <summary>Searches LRCLIB and lists what it found (see <see cref="ResultRow"/>).</summary>
+		private async Task SearchLrclibAsync()
 		{
 			var text = query.Text?.Trim();
 			if (string.IsNullOrEmpty(text) || !searchButton.IsEnabled)
@@ -96,6 +148,7 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
+			searched = true;
 			searchButton.IsEnabled = false;
 			results.Content = new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 8) };
 			try
@@ -110,6 +163,137 @@ namespace Lyrious.UILib.Setlists
 			finally
 			{
 				searchButton.IsEnabled = !string.IsNullOrWhiteSpace(query.Text);
+			}
+		}
+
+		/// <summary>Searches Ultimate Guitar and lists what it found (see <see cref="UltimateGuitarRow"/>).</summary>
+		private async Task SearchUltimateGuitarAsync()
+		{
+			var text = query.Text?.Trim();
+			if (string.IsNullOrEmpty(text) || searchUltimateGuitar == null || !searchButton.IsEnabled)
+			{
+				return;
+			}
+
+			searched = true;
+			searchButton.IsEnabled = false;
+			results.Content = new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 8) };
+			try
+			{
+				var found = lastUltimateGuitarResults = await searchUltimateGuitar(text);
+				var rows = found.Select(song => (Control)UltimateGuitarRow(song)).ToArray();
+				results.Content = PageLayout.List(rows, L.T("Ultimate Guitar found no chords or tabs. Try other words, or the artist's name too."));
+			}
+			catch (Exception ex)
+			{
+				results.Content = Message(L.T("Couldn't search Ultimate Guitar. {0}", ex.Message));
+			}
+			finally
+			{
+				searchButton.IsEnabled = !string.IsNullOrWhiteSpace(query.Text);
+			}
+		}
+
+		/// <summary>One of Ultimate Guitar's results: title, then artist, what it is and its rating; it shows the song (see <see cref="ShowUltimateGuitarTabAsync"/>).</summary>
+		private Button UltimateGuitarRow(UltimateGuitarSong song)
+		{
+			var details = new List<string> { song.Artist, song.Type };
+			if (song.Rating is { } rating)
+			{
+				details.Add(L.T("★ {0} ({1})", rating.ToString("0.0", System.Globalization.CultureInfo.CurrentCulture), song.Votes));
+			}
+
+			var content = new StackPanel { Spacing = 2 };
+			content.Children.Add(new TextBlock { Text = song.Title, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis });
+			content.Children.Add(new TextBlock { Text = string.Join(" · ", details.Where(d => d.Length > 0)), FontSize = 13, Opacity = 0.75, TextTrimming = TextTrimming.CharacterEllipsis });
+			if (songbookNames.Contains(song.Title))
+			{
+				content.Children.Add(new TextBlock { Text = L.T("in songbook"), FontSize = 13, Opacity = 0.6 });
+			}
+
+			var row = new Button
+			{
+				Content = content,
+				HorizontalAlignment = HorizontalAlignment.Stretch,
+				HorizontalContentAlignment = HorizontalAlignment.Stretch,
+				Padding = new Thickness(16, 10),
+			};
+			row.Click += (_, _) => _ = ShowUltimateGuitarTabAsync(song);
+			return row;
+		}
+
+		/// <summary>
+		/// The found song's chords or tab, read from Ultimate Guitar and made into Lyrious' lyrics (see
+		/// <see cref="UltimateGuitarText"/>), in the lyrics view as any song: only for the user, not saved
+		/// until the add button adds it (as it shows, with changes made in its editor) to the songbook, and
+		/// the setlist when searching from one (see <see cref="AddRequested"/>). Back returns to the results.
+		/// </summary>
+		private async Task ShowUltimateGuitarTabAsync(UltimateGuitarSong found)
+		{
+			if (getUltimateGuitarTab == null)
+			{
+				return;
+			}
+
+			// The results before and after it, if there are.
+			var at = IndexOf(lastUltimateGuitarResults, found);
+			var before = at > 0 ? lastUltimateGuitarResults[at - 1] : null;
+			var after = at >= 0 && at + 1 < lastUltimateGuitarResults.Count ? lastUltimateGuitarResults[at + 1] : null;
+			Control Page(Control content, string? subtitle) => PageLayout.Page(
+				found.Title,
+				content,
+				backText: L.T("Search results"),
+				back: () => Content = searchPage,
+				subtitle: subtitle,
+				closable: true,
+				previous: before != null ? () => _ = ShowUltimateGuitarTabAsync(before) : null,
+				next: after != null ? () => _ = ShowUltimateGuitarTabAsync(after) : null,
+				place: at >= 0 ? (at + 1, lastUltimateGuitarResults.Count) : null);
+
+			var showing = ++ultimateGuitarShown;
+			Content = Page(new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 8), VerticalAlignment = VerticalAlignment.Top }, found.Artist);
+			try
+			{
+				var tab = await getUltimateGuitarTab(found.Link);
+				if (showing != ultimateGuitarShown)
+				{
+					return; // Another was asked for meanwhile.
+				}
+
+				var name = tab.Title.Length > 0 ? tab.Title : found.Title;
+				var artist = tab.Artist.Length > 0 ? tab.Artist : found.Artist;
+				var song = new SongDetails(Guid.NewGuid(), name, tab.Key, 120, "4/4", UltimateGuitarText.ToChordPro(tab.Content, tab.Capo), OriginalKey: tab.Key, Artist: artist);
+				// Changes in its editor only change what shows here (and what the add button adds).
+				var shown = song;
+				// Only the lyrics, from the top: no toolbar (editing, transpose, media) on a song that isn't the band's yet.
+				var lyrics = new LyricScrollView(song, edited =>
+				{
+					shown = edited;
+					return Task.FromResult(edited);
+				})
+				{
+					WithoutToolbar = true,
+				};
+
+				var add = new Button { Content = addText, HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(16, 10), Margin = new Thickness(0, 0, 0, 16) };
+				add.Classes.Add("accent");
+				add.Click += (_, _) =>
+				{
+					// Once: the page changes to the song added.
+					add.IsEnabled = false;
+					AddRequested?.Invoke(new InternetSong(shown.Name, shown.Artist, "", TimeSpan.Zero, shown.Lyrics, Instrumental: false, Key: shown.OriginalKey));
+				};
+				DockPanel.SetDock(add, Dock.Top);
+				Content = Page(new DockPanel { Children = { add, lyrics } }, artist.Length > 0 ? L.T("{0} · only for you, not saved", artist) : L.T("Only for you, not saved"));
+			}
+			catch (Exception ex) when (showing == ultimateGuitarShown)
+			{
+				Content = Page(Message(L.T("Couldn't read the song from Ultimate Guitar. {0}", ex.Message)), found.Artist);
+			}
+			catch (Exception ex)
+			{
+				// Another was asked for meanwhile: this one's failure doesn't matter any more.
+				System.Diagnostics.Debug.WriteLine($"Couldn't read a song from Ultimate Guitar: {ex.Message}");
 			}
 		}
 
@@ -199,13 +383,34 @@ namespace Lyrious.UILib.Setlists
 			};
 
 			var subtitle = songbookNames.Contains(song.Title) ? L.T("{0} · a song with this name is in the songbook already", song.Artist) : song.Artist;
+			// The results before and after it, if there are.
+			var at = IndexOf(lastResults, song);
+			var before = at > 0 ? lastResults[at - 1] : null;
+			var after = at >= 0 && at + 1 < lastResults.Count ? lastResults[at + 1] : null;
 			Content = PageLayout.Page(
 				song.Title,
 				new DockPanel { Children = { add, new ScrollViewer { Content = lyrics } } },
-				backText: L.T("‹ Search results"),
+				backText: L.T("Search results"),
 				back: () => Content = searchPage,
 				subtitle: subtitle,
-				closable: true);
+				closable: true,
+				previous: before != null ? () => ShowPreview(before) : null,
+				next: after != null ? () => ShowPreview(after) : null,
+				place: at >= 0 ? (at + 1, lastResults.Count) : null);
+		}
+
+		/// <summary>Where <paramref name="item"/> is among <paramref name="items"/> (the very one, not an equal one); -1 if it isn't.</summary>
+		private static int IndexOf<T>(IReadOnlyList<T> items, T item) where T : class
+		{
+			for (var i = 0; i < items.Count; i++)
+			{
+				if (ReferenceEquals(items[i], item))
+				{
+					return i;
+				}
+			}
+
+			return -1;
 		}
 
 		private static TextBlock Message(string text) => new() { Text = text, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };

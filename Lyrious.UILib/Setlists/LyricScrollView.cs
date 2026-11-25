@@ -89,9 +89,10 @@ namespace Lyrious.UILib.Setlists
 
 		/// <summary>
 		/// The clock shows but on an iPhone held upright, where the toolbar has no room to spare (and
-		/// the phone shows the time itself); turned sideways, it shows again.
+		/// the phone shows the time itself); turned sideways, it shows again. Never without the toolbar
+		/// (see <see cref="WithoutToolbar"/>).
 		/// </summary>
-		private void ShowClockIfRoom() => clock.IsVisible = !(App.IsIPhone && Bounds.Height > Bounds.Width);
+		private void ShowClockIfRoom() => clock.IsVisible = !WithoutToolbar && !(App.IsIPhone && Bounds.Height > Bounds.Width);
 
 		private readonly ContentControl titleActions = new()
 		{
@@ -146,7 +147,10 @@ namespace Lyrious.UILib.Setlists
 		private bool positioned;
 
 		/// <summary>Where the lyrics start: their top just below the toolbar (scrolled up from there, the room above them shows).</summary>
-		private double StartOffset => Math.Max(0, overscroll - ToolbarRoom);
+		private double StartOffset => Math.Max(0, overscroll - RoomForToolbar);
+
+		/// <summary>The room the toolbar takes above the lyrics: none without it (see <see cref="WithoutToolbar"/>).</summary>
+		private double RoomForToolbar => WithoutToolbar ? 0 : ToolbarRoom;
 
 		/// <summary>The scroll offset that puts the lyrics' content y in the middle of the view.</summary>
 		private double OffsetCentering(double contentY) => contentY + overscroll - (scroller?.Viewport.Height ?? 0) / 2;
@@ -170,7 +174,7 @@ namespace Lyrious.UILib.Setlists
 
 			var half = Math.Round(scroller.Viewport.Height / 2);
 			var over = playing ?? scrollTimer.IsEnabled;
-			var top = over ? half : Math.Min(ToolbarRoom, half);
+			var top = over ? half : Math.Min(RoomForToolbar, half);
 			var bottom = over ? half : 0;
 			if (positioned && Math.Abs(top - overscroll) < 1 && Math.Abs(bottom - overscrollBottom) < 1)
 			{
@@ -817,6 +821,23 @@ namespace Lyrious.UILib.Setlists
 		/// opened it shows another page when the editing is saved or cancelled.
 		/// </summary>
 		public bool EditorOnly { get; init; }
+
+		/// <summary>
+		/// Only the lyrics, without the toolbar (editing, transpose, media…) or its room above them, so
+		/// they start at the top, and without the clock: e.g. a song found online, shown before it's the band's.
+		/// </summary>
+		public bool WithoutToolbar
+		{
+			get => withoutToolbar;
+			init
+			{
+				withoutToolbar = value;
+				titleActions.IsVisible = !value;
+				ShowClockIfRoom();
+			}
+		}
+
+		private readonly bool withoutToolbar;
 
 		/// <summary>Raised with the stored song after the editor saved it (the lyrics are showing again).</summary>
 		public event Action<SongDetails>? SongSaved;
