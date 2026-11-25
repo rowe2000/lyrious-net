@@ -52,7 +52,8 @@ namespace Lyrious.UILib.Setlists
 		private readonly TextBlock dropHint = new() { Opacity = 0.7, FontSize = 13, TextWrapping = TextWrapping.Wrap, Text = L.T("Drop sound files here, or add them with +, to link them to songs that have no media yet.") };
 
 		/// <param name="RecordingOf">The song it's the band's recording of (a play recorded, see PlayRecorder); null when it isn't one.</param>
-		private sealed record Row(StoredSound Sound, string Name, IReadOnlyList<string> Songs, bool Pending, string? RecordingOf = null)
+		/// <param name="OnServer">Not on this device: only on the server (added on another device), fetched when it's played.</param>
+		private sealed record Row(StoredSound Sound, string Name, IReadOnlyList<string> Songs, bool Pending, string? RecordingOf = null, bool OnServer = false)
 		{
 			/// <summary>Whether a song links to it, or it's a play's recording.</summary>
 			public bool Used => Songs.Count > 0 || RecordingOf != null;
@@ -196,7 +197,17 @@ namespace Lyrious.UILib.Setlists
 						: recordings.TryGetValue(sound.Id, out var recording)
 							? new Row(sound, recording.Name, [], pending.Contains(sound.Id), recording.Song)
 							: new Row(sound, sound.Id, [], pending.Contains(sound.Id)))
-					.OrderBy(row => row.Used)
+					.ToList();
+				// The band's files that aren't on this device (added on another one): listed after them, to
+				// play (fetched from the server and kept here then).
+				var here = stored.Select(sound => sound.Id).ToHashSet();
+				rows.AddRange(used.Where(pair => !here.Contains(pair.Key))
+					.Select(pair => new Row(new StoredSound(pair.Key, 0), pair.Value.Name, pair.Value.Songs, false, OnServer: true)));
+				rows.AddRange(recordings.Where(pair => !here.Contains(pair.Key) && !used.ContainsKey(pair.Key))
+					.Select(pair => new Row(new StoredSound(pair.Key, 0), pair.Value.Name, [], false, pair.Value.Song, OnServer: true)));
+				rows = rows
+					.OrderBy(row => row.OnServer)
+					.ThenBy(row => row.Used)
 					.ThenBy(row => row.Name, StringComparer.CurrentCultureIgnoreCase)
 					.ToList();
 				Show(rows);
@@ -280,9 +291,10 @@ namespace Lyrious.UILib.Setlists
 			ShowExportable();
 
 			var total = rows.Sum(row => row.Sound.Size);
-			summary.Text = rows.Count == 0
+			var kept = rows.Count(row => !row.OnServer);
+			summary.Text = kept == 0
 				? L.T("No sound files are kept on this device.")
-				: L.Plural(rows.Count, "{0} file, {1} in all. Deleting one only frees this device: a song that uses it fetches it from the server again when it's played.", "{0} files, {1} in all. Deleting one only frees this device: a song that uses it fetches it from the server again when it's played.", Size(total));
+				: L.Plural(kept, "{0} file, {1} in all. Deleting one only frees this device: a song that uses it fetches it from the server again when it's played.", "{0} files, {1} in all. Deleting one only frees this device: a song that uses it fetches it from the server again when it's played.", Size(total));
 
 			// Up and down go through the files, the space bar checks one (see ListKeys).
 			var list = ListKeys.Stepped(new StackPanel { Spacing = 4 });
@@ -313,10 +325,13 @@ namespace Lyrious.UILib.Setlists
 				detail = detail.Length > 0 ? detail + L.T(" · Not sent to the server yet") : L.T("Not sent to the server yet");
 			}
 
-			var player = new SoundItemPlayer(sounds, row.Sound.Id, L.T("Play {0}", row.Name));
+			// One only on the server: a download button, which keeps it on this device (then listed as kept, to play).
+			var player = new SoundItemPlayer(sounds, row.Sound.Id, L.T("Play {0}", row.Name), needsDownload: row.OnServer);
+			player.Downloaded += () => _ = LoadAsync();
 			DockPanel.SetDock(player.Button, Dock.Right);
 
-			var size = new TextBlock { Text = Size(row.Sound.Size), Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0) };
+			var size = new TextBlock { Text = row.OnServer ? L.T("On the server") : Size(row.Sound.Size), Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0) };
+			ToolTip.SetTip(size, row.OnServer ? L.T("Not on this device yet: download it to play it") : null);
 			DockPanel.SetDock(size, Dock.Right);
 
 			// On one line, as the items in Sessions: the name, and the detail at the right of it (the whole
@@ -338,7 +353,13 @@ namespace Lyrious.UILib.Setlists
 			var check = new CheckBox { IsChecked = checkedIds.Contains(row.Sound.Id), VerticalAlignment = VerticalAlignment.Center, MinWidth = 0, Margin = new Thickness(0, 0, 8, 0) };
 			ToolTip.SetTip(check, L.T("Check to export it"));
 			Avalonia.Automation.AutomationProperties.SetName(check, L.T("Export {0}", row.Name));
-			checkBoxes.Add(check);
+			// Only files on this device can be exported or deleted: one on the server keeps the room only.
+			check.IsEnabled = !row.OnServer;
+			check.Opacity = row.OnServer ? 0 : 1;
+			if (!row.OnServer)
+			{
+				checkBoxes.Add(check);
+			}
 			check.IsCheckedChanged += (_, _) =>
 			{
 				if (check.IsChecked == true)

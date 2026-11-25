@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -16,12 +18,24 @@ namespace Lyrious.UILib.Setlists
 	/// turns into a pause button while it plays (played again, it goes on from where it was paused), and
 	/// a thin bar along the bottom of the item that shows how far it has played; dragging along the bar
 	/// moves there. One sound plays at a time: starting another stops this one (forgetting where it was
-	/// paused), and the bar shows at the other item instead.
+	/// paused), and the bar shows at the other item instead. A file that isn't on this device yet (only
+	/// on the server) shows a download button instead: pressed, it's downloaded and kept here, and then
+	/// it's a play button.
 	/// </summary>
 	internal sealed class SoundItemPlayer
 	{
 		private const string PlayIcon = "M8,5 L19,12 L8,19 Z";
 		private const string PauseIcon = "M7,5 H10 V19 H7 Z M14,5 H17 V19 H14 Z";
+		private const string DownloadIcon = "M10,3 H14 V11 H18 L12,17 L6,11 H10 Z M5,19 H19 V21 H5 Z";
+
+		// The ids of the sound files on this device, listed once for all the items shown at a time (see NeedsDownloadAsync).
+		private static (ISoundStore Sounds, DateTime At, Task<HashSet<string>> Ids)? here;
+
+		// Whether it has to be downloaded before it plays (it isn't on this device).
+		private bool needsDownload;
+
+		/// <summary>Raised when it has been downloaded and kept on this device (see the download button).</summary>
+		public event Action? Downloaded;
 
 		// The sound paused, where, and how long it is: one at a time, as one plays at a time, and kept
 		// while the list is made anew (e.g. when a file reaches the server).
@@ -60,8 +74,13 @@ namespace Lyrious.UILib.Setlists
 		/// Starts it (e.g. fetching it from the server first when it isn't on this device); false when it
 		/// can't be had. Null: the sound store plays it straight away.
 		/// </param>
-		public SoundItemPlayer(ISoundStore sounds, string id, string playTip, Func<Task<bool>>? play = null)
+		/// <param name="needsDownload">
+		/// Whether it isn't on this device, so it's downloaded first (with the download button); null: looked up
+		/// on this device when it's shown; false: it's here.
+		/// </param>
+		public SoundItemPlayer(ISoundStore sounds, string id, string playTip, Func<Task<bool>>? play = null, bool? needsDownload = false)
 		{
+			this.needsDownload = needsDownload == true;
 			this.sounds = sounds;
 			this.id = id;
 			this.playTip = playTip;
@@ -119,6 +138,10 @@ namespace Lyrious.UILib.Setlists
 				sounds.PlayingChanged += OnPlayingChanged;
 				ShowPlaying();
 			};
+			if (needsDownload == null)
+			{
+				_ = LookUpAsync();
+			}
 			Button.DetachedFromVisualTree += (_, _) =>
 			{
 				sounds.PlayingChanged -= OnPlayingChanged;
@@ -133,9 +156,79 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Where this sound was paused (and how long it is); null when it isn't paused.</summary>
 		private (TimeSpan At, TimeSpan? Duration)? Paused => paused is { } p && p.Id == id ? (p.At, p.Duration) : null;
 
-		/// <summary>Pauses it while it plays; otherwise plays it (stopping any other), from where it was paused.</summary>
+		/// <summary>Whether it's on this device: the download button when it isn't.</summary>
+		private async Task LookUpAsync()
+		{
+			try
+			{
+				needsDownload = !(await IdsHereAsync(sounds)).Contains(id);
+			}
+			catch (Exception ex)
+			{
+				// Then it's fetched when it's played, as before.
+				System.Diagnostics.Debug.WriteLine($"Couldn't list the sound files: {ex.Message}");
+			}
+
+			ShowPlaying();
+		}
+
+		/// <summary>The ids of the sound files on this device: listed once for the items shown together (a second), not by each.</summary>
+		private static Task<HashSet<string>> IdsHereAsync(ISoundStore sounds)
+		{
+			if (here is { } listed && listed.Sounds == sounds && DateTime.UtcNow - listed.At < TimeSpan.FromSeconds(1))
+			{
+				return listed.Ids;
+			}
+
+			var ids = ListIdsAsync(sounds);
+			here = (sounds, DateTime.UtcNow, ids);
+			return ids;
+		}
+
+		private static async Task<HashSet<string>> ListIdsAsync(ISoundStore sounds)
+			=> (await sounds.ListAsync()).Select(sound => sound.Id).ToHashSet();
+
+		/// <summary>Downloads it from the server and keeps it on this device; then it's a play button.</summary>
+		private async Task DownloadAsync()
+		{
+			Button.IsEnabled = false;
+			ToolTip.SetTip(Button, L.T("Downloading…"));
+			dragArea.IsVisible = true;
+			Progress.IsIndeterminate = true;
+			try
+			{
+				if (await SoundSync.FetchAsync(id))
+				{
+					needsDownload = false;
+					here = null; // Listed again next time, with this one.
+					Downloaded?.Invoke();
+				}
+				else
+				{
+					Tell(L.T("The sound file isn't on the server (yet)."));
+				}
+			}
+			catch (Exception ex)
+			{
+				Tell(L.T("Couldn't download it. {0}", ex.Message));
+			}
+			finally
+			{
+				Button.IsEnabled = true;
+				Progress.IsIndeterminate = false;
+				ShowPlaying();
+			}
+		}
+
+		/// <summary>Pauses it while it plays; otherwise plays it (stopping any other), from where it was paused; downloads it first when it isn't here.</summary>
 		private async Task ToggleAsync()
 		{
+			if (needsDownload && !IsPlaying)
+			{
+				await DownloadAsync();
+				return;
+			}
+
 			if (IsPlaying)
 			{
 				// Kept before stopping: the stop shows the item as it is then.
@@ -186,8 +279,9 @@ namespace Lyrious.UILib.Setlists
 				paused = null;
 			}
 
-			icon.Data = Geometry.Parse(playing ? PauseIcon : PlayIcon);
-			var tip = playing ? L.T("Pause") : Paused != null ? L.T("Play on from where it was paused") : playTip;
+			var download = needsDownload && !playing;
+			icon.Data = Geometry.Parse(playing ? PauseIcon : download ? DownloadIcon : PlayIcon);
+			var tip = playing ? L.T("Pause") : download ? L.T("Download it to this device, to play") : Paused != null ? L.T("Play on from where it was paused") : playTip;
 			ToolTip.SetTip(Button, tip);
 			Avalonia.Automation.AutomationProperties.SetName(Button, tip);
 			dragArea.IsVisible = playing || Paused != null;

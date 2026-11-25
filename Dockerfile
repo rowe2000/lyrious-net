@@ -29,6 +29,9 @@ COPY --from=build /app .
 # SQLite (the default off Windows), in /data: mount a volume there so the database outlives deploys.
 ENV Database__Provider=Sqlite \
     Database__SqliteFile=/data/lyrious-api.db
+# The songs' sound files on the volume too, so they survive deploys (in the container they'd be lost
+# with each one, and the band's other devices couldn't fetch them). The same as deploy/Dockerfile's.
+ENV Media__Folder=/data/media
 # The platform's proxy says how the app was reached (https), e.g. for links in emails.
 ENV ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
 RUN mkdir -p /data

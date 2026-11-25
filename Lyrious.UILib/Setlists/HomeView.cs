@@ -3649,6 +3649,13 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="startEditing">Opens the editor straight away (for a new empty song).</param>
 		private void ShowSongbookLyrics(GroupSummary group, SongDetails song, bool startEditing = false)
 		{
+			// With band sync, it's the band's current song (from outside its setlist), as a setlist's song is
+			// when opened: told first, so it goes out before the lyrics are laid out here.
+			if (!startEditing)
+			{
+				_ = SaveOutsideSongSelectionAsync(group, song.Id);
+			}
+
 			SetCurrentSong(song, null);
 
 			var view = new LyricScrollView(song, edited => service.UpdateSongAsync(edited), startEditing);
@@ -5241,6 +5248,27 @@ namespace Lyrious.UILib.Setlists
 			// Tell the band first, so it goes out before the lyrics are laid out here.
 			_ = SaveSongSelectionAsync(group, entry);
 			ShowLyrics(group, setlist, entry);
+		}
+
+		/// <summary>
+		/// With band sync on, a song opened from outside the band's setlist (the songbook, a search) becomes
+		/// the band's current song; not when it's opened here because the band chose it (no echo back).
+		/// </summary>
+		private async Task SaveOutsideSongSelectionAsync(GroupSummary group, Guid songId)
+		{
+			if (!bandSync || openingBandSong || currentGroup?.Id != group.Id)
+			{
+				return;
+			}
+
+			try
+			{
+				await service.SelectOutsideSongAsync(group.Id, currentSetlist?.Id ?? group.CurrentSetlistId, songId);
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"Couldn't save the current song: {ex.Message}");
+			}
 		}
 
 		private async Task SaveSongSelectionAsync(GroupSummary group, SetlistEntry entry)

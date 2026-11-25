@@ -630,15 +630,34 @@ public sealed class HttpSetlistService : ISetlistService
     public async Task<SetlistSummary> ShowSongbookAsSetlistAsync(Guid groupId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default)
     {
         var current = await CacheAsync();
-        var setlist = Live(current, "setlist", ClientJsonContext.Default.SetlistDto)
+        // One per band, called Songbook: its id comes from the band's, so every device (offline too) makes
+        // the same one, and the server keeps one. Any other hidden setlist of the band (made before, with
+        // an id of its own) is removed, its songs with it.
+        var id = SongbookSetlistId(groupId);
+        var hidden = Live(current, "setlist", ClientJsonContext.Default.SetlistDto)
             .Where(setlist => setlist.GroupId == groupId && setlist.IsHidden)
-            .OrderBy(setlist => setlist.CreatedAt)
-            .FirstOrDefault();
+            .ToList();
+        foreach (var other in hidden.Where(setlist => setlist.Id != id))
+        {
+            foreach (var item in Live(current, "setlistitem", ClientJsonContext.Default.SetlistItemDto).Where(item => item.SetlistId == other.Id))
+            {
+                current.Delete("setlistitem", item.Id);
+            }
+
+            current.Delete("setlist", other.Id);
+        }
+
+        var setlist = hidden.FirstOrDefault(setlist => setlist.Id == id);
         if (setlist == null)
         {
             var now = DateTime.Now;
-            setlist = new SetlistDto(Guid.NewGuid(), "Songbook", groupId, now, now, Removed: false, Checksum: 0, IsHidden: true);
+            setlist = new SetlistDto(id, SongbookSetlistName, groupId, now, now, Removed: false, Checksum: 0, IsHidden: true);
             current.Create("setlist", Node(setlist, ClientJsonContext.Default.SetlistDto));
+        }
+        else if (setlist.Name != SongbookSetlistName)
+        {
+            current.Update("setlist", setlist.Id, new JsonObject { ["name"] = SongbookSetlistName });
+            setlist = setlist with { Name = SongbookSetlistName };
         }
 
         // Its entries by song (one each; another of the same song is removed).
@@ -682,6 +701,20 @@ public sealed class HttpSetlistService : ISetlistService
 
         Queued(current);
         return ToSummary(setlist);
+    }
+
+    /// <summary>The name of the band's songbook as a setlist (see ShowSongbookAsSetlistAsync).</summary>
+    private const string SongbookSetlistName = "Songbook";
+
+    /// <summary>The id of the band's songbook as a setlist: the same on every device, made from the band's id.</summary>
+    internal static Guid SongbookSetlistId(Guid groupId)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("lyrious-songbook-setlist:" + groupId.ToString("D")));
+        var bytes = hash[..16];
+        // A name-based id (version 5 style, RFC 4122 variant), so it reads as an ordinary id.
+        bytes[7] = (byte)((bytes[7] & 0x0F) | 0x50);
+        bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
+        return new Guid(bytes);
     }
 
     public async Task<SetlistSummary?> GetSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default)

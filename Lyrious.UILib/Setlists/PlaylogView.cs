@@ -119,8 +119,10 @@ namespace Lyrious.UILib.Setlists
 			SoundItemPlayer? player = null;
 			if (MediaLinks.SoundOf(play.Recording) is { } recording && App.SoundStore is { } sounds)
 			{
+				// (Not on this device: a download button first; the play still fetches it if it's gone meanwhile.)
 				player = new SoundItemPlayer(sounds, recording.Id, L.T("Play the band's recording of it"),
-					async () => await sounds.PlayAsync(recording.Id) || (await SoundSync.FetchAsync(recording.Id) && await sounds.PlayAsync(recording.Id)));
+					async () => await sounds.PlayAsync(recording.Id) || (await SoundSync.FetchAsync(recording.Id) && await sounds.PlayAsync(recording.Id)),
+					needsDownload: null);
 				DockPanel.SetDock(player.Button, Dock.Right);
 				row.Children.Add(player.Button);
 			}

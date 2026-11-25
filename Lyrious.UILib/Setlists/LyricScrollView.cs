@@ -3134,14 +3134,45 @@ namespace Lyrious.UILib.Setlists
 						return;
 					}
 				}
-
-				await SoundSync.FetchAsync(sound.Id);
 			}
 			catch (Exception ex)
 			{
-				// Fetched when it's played, then.
-				System.Diagnostics.Debug.WriteLine($"Couldn't fetch {sound.Name} ahead: {ex.Message}");
+				System.Diagnostics.Debug.WriteLine($"Couldn't open {sound.Name}: {ex.Message}");
 			}
+
+			await DownloadSoundAsync(sound);
+		}
+
+		/// <summary>
+		/// Fetches the song's sound file from the server and keeps it on this device (added on another
+		/// device): the media buttons dimmed, saying so, meanwhile; a problem is shown at them. False when
+		/// it couldn't be had.
+		/// </summary>
+		private async Task<bool> DownloadSoundAsync(SoundFile sound)
+		{
+			var tip = ToolTip.GetTip(mediaButtons);
+			mediaButtons.Opacity = 0.5;
+			ToolTip.SetTip(mediaButtons, L.T("Downloading {0}…", sound.Name));
+			try
+			{
+				if (await SoundSync.FetchAsync(sound.Id))
+				{
+					return true;
+				}
+
+				ShowProblemAt(mediaButtons, L.T("{0} isn't on this device or the server (yet).", sound.Name));
+			}
+			catch (Exception ex)
+			{
+				ShowProblemAt(mediaButtons, L.T("Couldn't download {0}. {1}", sound.Name, ex.Message));
+			}
+			finally
+			{
+				mediaButtons.Opacity = 1;
+				ToolTip.SetTip(mediaButtons, tip);
+			}
+
+			return false;
 		}
 
 		/// <summary>
@@ -3158,9 +3189,9 @@ namespace Lyrious.UILib.Setlists
 
 			try
 			{
-				if (!await sounds.PlayAsync(sound.Id) && !(await SoundSync.FetchAsync(sound.Id) && await sounds.PlayAsync(sound.Id)))
+				if (!await sounds.PlayAsync(sound.Id) && !(await DownloadSoundAsync(sound) && await sounds.PlayAsync(sound.Id)))
 				{
-					return; // Not on this device, nor (yet) on the server.
+					return; // Not on this device, nor (yet) on the server (said at the media buttons).
 				}
 
 				startedSound = true;
