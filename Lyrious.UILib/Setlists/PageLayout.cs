@@ -616,7 +616,8 @@ namespace Lyrious.UILib.Setlists
 			{
 				Orientation = Orientation.Horizontal,
 				Spacing = 4,
-				Children = { AppIcons.Create(BackIcon, 16), new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center } },
+				// Not underlined, as a link's text would be: it reads as the way back, not a web link.
+				Children = { AppIcons.Create(BackIcon, 16), new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center, TextDecorations = [] } },
 			};
 			// On the content, so the link's own colour (also when pointed at) doesn't reach it.
 			content.Bind(Avalonia.Controls.Documents.TextElement.ForegroundProperty, content.GetResourceObservable(LyriousTheme.ForegroundBrush));
@@ -1161,7 +1162,8 @@ namespace Lyrious.UILib.Setlists
 				return new TextBlock { Text = emptyText, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
 			}
 
-			var list = new StackPanel { Spacing = 8 };
+			// Up and down go through the rows (see ListKeys).
+			var list = ListKeys.Stepped(new StackPanel { Spacing = 8 });
 			list.Children.AddRange(rows);
 			return new ScrollViewer { Content = list };
 		}

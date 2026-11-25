@@ -324,7 +324,8 @@ public sealed class HttpSetlistService : ISetlistService
         foreach (var (id, setlist) in setlists)
         {
             var band = BandName(IdField(setlist, "groupId"));
-            if (Mine("setlist", setlist))
+            // (The songbook shown as a setlist isn't one of the band's setlists.)
+            if (Mine("setlist", setlist) || setlist["isHidden"] is JsonValue hidden && hidden.TryGetValue<bool>(out var isHidden) && isHidden)
             {
                 continue;
             }
@@ -614,10 +615,73 @@ public sealed class HttpSetlistService : ISetlistService
     {
         var current = await CacheAsync();
         return Live(current, "setlist", ClientJsonContext.Default.SetlistDto)
-            .Where(setlist => setlist.GroupId == groupId)
+            .Where(setlist => setlist.GroupId == groupId && !setlist.IsHidden)
             .OrderBy(setlist => setlist.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(ToSummary)
             .ToArray();
+    }
+
+    /// <summary>
+    /// The band's hidden songbook setlist (the first made, should two devices have made one each before
+    /// they synced; made now when there's none), holding just these songs in this order: songs it has
+    /// already keep their entry (moved when their place changed), the others are added and those no
+    /// longer wanted removed, so a big songbook doesn't send all its songs each time.
+    /// </summary>
+    public async Task<SetlistSummary> ShowSongbookAsSetlistAsync(Guid groupId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        var setlist = Live(current, "setlist", ClientJsonContext.Default.SetlistDto)
+            .Where(setlist => setlist.GroupId == groupId && setlist.IsHidden)
+            .OrderBy(setlist => setlist.CreatedAt)
+            .FirstOrDefault();
+        if (setlist == null)
+        {
+            var now = DateTime.Now;
+            setlist = new SetlistDto(Guid.NewGuid(), "Songbook", groupId, now, now, Removed: false, Checksum: 0, IsHidden: true);
+            current.Create("setlist", Node(setlist, ClientJsonContext.Default.SetlistDto));
+        }
+
+        // Its entries by song (one each; another of the same song is removed).
+        var kept = new Dictionary<Guid, SetlistItemDto>();
+        foreach (var item in Live(current, "setlistitem", ClientJsonContext.Default.SetlistItemDto).Where(item => item.SetlistId == setlist.Id).OrderBy(item => item.Position))
+        {
+            if (!kept.TryAdd(item.SongId, item))
+            {
+                current.Delete("setlistitem", item.Id);
+            }
+        }
+
+        var wanted = new HashSet<Guid>();
+        for (var i = 0; i < songIds.Count; i++)
+        {
+            if (!wanted.Add(songIds[i]))
+            {
+                continue;
+            }
+
+            if (kept.TryGetValue(songIds[i], out var item))
+            {
+                if (item.Position != i)
+                {
+                    current.Update("setlistitem", item.Id, new JsonObject { ["position"] = i });
+                }
+            }
+            else
+            {
+                current.Create("setlistitem", Node(new SetlistItemDto(Guid.NewGuid(), i, songIds[i], setlist.Id, Removed: false), ClientJsonContext.Default.SetlistItemDto));
+            }
+        }
+
+        foreach (var (songId, item) in kept)
+        {
+            if (!wanted.Contains(songId))
+            {
+                current.Delete("setlistitem", item.Id);
+            }
+        }
+
+        Queued(current);
+        return ToSummary(setlist);
     }
 
     public async Task<SetlistSummary?> GetSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default)
@@ -1718,6 +1782,130 @@ public sealed class HttpSetlistService : ISetlistService
             content);
     }
 
+    /// <summary>Lyrics.com, for its search and its songs' lyrics (see <see cref="SearchLyricsComAsync"/>).</summary>
+    private static readonly HttpClient LyricsCom = CreateLyricsComClient();
+
+    private static HttpClient CreateLyricsComClient()
+    {
+        var client = new HttpClient { BaseAddress = new Uri("https://www.lyrics.com/"), Timeout = TimeSpan.FromSeconds(20) };
+        // The app says who it is, as it does to LRCLIB.
+        if (!OperatingSystem.IsBrowser())
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Lyrious/1.0");
+        }
+
+        return client;
+    }
+
+    /// <summary>
+    /// Searches Lyrics.com for the title (the words before " - ", when the query is "Title - Artist"):
+    /// its search through titles and lyrics, whose songs' pages show their lyrics; when that finds
+    /// nothing, its search of titles alone, whose pages often don't (licensed songs). Songs by the artist
+    /// asked for come first. Read from its search page (each song's title, album and artist). Needs an
+    /// internet connection.
+    /// </summary>
+    public async Task<IReadOnlyList<LyricsComSong>> SearchLyricsComAsync(string query, CancellationToken cancellationToken = default)
+    {
+        if (OperatingSystem.IsBrowser())
+        {
+            throw new PlatformNotSupportedException(L.T("Lyrics.com can't be searched from a browser."));
+        }
+
+        var words = query.Trim();
+        var dash = words.IndexOf(" - ", StringComparison.Ordinal);
+        var title = dash > 0 ? words[..dash].Trim() : words;
+        var artist = dash > 0 ? words[(dash + 3)..].Trim() : "";
+
+        var found = await SearchLyricsComPageAsync($"serp.php?st={Uri.EscapeDataString(title)}&qtype=1", cancellationToken);
+        if (found.Count == 0)
+        {
+            found = await SearchLyricsComPageAsync($"serp.php?st={Uri.EscapeDataString(title)}&stype=1", cancellationToken);
+        }
+
+        return artist.Length == 0
+            ? found
+            : found.OrderBy(song => song.Artist.Contains(artist, StringComparison.CurrentCultureIgnoreCase) ? 0 : 1).ToArray();
+    }
+
+    /// <summary>The songs on one of Lyrics.com's search pages, each once (its page's address), in the page's order.</summary>
+    private static async Task<IReadOnlyList<LyricsComSong>> SearchLyricsComPageAsync(string address, CancellationToken cancellationToken)
+    {
+        using var response = await LyricsCom.GetAsync(address, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(L.T("Lyrics.com answered {0} {1}.", (int)response.StatusCode, response.ReasonPhrase), null, response.StatusCode);
+        }
+
+        var page = await response.Content.ReadAsStringAsync(cancellationToken);
+        // Each song is its title's link, then (before the next song's title) its album and artist.
+        var titles = System.Text.RegularExpressions.Regex.Matches(page, "<p class=\"lyric-meta-title\"><a href=\"([^\"]+)\">(.*?)</a>", System.Text.RegularExpressions.RegexOptions.Singleline);
+        var found = new List<LyricsComSong>();
+        var links = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < titles.Count; i++)
+        {
+            var start = titles[i].Index + titles[i].Length;
+            var end = i + 1 < titles.Count ? titles[i + 1].Index : page.Length;
+            var rest = page[start..end];
+            var title = HtmlText(titles[i].Groups[2].Value);
+            if (title.Length == 0
+                || !Uri.TryCreate(LyricsCom.BaseAddress, System.Net.WebUtility.HtmlDecode(titles[i].Groups[1].Value), out var link)
+                || !IsLyricsComSongPage(link)
+                || !links.Add(link.AbsolutePath))
+            {
+                continue;
+            }
+
+            var artist = System.Text.RegularExpressions.Regex.Match(rest, "<p class=\"lyric-meta-album-artist\">(.*?)</p>", System.Text.RegularExpressions.RegexOptions.Singleline);
+            var album = System.Text.RegularExpressions.Regex.Match(rest, "<p class=\"lyric-meta-album\">(.*?)</p>", System.Text.RegularExpressions.RegexOptions.Singleline);
+            found.Add(new LyricsComSong(title, artist.Success ? HtmlText(artist.Groups[1].Value) : "", album.Success ? HtmlText(album.Groups[1].Value) : "", link));
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// A song's lyrics from its page on Lyrics.com, as plain text (the words its page links to explanations
+    /// of, as plain words); empty when the page doesn't show them. Only its song pages. Needs an internet connection.
+    /// </summary>
+    public async Task<string> GetLyricsComLyricsAsync(Uri link, CancellationToken cancellationToken = default)
+    {
+        if (OperatingSystem.IsBrowser())
+        {
+            throw new PlatformNotSupportedException(L.T("Lyrics.com can't be searched from a browser."));
+        }
+
+        if (!IsLyricsComSongPage(link))
+        {
+            throw new ArgumentException(L.T("That isn't a song's page on Lyrics.com."), nameof(link));
+        }
+
+        using var response = await LyricsCom.GetAsync(link, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(L.T("Lyrics.com answered {0} {1}.", (int)response.StatusCode, response.ReasonPhrase), null, response.StatusCode);
+        }
+
+        var page = await response.Content.ReadAsStringAsync(cancellationToken);
+        var lyrics = System.Text.RegularExpressions.Regex.Match(page, "<pre id=\"lyric-body-text\"[^>]*>(.*?)</pre>", System.Text.RegularExpressions.RegexOptions.Singleline);
+        return lyrics.Success ? HtmlText(lyrics.Groups[1].Value) : "";
+    }
+
+    /// <summary>Whether the address is a song's page on Lyrics.com (its own songs', or those its visitors added).</summary>
+    private static bool IsLyricsComSongPage(Uri link)
+        => link.Scheme == Uri.UriSchemeHttps
+           && link.Host.Equals("www.lyrics.com", StringComparison.OrdinalIgnoreCase)
+           && (link.AbsolutePath.StartsWith("/lyric/", StringComparison.OrdinalIgnoreCase)
+               || link.AbsolutePath.StartsWith("/lyric-lf/", StringComparison.OrdinalIgnoreCase)
+               || link.AbsolutePath.StartsWith("/sublyric/", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>A page's HTML as the text it shows: without its tags, its entities as the characters, its lines as they are.</summary>
+    private static string HtmlText(string html)
+    {
+        var text = System.Text.RegularExpressions.Regex.Replace(html, "<br\\s*/?>", "\n", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        text = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", "");
+        return System.Net.WebUtility.HtmlDecode(text).Replace("\r\n", "\n").Replace('\u00A0', ' ').Trim();
+    }
+
     /// <summary>Spotify's embed pages (the player shown on other sites), whose data has a playlist's or album's tracks.</summary>
     private static readonly HttpClient Spotify = CreateSpotifyClient();
 
@@ -1821,7 +2009,8 @@ public sealed class HttpSetlistService : ISetlistService
 
     private static GroupSummary ToSummary(GroupDto group) => new(group.Id, group.Name, group.CurrentSetlistId, group.CurrentSetlistItemId, group.IsPrivate, group.MidiExpressions, group.MidiCommands, group.LyricsHeader, group.NextSongOnStopAtEnd, group.CurrentSongId);
 
-    private static SetlistSummary ToSummary(SetlistDto setlist) => new(setlist.Id, setlist.Name, setlist.GroupId);
+    // The songbook shown as a setlist is called so in each member's own language (its stored name is only for the server).
+    private static SetlistSummary ToSummary(SetlistDto setlist) => new(setlist.Id, setlist.IsHidden ? L.T("Songbook") : setlist.Name, setlist.GroupId, setlist.IsHidden);
 
     private static SetlistEntry ToEntry(SetlistItemDto item, SongDto song) => new(item.Id, item.SetlistId, item.Position, ToDetails(song));
 

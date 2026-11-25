@@ -64,7 +64,7 @@ internal sealed record GroupDto(
     // The band's current song when played from outside its current setlist (no setlist item then); null otherwise.
     System.Guid? CurrentSongId = null);
 
-internal sealed record SetlistDto(System.Guid Id, string Name, System.Guid GroupId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum);
+internal sealed record SetlistDto(System.Guid Id, string Name, System.Guid GroupId, System.DateTime CreatedAt, System.DateTime ChangedAt, bool Removed, long Checksum, bool IsHidden = false);
 
 internal sealed record SetlistItemDto(System.Guid Id, int Position, System.Guid SongId, System.Guid SetlistId, bool Removed);
 

@@ -194,6 +194,13 @@ namespace Lyrious.UILib.Setlists
 
 		Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default);
 
+		/// <summary>
+		/// The band's songbook as a setlist, to show in the right drawer: a setlist of its own, hidden (not
+		/// listed with the band's setlists, nor in its sessions), made the first time and holding just
+		/// these songs, in this order, afterwards. Kept like any setlist, so the band can follow it.
+		/// </summary>
+		Task<SetlistSummary> ShowSongbookAsSetlistAsync(Guid groupId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default);
+
 		/// <summary>The setlist, or null if it doesn't exist (any more).</summary>
 		Task<SetlistSummary?> GetSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default);
 
@@ -274,6 +281,19 @@ namespace Lyrious.UILib.Setlists
 		/// links), in Ultimate Guitar's own format (see <see cref="UltimateGuitarText"/>). Not in a browser.
 		/// </summary>
 		Task<UltimateGuitarTab> GetUltimateGuitarTabAsync(Uri link, CancellationToken cancellationToken = default);
+
+		/// <summary>
+		/// Searches Lyrics.com by title and/or artist ("Title - Artist" finds the title, that artist's first):
+		/// its songs, with their pages there for the lyrics (see <see cref="GetLyricsComLyricsAsync"/>). Not in a
+		/// browser (<see cref="CanSearchUltimateGuitar"/>, which goes for this too).
+		/// </summary>
+		Task<IReadOnlyList<LyricsComSong>> SearchLyricsComAsync(string query, CancellationToken cancellationToken = default);
+
+		/// <summary>
+		/// A song's lyrics from its page on Lyrics.com (one of <see cref="SearchLyricsComAsync"/>'s links), as
+		/// plain text; empty when the page doesn't show them (some licensed songs don't). Not in a browser.
+		/// </summary>
+		Task<string> GetLyricsComLyricsAsync(Uri link, CancellationToken cancellationToken = default);
 
 		/// <summary>
 		/// A Spotify playlist's or album's name and tracks (see <see cref="MediaLinks.SpotifyCollection"/>),
@@ -385,7 +405,8 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>A member found to invite.</summary>
 	public sealed record FoundMember(Guid Id, string Name, string UserName);
 
-	public sealed record SetlistSummary(Guid Id, string Name, Guid GroupId);
+	/// <param name="IsHidden">The band's songbook shown as a setlist in the drawer (see <see cref="ISetlistService.ShowSongbookAsSetlistAsync"/>): never listed with its setlists.</param>
+	public sealed record SetlistSummary(Guid Id, string Name, Guid GroupId, bool IsHidden = false);
 
 	/// <param name="MediaLink">A link to listen to or watch the song (Spotify, YouTube, …); empty if none.</param>
 	/// <param name="Tags">Tags to sort the song by, separated by spaces (see <see cref="SongTags"/>); empty if none.</param>
@@ -417,6 +438,9 @@ namespace Lyrious.UILib.Setlists
 	/// page there, and its rating (out of 5, null if none) and how many rated it.
 	/// </summary>
 	public sealed record UltimateGuitarSong(string Title, string Artist, string Type, Uri Link, double? Rating, int Votes);
+
+	/// <summary>A song found on Lyrics.com: title, artist, album (empty if not known), and its page there with the lyrics.</summary>
+	public sealed record LyricsComSong(string Title, string Artist, string Album, Uri Link);
 
 	/// <summary>A Spotify playlist or album: its name and its tracks, in order.</summary>
 	public sealed record SpotifyCollection(string Name, IReadOnlyList<SpotifyTrack> Tracks);
@@ -488,6 +512,7 @@ namespace Lyrious.UILib.Setlists
 		public Task SaveMemberLyricsAsync(Guid songId, Guid memberId, string lyrics, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task RemoveMemberAsync(Guid groupId, Guid memberId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteGroupAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<SetlistSummary> ShowSongbookAsSetlistAsync(Guid groupId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<SetlistSummary>> GetSetlistsAsync(Guid groupId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary?> GetSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SetlistSummary> CreateSetlistAsync(Guid groupId, string name, CancellationToken cancellationToken = default) => throw NotConnected();
@@ -510,6 +535,8 @@ namespace Lyrious.UILib.Setlists
 		public Task<IReadOnlyList<InternetSong>> SearchInternetAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<IReadOnlyList<UltimateGuitarSong>> SearchUltimateGuitarAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<UltimateGuitarTab> GetUltimateGuitarTabAsync(Uri link, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<IReadOnlyList<LyricsComSong>> SearchLyricsComAsync(string query, CancellationToken cancellationToken = default) => throw NotConnected();
+		public Task<string> GetLyricsComLyricsAsync(Uri link, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SpotifyCollection> GetSpotifyCollectionAsync(string kind, string id, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task<SongDetails> CreateSongAsync(Guid groupId, string name, string lyrics, TimeSpan duration, CancellationToken cancellationToken = default) => throw NotConnected();
 		public Task DeleteSongAsync(Guid songId, CancellationToken cancellationToken = default) => throw NotConnected();

@@ -90,6 +90,18 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		/// <summary>
+		/// The songbook's checks made these songs (e.g. those of the songbook shown as a setlist): its other
+		/// songs unchecked, also in the setlists.
+		/// </summary>
+		/// <param name="songbook">The songbook's songs.</param>
+		/// <param name="songs">The songs to check (none: all unchecked).</param>
+		internal static void CheckOnly(IEnumerable<Guid> songbook, IEnumerable<Guid> songs)
+		{
+			UncheckSongs(songbook);
+			checkedSongs.UnionWith(songs);
+		}
+
 		// The check boxes of the songs listed now.
 		private readonly List<CheckBox> checkBoxes = [];
 
@@ -1015,7 +1027,7 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>A full-width, plain button in a popup, looking like a menu item.</summary>
-		private static Button PopupItem(string text, string? icon = null) => new()
+		internal static Button PopupItem(string text, string? icon = null) => new()
 		{
 			// The icon (if any) before the text, as in a menu.
 			Content = icon == null
@@ -1060,10 +1072,11 @@ namespace Lyrious.UILib.Setlists
 		private const string UncheckedIcon = "M7,4 H17 A3,3 0 0 1 20,7 V17 A3,3 0 0 1 17,20 H7 A3,3 0 0 1 4,17 V7 A3,3 0 0 1 7,4 Z";
 
 		/// <summary>
-		/// A song list's check tool, just above the list (its check box in line with the songs'): a check
-		/// box that's empty while none of the list's songs is checked, with "Check all" (a click checks
-		/// them all), half filled while some are and filled while all are, with "Clear all" (a click
-		/// unchecks all songs, in the songbook and every setlist).
+		/// A list's check tool, just above the list (its check box in line with the items'): a check box
+		/// that's empty while none of the list's items is checked, with "Check all" (a click checks them
+		/// all), half filled while some are and filled while all are, with "Clear all" (a click unchecks
+		/// them; for songs, all songs, in the songbook and every setlist). Songs' lists by default; other
+		/// lists (e.g. Sound files) say where their boxes are and what their items are.
 		/// </summary>
 		internal sealed class CheckAllTool
 		{
@@ -1084,22 +1097,35 @@ namespace Lyrious.UILib.Setlists
 			};
 
 			private readonly TextBlock label = new() { FontSize = 13, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+			private readonly string checkAllName;
+			private readonly string uncheckAllName;
 
 			/// <summary>The tool, for just above the list.</summary>
 			public Button Button { get; }
 
 			/// <param name="boxes">The list's check boxes now.</param>
 			/// <param name="changed">Called after a click, to show the list so (e.g. to dim its boxes).</param>
-			public CheckAllTool(Func<IEnumerable<CheckBox>> boxes, Action changed)
+			/// <param name="boxLeft">How far the items' check boxes are from the list's left edge; a song row's by default.</param>
+			/// <param name="checkAllName">What a screen reader says the tool does while none is checked; "Check all songs" by default.</param>
+			/// <param name="uncheckAllName">And while some are; "Uncheck all songs" by default.</param>
+			/// <param name="uncheckAll">What else unchecking all does; for songs by default, the songs checked in every list are forgotten.</param>
+			public CheckAllTool(Func<IEnumerable<CheckBox>> boxes, Action changed, double? boxLeft = null, string? checkAllName = null, string? uncheckAllName = null, Action? uncheckAll = null)
 			{
 				this.boxes = boxes;
+				this.checkAllName = checkAllName ?? L.T("Check all songs");
+				this.uncheckAllName = uncheckAllName ?? L.T("Uncheck all songs");
+				uncheckAll ??= () =>
+				{
+					checkedSongs.Clear();
+					checkedEntries.Clear();
+				};
 				// Its check box where the rows' are: the rows' left room less the 6px their boxes reach into it,
 				// and the 2px outline around each row.
 				shown.Margin = new Avalonia.Thickness(0, 0, 10, 0);
 				Button = new Button
 				{
 					Content = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Children = { shown, label } },
-					Padding = new Avalonia.Thickness(SongListRowPadding.Left - 6 + 2, 4, 10, 4),
+					Padding = new Avalonia.Thickness(boxLeft ?? SongListRowPadding.Left - 6 + 2, 4, 10, 4),
 					MinHeight = 0,
 					Background = Brushes.Transparent,
 					BorderThickness = new Avalonia.Thickness(0),
@@ -1119,8 +1145,7 @@ namespace Lyrious.UILib.Setlists
 							box.IsChecked = false;
 						}
 
-						checkedSongs.Clear();
-						checkedEntries.Clear();
+						uncheckAll();
 					}
 					else
 					{
@@ -1143,7 +1168,7 @@ namespace Lyrious.UILib.Setlists
 				var count = list.Count(box => box.IsChecked == true);
 				shown.IsChecked = count == 0 ? false : count == list.Count ? true : null;
 				label.Text = count == 0 ? L.T("Check all") : L.T("Clear all");
-				Avalonia.Automation.AutomationProperties.SetName(Button, count == 0 ? L.T("Check all songs") : L.T("Uncheck all songs"));
+				Avalonia.Automation.AutomationProperties.SetName(Button, count == 0 ? checkAllName : uncheckAllName);
 				Button.IsEnabled = list.Count > 0;
 			}
 		}

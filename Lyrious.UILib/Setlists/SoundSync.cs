@@ -70,11 +70,37 @@ namespace Lyrious.UILib.Setlists
 			_ = SendPendingAsync();
 		}
 
+		// The sound files being fetched: asked for again meanwhile (e.g. played while it's fetched ahead),
+		// the same fetch is waited for, so the file isn't written twice at once.
+		private static readonly Dictionary<string, Task<bool>> Fetching = [];
+
 		/// <summary>
 		/// Fetches the sound file from the server and keeps it on this device. False when the server
 		/// hasn't got it; throws when it can't be reached.
 		/// </summary>
-		public static async Task<bool> FetchAsync(string soundId)
+		public static Task<bool> FetchAsync(string soundId)
+		{
+			lock (Fetching)
+			{
+				if (Fetching.TryGetValue(soundId, out var running))
+				{
+					return running;
+				}
+
+				var fetch = FetchNowAsync(soundId);
+				Fetching[soundId] = fetch;
+				_ = fetch.ContinueWith(_ =>
+				{
+					lock (Fetching)
+					{
+						Fetching.Remove(soundId);
+					}
+				}, TaskScheduler.Default);
+				return fetch;
+			}
+		}
+
+		private static async Task<bool> FetchNowAsync(string soundId)
 		{
 			if (App.SoundStore is not { } sounds)
 			{

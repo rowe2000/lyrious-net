@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 
 namespace Lyrious.UILib.Setlists
 {
@@ -13,8 +14,10 @@ namespace Lyrious.UILib.Setlists
 	/// A list where a click selects a row (outlined, with its small toolbar beside it) and a double
 	/// click makes the item current (e.g. opens the song, setlist or band). The current item is shown
 	/// with the blue highlight and starts out selected. Used by the bands, setlists and songbook pages.
+	/// Up and down select the row before or after, and the space bar checks or unchecks a row with a
+	/// check box (see <see cref="IListKeys"/>).
 	/// </summary>
-	public sealed class SelectableList<T> : UserControl where T : notnull
+	public sealed class SelectableList<T> : UserControl, IListKeys where T : notnull
 	{
 		private readonly List<(T Item, Border Outline, Control Tools)> rows = [];
 
@@ -103,6 +106,7 @@ namespace Lyrious.UILib.Setlists
 
 			var scroller = new ScrollViewer { Content = list };
 			Content = scroller;
+			ListKeys.SetStepper(this, this);
 			Select(items.FirstOrDefault(isCurrent));
 			if (currentRow != null)
 			{
@@ -206,6 +210,51 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			return new DockPanel { Children = { toolbar, outline } };
+		}
+
+		/// <summary>The rows listed (those found, while filtered), and which of them the keys are at: the one with the focus in it, else the selected one (-1: none).</summary>
+		private (List<(T Item, Control Row)> Shown, int At) KeyPlace()
+		{
+			var shown = shownRows.Where(pair => pair.Row.IsVisible).ToList();
+			var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
+			var at = focused != null ? shown.FindIndex(pair => pair.Row.IsVisualAncestorOf(focused)) : -1;
+			if (at < 0 && Selected is { } selected)
+			{
+				at = shown.FindIndex(pair => EqualityComparer<T>.Default.Equals(pair.Item, selected));
+			}
+
+			return (shown, at);
+		}
+
+		void IListKeys.Step(int direction)
+		{
+			var (shown, at) = KeyPlace();
+			if (shown.Count == 0)
+			{
+				return;
+			}
+
+			var (item, row) = shown[at < 0 ? (direction > 0 ? 0 : shown.Count - 1) : Math.Clamp(at + direction, 0, shown.Count - 1)];
+			Select(item);
+			if (rows.FirstOrDefault(entry => EqualityComparer<T>.Default.Equals(entry.Item, item)).Outline is { Child: Button button })
+			{
+				button.Focus(Avalonia.Input.NavigationMethod.Directional);
+			}
+
+			row.BringIntoView();
+		}
+
+		bool IListKeys.ToggleCheck()
+		{
+			var (shown, at) = KeyPlace();
+			if (at < 0)
+			{
+				return false;
+			}
+
+			var item = shown[at].Item;
+			return rows.FirstOrDefault(entry => EqualityComparer<T>.Default.Equals(entry.Item, item)).Outline is { } outline
+			       && ListKeys.Toggle(ListKeys.CheckBoxOf(outline));
 		}
 
 		/// <summary>The selected row's toolbar hidden (it stays outlined), e.g. while songs are checked for the setlist tool.</summary>

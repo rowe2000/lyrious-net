@@ -10,6 +10,12 @@ public sealed class Setlist : Entity, IName
 	[DataMember] public string Name { get; set; } = "";
 	[DataMember] public Guid GroupId { get; set; }
 
+	/// <summary>
+	/// The band's songbook shown as a setlist in the right drawer (all its songs, or the checked ones):
+	/// kept so the band can follow it, but never listed with the band's setlists or in its sessions.
+	/// </summary>
+	[DataMember] public bool IsHidden { get; set; }
+
 	[JsonIgnore] public Group? Group { get; set; }
 
 	[JsonIgnore] public ObservableList<SetlistItem> SetlistItems { get; set; } = [];

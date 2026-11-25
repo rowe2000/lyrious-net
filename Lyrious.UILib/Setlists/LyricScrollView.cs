@@ -1055,6 +1055,8 @@ namespace Lyrious.UILib.Setlists
 			ShowMySettingButtons(shownWithChords);
 			ShowTime();
 			ShowClockIfRoom();
+			// The media player on (from an earlier song): this song's sound file is fetched ahead too.
+			_ = FetchActiveSoundAsync();
 			clockTimer.Start();
 			ShowTitle();
 			if (App.SoundStore is { } sounds)
@@ -2524,6 +2526,10 @@ namespace Lyrious.UILib.Setlists
 			return true;
 		}
 
+		// The editor's tools for all chords a semitone down and up: a minus and a plus.
+		private const string MinusIcon = "M5,12 H19";
+		private const string PlusIcon = "M12,5 V19 M5,12 H19";
+
 		// Time and bar marks at a line's start ("[1:23]", "[12]", "[+1]", one or more), with the spaces after them.
 		[System.Text.RegularExpressions.GeneratedRegex(@"^\s*(?:\[(?:\+?\d+(?::\d+(?:\.\d+)?)?)\]\s*)+")]
 		private static partial System.Text.RegularExpressions.Regex LeadingTimeTags();
@@ -3098,10 +3104,44 @@ namespace Lyrious.UILib.Setlists
 				{
 					_ = StartMediaAsync();
 				}
+				else
+				{
+					_ = FetchActiveSoundAsync();
+				}
 			}
 
 			MediaChanged?.Invoke();
 			showMediaLink();
+		}
+
+		/// <summary>
+		/// The song's sound file the media player is on for, fetched from the server ahead when it isn't
+		/// on this device yet (added on another device), so it plays at once when play is pressed.
+		/// </summary>
+		private async Task FetchActiveSoundAsync()
+		{
+			if (App.SoundStore is not { } sounds || ActiveSound is not { } sound)
+			{
+				return;
+			}
+
+			try
+			{
+				await using (var here = await sounds.OpenAsync(sound.Id))
+				{
+					if (here != null)
+					{
+						return;
+					}
+				}
+
+				await SoundSync.FetchAsync(sound.Id);
+			}
+			catch (Exception ex)
+			{
+				// Fetched when it's played, then.
+				System.Diagnostics.Debug.WriteLine($"Couldn't fetch {sound.Name} ahead: {ex.Message}");
+			}
 		}
 
 		/// <summary>
@@ -3452,8 +3492,8 @@ namespace Lyrious.UILib.Setlists
 			// the song's keys and the member's transpose stay), and the bar marks all relative or all
 			// absolute. With a selection, they change only what's selected.
 			// They don't take the focus: the box keeps it, and what's selected in it (see TextBoxFocus.KeepsFocusProperty).
-			var chordsDown = new Button { Content = "−", MinWidth = 36, HorizontalContentAlignment = HorizontalAlignment.Center, Focusable = false };
-			var chordsUp = new Button { Content = "+", MinWidth = 36, HorizontalContentAlignment = HorizontalAlignment.Center, Focusable = false };
+			var chordsDown = new Button { Content = AppIcons.Create(MinusIcon, 16), MinWidth = 36, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, Focusable = false };
+			var chordsUp = new Button { Content = AppIcons.Create(PlusIcon, 16), MinWidth = 36, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, Focusable = false };
 			var flipBars = new Button { Focusable = false };
 			// The box emptied: the globe, to find the lyrics online (they come into this box, see EditWithLyrics).
 			var findOnline = new Button

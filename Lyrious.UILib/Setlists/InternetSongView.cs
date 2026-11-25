@@ -14,9 +14,9 @@ namespace Lyrious.UILib.Setlists
 	/// <summary>
 	/// Finds a song online, by title and/or artist, on the source chosen: Ultimate Guitar (the default),
 	/// whose chords and tabs show in the lyrics view, just for the user until added; or LRCLIB, a lyrics
-	/// database, whose lyrics show as text. A result picked can be added to the band's songbook. The
-	/// results are kept while previewing, so going back doesn't search again. In a browser, which can't
-	/// read another site, an Ultimate Guitar search opens there instead.
+	/// database, or Lyrics.com, whose lyrics show as text. A result picked can be added to the band's
+	/// songbook. The results are kept while previewing, so going back doesn't search again. In a browser,
+	/// which can't read another site, an Ultimate Guitar or Lyrics.com search opens there instead.
 	/// </summary>
 	public sealed class InternetSongView : UserControl
 	{
@@ -25,15 +25,29 @@ namespace Lyrious.UILib.Setlists
 		private readonly Func<string, Task<IReadOnlyList<UltimateGuitarSong>>>? searchUltimateGuitar;
 		// Reads a song's chords or tab from its page on Ultimate Guitar (with the search).
 		private readonly Func<Uri, Task<UltimateGuitarTab>>? getUltimateGuitarTab;
+		// Searches Lyrics.com; null where it can't be (a browser): the search opens there instead.
+		private readonly Func<string, Task<IReadOnlyList<LyricsComSong>>>? searchLyricsCom;
+		// Reads a song's lyrics from its page on Lyrics.com (with the search).
+		private readonly Func<Uri, Task<string>>? getLyricsComLyrics;
 		private readonly IReadOnlySet<string> songbookNames;
 		private readonly TextBox query = PageLayout.WithClearButton(new TextBox { PlaceholderText = L.T("Title and/or artist") });
 		// In the box, at its right end after the ✕ (see the constructor).
 		private readonly Button searchButton = HomeView.IconButton(AppIcons.Search, L.T("Search"));
-		// Where to search: Ultimate Guitar (chords and tabs) or LRCLIB (lyrics).
+		// Where to search: Ultimate Guitar (chords and tabs), or LRCLIB or Lyrics.com (lyrics).
 		private readonly RadioButton ultimateGuitarSource = new() { Content = "Ultimate Guitar", GroupName = "find-online-source" };
 		private readonly RadioButton lrclibSource = new() { Content = "LRCLIB", GroupName = "find-online-source" };
-		// The source chosen, while the app runs: Ultimate Guitar unless LRCLIB was chosen.
-		private static bool lrclibChosen;
+		private readonly RadioButton lyricsComSource = new() { Content = "Lyrics.com", GroupName = "find-online-source" };
+
+		/// <summary>Where songs are searched for.</summary>
+		private enum Source
+		{
+			UltimateGuitar,
+			Lrclib,
+			LyricsCom,
+		}
+
+		// The source chosen, while the app runs: Ultimate Guitar unless another was chosen.
+		private static Source chosen;
 		// The search, kept while the app runs until a song found is added (see ForgetSearch), so coming
 		// back to the page shows it as it was: whether something was searched (changing the source then
 		// searches it there too), the words, each source's last results, and which of them are listed.
@@ -41,14 +55,15 @@ namespace Lyrious.UILib.Setlists
 		// (The words as searched, not as typed since: Escape in the box puts back its text from when it got
 		// the focus, e.g. when leaving the page with Escape.)
 		private static string keptQuery = "";
-		private static bool? listedFromLrclib;
+		private static Source? listedFrom;
 		private readonly ContentControl results = new();
 		private readonly Control searchPage;
 		private static IReadOnlyList<InternetSong> lastResults = [];
 		private static IReadOnlyList<UltimateGuitarSong> lastUltimateGuitarResults = [];
-		// Counts the songs shown from Ultimate Guitar, so one that's still loading when the next is
-		// asked for doesn't show over it.
-		private int ultimateGuitarShown;
+		private static IReadOnlyList<LyricsComSong> lastLyricsComResults = [];
+		// Counts the songs shown from Ultimate Guitar or Lyrics.com, so one that's still loading when the
+		// next is asked for doesn't show over it.
+		private int songsShown;
 		private readonly string addText;
 
 		/// <summary>Raised when the user wants the chosen song added to the songbook.</summary>
@@ -59,13 +74,18 @@ namespace Lyrious.UILib.Setlists
 		/// <param name="addText">The text of the add button in the preview, e.g. "Add to songbook".</param>
 		/// <param name="searchUltimateGuitar">Searches Ultimate Guitar; null where it can't be (the search then opens in the browser).</param>
 		/// <param name="getUltimateGuitarTab">Reads a found song's chords or tab from Ultimate Guitar, to show it.</param>
+		/// <param name="searchLyricsCom">Searches Lyrics.com; null where it can't be (the search then opens in the browser).</param>
+		/// <param name="getLyricsComLyrics">Reads a found song's lyrics from Lyrics.com, to show them.</param>
 		public InternetSongView(Func<string, Task<IReadOnlyList<InternetSong>>> search, IReadOnlySet<string> songbookNames, string addText = "Add to songbook",
-			Func<string, Task<IReadOnlyList<UltimateGuitarSong>>>? searchUltimateGuitar = null, Func<Uri, Task<UltimateGuitarTab>>? getUltimateGuitarTab = null)
+			Func<string, Task<IReadOnlyList<UltimateGuitarSong>>>? searchUltimateGuitar = null, Func<Uri, Task<UltimateGuitarTab>>? getUltimateGuitarTab = null,
+			Func<string, Task<IReadOnlyList<LyricsComSong>>>? searchLyricsCom = null, Func<Uri, Task<string>>? getLyricsComLyrics = null)
 		{
 			this.addText = addText;
 			this.search = search;
 			this.searchUltimateGuitar = searchUltimateGuitar;
 			this.getUltimateGuitarTab = getUltimateGuitarTab;
+			this.searchLyricsCom = searchLyricsCom;
+			this.getLyricsComLyrics = getLyricsComLyrics;
 			this.songbookNames = songbookNames;
 
 			// The search button in the box, at its right end after the ✕ (which clears the box).
@@ -83,33 +103,39 @@ namespace Lyrious.UILib.Setlists
 			searchButton.Click += (_, _) => _ = SearchAsync();
 			query.TextChanged += (_, _) => searchButton.IsEnabled = !string.IsNullOrWhiteSpace(query.Text);
 
-			// The source: Ultimate Guitar's chords and tabs, or LRCLIB's lyrics.
+			// The source: Ultimate Guitar's chords and tabs, or LRCLIB's or Lyrics.com's lyrics.
 			ToolTip.SetTip(ultimateGuitarSource, searchUltimateGuitar != null
 				? L.T("Chords and tabs from Ultimate Guitar: pick one to see it here with its chords, only for you, and add it if you like")
 				: L.T("Opens the search on Ultimate Guitar in your browser, to copy chords or lyrics into a song"));
 			ToolTip.SetTip(lrclibSource, L.T("Lyrics (without chords) from LRCLIB, a free lyrics database (lrclib.net)"));
-			ultimateGuitarSource.IsChecked = !lrclibChosen;
-			lrclibSource.IsChecked = lrclibChosen;
-			lrclibSource.IsCheckedChanged += (_, _) =>
+			ToolTip.SetTip(lyricsComSource, searchLyricsCom != null
+				? L.T("Lyrics (without chords) from Lyrics.com, a large lyrics site: pick one to see its lyrics, and add it if you like")
+				: L.T("Opens the search on Lyrics.com in your browser, to copy lyrics into a song"));
+			ShowSourceChosen();
+			foreach (var (button, source) in new[] { (ultimateGuitarSource, Source.UltimateGuitar), (lrclibSource, Source.Lrclib), (lyricsComSource, Source.LyricsCom) })
 			{
-				if (choosingSource)
+				button.IsCheckedChanged += (_, _) =>
 				{
-					return;
-				}
+					// (The one let go of says so too: only the one chosen counts.)
+					if (choosingSource || button.IsChecked != true)
+					{
+						return;
+					}
 
-				lrclibChosen = lrclibSource.IsChecked == true;
-				// What was searched, searched again in the source chosen.
-				if (searched)
-				{
-					_ = SearchAsync();
-				}
-			};
+					chosen = source;
+					// What was searched, searched again in the source chosen.
+					if (searched)
+					{
+						_ = SearchAsync();
+					}
+				};
+			}
 			var sources = new StackPanel
 			{
 				Orientation = Avalonia.Layout.Orientation.Horizontal,
 				Spacing = 16,
 				Margin = new Thickness(0, 0, 0, 16),
-				Children = { ultimateGuitarSource, lrclibSource },
+				Children = { ultimateGuitarSource, lrclibSource, lyricsComSource },
 			};
 			DockPanel.SetDock(sources, Dock.Top);
 			query.KeyDown += (_, e) =>
@@ -124,7 +150,7 @@ namespace Lyrious.UILib.Setlists
 			query.Margin = new Thickness(0, 0, 0, 16);
 			DockPanel.SetDock(query, Dock.Top);
 
-			results.Content = Message(L.T("Search for a song: its chords on Ultimate Guitar, or its lyrics on LRCLIB."));
+			results.Content = Message(L.T("Search for a song: its chords on Ultimate Guitar, or its lyrics on LRCLIB or Lyrics.com."));
 			searchPage = PageLayout.Page(
 				L.T("Find online"),
 				new DockPanel { Children = { query, sources, results } },
@@ -134,15 +160,28 @@ namespace Lyrious.UILib.Setlists
 
 			// The search as it was left (see keptQuery).
 			query.Text = keptQuery;
-			switch (listedFromLrclib)
+			switch (listedFrom)
 			{
-				case true:
+				case Source.Lrclib:
 					ShowResults();
 					break;
-				case false:
+				case Source.UltimateGuitar:
 					ShowUltimateGuitarResults();
 					break;
+				case Source.LyricsCom:
+					ShowLyricsComResults();
+					break;
 			}
+		}
+
+		/// <summary>The source buttons show the source chosen (without searching for it).</summary>
+		private void ShowSourceChosen()
+		{
+			choosingSource = true;
+			ultimateGuitarSource.IsChecked = chosen == Source.UltimateGuitar;
+			lrclibSource.IsChecked = chosen == Source.Lrclib;
+			lyricsComSource.IsChecked = chosen == Source.LyricsCom;
+			choosingSource = false;
 		}
 
 		/// <summary>Forgets the search kept for coming back to the page: a song found was added, so the next search starts afresh.</summary>
@@ -150,9 +189,10 @@ namespace Lyrious.UILib.Setlists
 		{
 			searched = false;
 			keptQuery = "";
-			listedFromLrclib = null;
+			listedFrom = null;
 			lastResults = [];
 			lastUltimateGuitarResults = [];
+			lastLyricsComResults = [];
 		}
 
 		/// <summary>Adds the song found (see <see cref="AddRequested"/>); the search is forgotten then.</summary>
@@ -172,16 +212,9 @@ namespace Lyrious.UILib.Setlists
 			query.Text = words.Trim();
 			// (Its text-changed event may not have come yet, the page not being on screen yet.)
 			searchButton.IsEnabled = !string.IsNullOrWhiteSpace(query.Text);
-			var useLrclib = searchUltimateGuitar == null;
-			if (lrclibChosen != useLrclib)
-			{
-				// The buttons show it, without searching for the change (searched just below).
-				choosingSource = true;
-				lrclibChosen = useLrclib;
-				ultimateGuitarSource.IsChecked = !useLrclib;
-				lrclibSource.IsChecked = useLrclib;
-				choosingSource = false;
-			}
+			chosen = searchUltimateGuitar == null ? Source.Lrclib : Source.UltimateGuitar;
+			// The buttons show it, without searching for the change (searched just below).
+			ShowSourceChosen();
 
 			_ = SearchAsync();
 		}
@@ -198,16 +231,17 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The bar that shows a search is under way: just below the source buttons, at the top of the results' room.</summary>
 		private static ProgressBar SearchProgress() => new() { IsIndeterminate = true, Margin = new Thickness(0, 0, 0, 8), VerticalAlignment = VerticalAlignment.Top };
 
-		/// <summary>Searches the source chosen: Ultimate Guitar (in the browser where it can't be searched here) or LRCLIB.</summary>
-		private Task SearchAsync()
+		/// <summary>Searches the source chosen: Ultimate Guitar, LRCLIB or Lyrics.com (Ultimate Guitar and Lyrics.com in the browser where they can't be searched here).</summary>
+		private Task SearchAsync() => chosen switch
 		{
-			if (lrclibChosen)
-			{
-				return SearchLrclibAsync();
-			}
-
-			return searchUltimateGuitar != null ? SearchUltimateGuitarAsync() : OpenUltimateGuitarAsync();
-		}
+			Source.Lrclib => SearchLrclibAsync(),
+			Source.LyricsCom => searchLyricsCom != null
+				? SearchLyricsComAsync()
+				: OpenInBrowserAsync(words => new Uri($"https://www.lyrics.com/serp.php?st={Uri.EscapeDataString(words)}&qtype=1")),
+			_ => searchUltimateGuitar != null
+				? SearchUltimateGuitarAsync()
+				: OpenInBrowserAsync(words => new Uri($"https://www.ultimate-guitar.com/search.php?search_type=title&value={Uri.EscapeDataString(words)}")),
+		};
 
 		/// <summary>Searches LRCLIB and lists what it found (see <see cref="ResultRow"/>).</summary>
 		private async Task SearchLrclibAsync()
@@ -225,12 +259,12 @@ namespace Lyrious.UILib.Setlists
 			try
 			{
 				lastResults = await search(text);
-				listedFromLrclib = true;
+				listedFrom = Source.Lrclib;
 				ShowResults();
 			}
 			catch (Exception ex)
 			{
-				listedFromLrclib = null;
+				listedFrom = null;
 				results.Content = Message(L.T("Couldn't search. {0}", ex.Message));
 			}
 			finally
@@ -255,12 +289,12 @@ namespace Lyrious.UILib.Setlists
 			try
 			{
 				lastUltimateGuitarResults = await searchUltimateGuitar(text);
-				listedFromLrclib = false;
+				listedFrom = Source.UltimateGuitar;
 				ShowUltimateGuitarResults();
 			}
 			catch (Exception ex)
 			{
-				listedFromLrclib = null;
+				listedFrom = null;
 				results.Content = Message(L.T("Couldn't search Ultimate Guitar. {0}", ex.Message));
 			}
 			finally
@@ -332,12 +366,12 @@ namespace Lyrious.UILib.Setlists
 				next: after != null ? () => _ = ShowUltimateGuitarTabAsync(after) : null,
 				place: at >= 0 ? (at + 1, lastUltimateGuitarResults.Count) : null);
 
-			var showing = ++ultimateGuitarShown;
+			var showing = ++songsShown;
 			Content = Page(new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 8), VerticalAlignment = VerticalAlignment.Top }, found.Artist);
 			try
 			{
 				var tab = await getUltimateGuitarTab(found.Link);
-				if (showing != ultimateGuitarShown)
+				if (showing != songsShown)
 				{
 					return; // Another was asked for meanwhile.
 				}
@@ -368,7 +402,7 @@ namespace Lyrious.UILib.Setlists
 				DockPanel.SetDock(add, Dock.Top);
 				Content = Page(new DockPanel { Children = { add, PageLayout.WholeWidth(lyrics) } }, artist.Length > 0 ? L.T("{0} · only for you, not saved", artist) : L.T("Only for you, not saved"));
 			}
-			catch (Exception ex) when (showing == ultimateGuitarShown)
+			catch (Exception ex) when (showing == songsShown)
 			{
 				Content = Page(Message(L.T("Couldn't read the song from Ultimate Guitar. {0}", ex.Message)), found.Artist);
 			}
@@ -379,8 +413,140 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
-		/// <summary>Opens the search on Ultimate Guitar in the browser (a new tab in the web app).</summary>
-		private async Task OpenUltimateGuitarAsync()
+		/// <summary>Searches Lyrics.com and lists what it found (see <see cref="LyricsComRow"/>).</summary>
+		private async Task SearchLyricsComAsync()
+		{
+			var text = query.Text?.Trim();
+			if (string.IsNullOrEmpty(text) || searchLyricsCom == null || !searchButton.IsEnabled)
+			{
+				return;
+			}
+
+			searched = true;
+			keptQuery = text;
+			searchButton.IsEnabled = false;
+			results.Content = SearchProgress();
+			try
+			{
+				lastLyricsComResults = await searchLyricsCom(text);
+				listedFrom = Source.LyricsCom;
+				ShowLyricsComResults();
+			}
+			catch (Exception ex)
+			{
+				listedFrom = null;
+				results.Content = Message(L.T("Couldn't search Lyrics.com. {0}", ex.Message));
+			}
+			finally
+			{
+				searchButton.IsEnabled = !string.IsNullOrWhiteSpace(query.Text);
+			}
+		}
+
+		/// <summary>Lists Lyrics.com's last results (see <see cref="LyricsComRow"/>).</summary>
+		private void ShowLyricsComResults()
+		{
+			var rows = lastLyricsComResults.Select(song => (Control)LyricsComRow(song)).ToArray();
+			results.Content = PageLayout.List(rows, L.T("Lyrics.com found no songs. Try other words, or \"Title - Artist\"."));
+		}
+
+		/// <summary>One of Lyrics.com's results: title, then artist and album, and whether the band has it already; it shows the lyrics (see <see cref="ShowLyricsComSongAsync"/>).</summary>
+		private Button LyricsComRow(LyricsComSong song)
+		{
+			var content = new StackPanel { Spacing = 2 };
+			content.Children.Add(new TextBlock { Text = song.Title, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis });
+			content.Children.Add(new TextBlock { Text = string.Join(" · ", new[] { song.Artist, song.Album }.Where(d => d.Length > 0)), FontSize = 13, Opacity = 0.75, TextTrimming = TextTrimming.CharacterEllipsis });
+			if (songbookNames.Contains(song.Title))
+			{
+				content.Children.Add(new TextBlock { Text = L.T("in songbook"), FontSize = 13, Opacity = 0.6 });
+			}
+
+			var row = new Button
+			{
+				Content = content,
+				HorizontalAlignment = HorizontalAlignment.Stretch,
+				HorizontalContentAlignment = HorizontalAlignment.Stretch,
+				Padding = new Thickness(16, 10),
+			};
+			row.Click += (_, _) => _ = ShowLyricsComSongAsync(song);
+			return row;
+		}
+
+		/// <summary>
+		/// The found song's lyrics, read from its page on Lyrics.com, with the add button (as LRCLIB's
+		/// songs show); when they can't be read from it, a link to the page instead, to read them there.
+		/// Back returns to the results.
+		/// </summary>
+		private async Task ShowLyricsComSongAsync(LyricsComSong found)
+		{
+			if (getLyricsComLyrics == null)
+			{
+				return;
+			}
+
+			// The results before and after it, if there are.
+			var at = IndexOf(lastLyricsComResults, found);
+			var before = at > 0 ? lastLyricsComResults[at - 1] : null;
+			var after = at >= 0 && at + 1 < lastLyricsComResults.Count ? lastLyricsComResults[at + 1] : null;
+			var subtitle = songbookNames.Contains(found.Title) ? L.T("{0} · a song with this name is in the songbook already", found.Artist) : found.Artist;
+			Control Page(Control content) => PageLayout.Page(
+				found.Title,
+				content,
+				backText: L.T("Search results"),
+				back: () => Content = searchPage,
+				subtitle: subtitle,
+				closable: true,
+				previous: before != null ? () => _ = ShowLyricsComSongAsync(before) : null,
+				next: after != null ? () => _ = ShowLyricsComSongAsync(after) : null,
+				place: at >= 0 ? (at + 1, lastLyricsComResults.Count) : null);
+
+			var showing = ++songsShown;
+			Content = Page(new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 8), VerticalAlignment = VerticalAlignment.Top });
+			try
+			{
+				var lyrics = await getLyricsComLyrics(found.Link);
+				if (showing != songsShown)
+				{
+					return; // Another was asked for meanwhile.
+				}
+
+				if (string.IsNullOrWhiteSpace(lyrics))
+				{
+					Content = Page(PageLink(found.Link, L.T("The lyrics couldn't be read from Lyrics.com here, but its page may show them.")));
+					return;
+				}
+
+				var song = new InternetSong(found.Title, found.Artist, found.Album, TimeSpan.Zero, lyrics, Instrumental: false);
+				Content = Page(Preview(song, ""));
+			}
+			catch (Exception ex) when (showing == songsShown)
+			{
+				Content = Page(PageLink(found.Link, L.T("Couldn't read the song from Lyrics.com. {0}", ex.Message)));
+			}
+			catch (Exception ex)
+			{
+				// Another was asked for meanwhile: this one's failure doesn't matter any more.
+				System.Diagnostics.Debug.WriteLine($"Couldn't read a song from Lyrics.com: {ex.Message}");
+			}
+		}
+
+		/// <summary>Why a found song's lyrics don't show, and a link to its page on the site, opened in the browser to read them there.</summary>
+		private StackPanel PageLink(Uri page, string why)
+		{
+			var open = new Button { Content = L.T("Open the lyrics page…"), HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(16, 10) };
+			ToolTip.SetTip(open, page.ToString());
+			open.Click += async (_, _) =>
+			{
+				if (TopLevel.GetTopLevel(this) is { } topLevel && !await topLevel.Launcher.LaunchUriAsync(page))
+				{
+					ToolTip.SetTip(open, L.T("Couldn't open the browser. The address is {0}", page));
+				}
+			};
+			return new StackPanel { Spacing = 16, Children = { Message(why), open } };
+		}
+
+		/// <summary>Opens the search on a site in the browser (a new tab in the web app), at the address made from the words searched.</summary>
+		private async Task OpenInBrowserAsync(Func<string, Uri> address)
 		{
 			var text = query.Text?.Trim();
 			if (string.IsNullOrEmpty(text) || TopLevel.GetTopLevel(this) is not { } topLevel)
@@ -389,7 +555,7 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			keptQuery = text;
-			var uri = new Uri($"https://www.ultimate-guitar.com/search.php?search_type=title&value={Uri.EscapeDataString(text)}");
+			var uri = address(text);
 			if (!await topLevel.Launcher.LaunchUriAsync(uri))
 			{
 				results.Content = Message(L.T("Couldn't open the browser. The address is {0}", uri));
@@ -449,6 +615,27 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>The result's lyrics, with the add button; back returns to the results.</summary>
 		private void ShowPreview(InternetSong song)
 		{
+			var content = Preview(song, L.T("This song has no lyrics in the database. It can still be added, and the lyrics typed in later."));
+			var subtitle = songbookNames.Contains(song.Title) ? L.T("{0} · a song with this name is in the songbook already", song.Artist) : song.Artist;
+			// The results before and after it, if there are.
+			var at = IndexOf(lastResults, song);
+			var before = at > 0 ? lastResults[at - 1] : null;
+			var after = at >= 0 && at + 1 < lastResults.Count ? lastResults[at + 1] : null;
+			Content = PageLayout.Page(
+				song.Title,
+				content,
+				backText: L.T("Search results"),
+				back: () => Content = searchPage,
+				subtitle: subtitle,
+				closable: true,
+				previous: before != null ? () => ShowPreview(before) : null,
+				next: after != null ? () => ShowPreview(after) : null,
+				place: at >= 0 ? (at + 1, lastResults.Count) : null);
+		}
+
+		/// <summary>A found song's lyrics as text, under the add button; <paramref name="noLyrics"/> says so when it has none.</summary>
+		private DockPanel Preview(InternetSong song, string noLyrics)
+		{
 			var add = new Button { Content = addText, HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(16, 10), Margin = new Thickness(0, 0, 0, 16) };
 			add.Classes.Add("accent");
 			add.Click += (_, _) => Add(song);
@@ -457,7 +644,7 @@ namespace Lyrious.UILib.Setlists
 			var hasLyrics = !string.IsNullOrWhiteSpace(song.Lyrics);
 			var lyrics = new TextBlock
 			{
-				Text = hasLyrics ? song.Lyrics : L.T("This song has no lyrics in the database. It can still be added, and the lyrics typed in later."),
+				Text = hasLyrics ? song.Lyrics : noLyrics,
 				FontSize = hasLyrics ? 20 : 16,
 				LineHeight = hasLyrics ? 30 : double.NaN,
 				Opacity = hasLyrics ? 1 : 0.7,
@@ -465,21 +652,7 @@ namespace Lyrious.UILib.Setlists
 				Margin = new Thickness(0, 0, 0, 48),
 			};
 
-			var subtitle = songbookNames.Contains(song.Title) ? L.T("{0} · a song with this name is in the songbook already", song.Artist) : song.Artist;
-			// The results before and after it, if there are.
-			var at = IndexOf(lastResults, song);
-			var before = at > 0 ? lastResults[at - 1] : null;
-			var after = at >= 0 && at + 1 < lastResults.Count ? lastResults[at + 1] : null;
-			Content = PageLayout.Page(
-				song.Title,
-				new DockPanel { Children = { add, new ScrollViewer { Content = lyrics } } },
-				backText: L.T("Search results"),
-				back: () => Content = searchPage,
-				subtitle: subtitle,
-				closable: true,
-				previous: before != null ? () => ShowPreview(before) : null,
-				next: after != null ? () => ShowPreview(after) : null,
-				place: at >= 0 ? (at + 1, lastResults.Count) : null);
+			return new DockPanel { Children = { add, new ScrollViewer { Content = lyrics } } };
 		}
 
 		/// <summary>Where <paramref name="item"/> is among <paramref name="items"/> (the very one, not an equal one); -1 if it isn't.</summary>

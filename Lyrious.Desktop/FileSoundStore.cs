@@ -14,8 +14,9 @@ namespace Lyrious.Desktop;
 /// Sound files for songs' media links, in the "sounds" folder next to the settings (in the user's
 /// application data folder). They're played in the app, so the speed and the pitch can each be
 /// changed without the other: on Windows through NAudio and SoundTouch, on macOS through its audio
-/// engine (<see cref="MacSoundPlayer"/>). Elsewhere, and for a file the computer can't decode, the
-/// computer's own player for the file type plays it.
+/// engine (<see cref="MacSoundPlayer"/>). An Ogg Opus file (as the app records the band) is decoded by
+/// the app itself, which neither computer can do. Elsewhere, and for a file the computer can't decode,
+/// the computer's own player for the file type plays it.
 /// </summary>
 internal sealed class FileSoundStore : ISoundStore
 {
@@ -25,7 +26,7 @@ internal sealed class FileSoundStore : ISoundStore
     // Playback runs on its own thread: the settings and the playing sound are changed under this.
     private readonly object gate = new();
     private WaveOutEvent? output;
-    private MediaFoundationReader? reader;
+    private WaveStream? reader;
     private Stretched? stretch;
     private MacSoundPlayer? mac;
     private string? playing;
@@ -212,7 +213,7 @@ internal sealed class FileSoundStore : ISoundStore
             return Task.FromResult(true);
         }
 
-        if (OperatingSystem.IsMacOS() && MacSoundPlayer.IsAvailable && TryPlayOnMac(id, path))
+        if (OperatingSystem.IsMacOS() && MacSoundPlayer.IsAvailable && TryPlayOnMac(id, IsOggOpus(path) ? DecodedForMac(id, path) ?? path : path))
         {
             return Task.FromResult(true);
         }
@@ -222,14 +223,14 @@ internal sealed class FileSoundStore : ISoundStore
         return Task.FromResult(true);
     }
 
-    /// <summary>Plays the file in the app; false when Windows can't decode it (e.g. Ogg).</summary>
+    /// <summary>Plays the file in the app; false when it can't be decoded (by Windows, or for Ogg Opus by the app).</summary>
     private bool TryPlayHere(string id, string path)
     {
-        MediaFoundationReader? opened = null;
+        WaveStream? opened = null;
         WaveOutEvent? device = null;
         try
         {
-            opened = new MediaFoundationReader(path);
+            opened = IsOggOpus(path) ? new OggOpusReader(path) : new MediaFoundationReader(path);
             var stretched = new Stretched(opened.ToSampleProvider(), gate);
             device = new WaveOutEvent { DesiredLatency = 200 };
             lock (gate)
@@ -352,7 +353,7 @@ internal sealed class FileSoundStore : ISoundStore
     /// <summary>Lets go of the playback if it's still this one's; true when it was.</summary>
     private bool Release(WaveOutEvent device)
     {
-        MediaFoundationReader? file;
+        WaveStream? file;
         lock (gate)
         {
             if (output != device)
@@ -372,6 +373,156 @@ internal sealed class FileSoundStore : ISoundStore
         return true;
     }
 
+    /// <summary>Whether the file is Ogg (as the app records, in Opus), by its name.</summary>
+    private static bool IsOggOpus(string path)
+        => path.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".opus", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".oga", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// An Ogg Opus file decoded into a WAV file macOS plays (it can't decode Ogg itself), in the
+    /// computer's temporary folder; made once per sound. Null when it can't be decoded.
+    /// </summary>
+    private static string? DecodedForMac(string id, string path)
+    {
+        var decoded = Path.Combine(Path.GetTempPath(), "Lyrious", Path.GetFileNameWithoutExtension(Path.GetFileName(id)) + ".wav");
+        try
+        {
+            if (!File.Exists(decoded) || File.GetLastWriteTimeUtc(decoded) < File.GetLastWriteTimeUtc(path))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(decoded)!);
+                using var reader = new OggOpusReader(path);
+                WaveFileWriter.CreateWaveFile(decoded, reader);
+            }
+
+            return decoded;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            Debug.WriteLine($"Couldn't decode the sound {id}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// An Ogg Opus file (as the app records the band) decoded by the app itself (Concentus), as 16-bit
+    /// stereo at 48 kHz (a one-channel file in both channels), from where it's moved to.
+    /// </summary>
+    private sealed class OggOpusReader : WaveStream
+    {
+        private const int SampleRate = 48000;
+        private readonly Stream file;
+        private Concentus.IOpusDecoder decoder;
+        private Concentus.Oggfile.OpusOggReadStream ogg;
+        // What's decoded but not read yet: the rest of the last packet.
+        private short[] decoded = [];
+        private int decodedAt;
+        private long position;
+
+        public OggOpusReader(string path)
+        {
+            file = File.OpenRead(path);
+            try
+            {
+                decoder = Concentus.OpusCodecFactory.CreateDecoder(SampleRate, 2);
+                ogg = new Concentus.Oggfile.OpusOggReadStream(decoder, file);
+                if (!ogg.HasNextPacket)
+                {
+                    throw new InvalidDataException(ogg.LastError ?? "It isn't an Ogg Opus file.");
+                }
+            }
+            catch
+            {
+                file.Dispose();
+                throw;
+            }
+        }
+
+        public override WaveFormat WaveFormat { get; } = new(SampleRate, 16, 2);
+
+        public override long Length => BlockAligned(ogg.TotalTime.TotalSeconds * WaveFormat.AverageBytesPerSecond);
+
+        public override long Position
+        {
+            get => position;
+            set
+            {
+                var at = Math.Clamp(BlockAligned(value), 0, Length);
+                // Concentus' own seeking doesn't move: the file is read again from its start instead,
+                // skipping whole packets (not decoded, so it's quick) up to the one with the place.
+                file.Position = 0;
+                decoder = Concentus.OpusCodecFactory.CreateDecoder(SampleRate, 2);
+                ogg = new Concentus.Oggfile.OpusOggReadStream(decoder, file);
+                decoded = [];
+                decodedAt = 0;
+                var target = at / WaveFormat.BlockAlign;
+                long skipped = 0;
+                while (ogg.HasNextPacket && ogg.ReadNextRawPacket() is { } packet)
+                {
+                    var samples = Concentus.Structs.OpusPacketInfo.GetNumSamples(packet, SampleRate);
+                    if (samples <= 0)
+                    {
+                        continue;
+                    }
+
+                    if (skipped + samples > target)
+                    {
+                        // This packet has the place: decoded, and read from the place on.
+                        var output = new short[samples * 2];
+                        var frames = decoder.Decode(packet, output, samples, false);
+                        decoded = output[..(Math.Max(0, frames) * 2)];
+                        decodedAt = (int)Math.Min(decoded.Length, (target - skipped) * 2);
+                        break;
+                    }
+
+                    skipped += samples;
+                }
+
+                position = at;
+            }
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var written = 0;
+            var wanted = count - count % 2;
+            while (written < wanted)
+            {
+                if (decodedAt >= decoded.Length)
+                {
+                    if (!ogg.HasNextPacket)
+                    {
+                        break;
+                    }
+
+                    // (A packet that doesn't decode is skipped.)
+                    decoded = ogg.DecodeNextPacket() ?? [];
+                    decodedAt = 0;
+                    continue;
+                }
+
+                var samples = Math.Min(decoded.Length - decodedAt, (wanted - written) / 2);
+                Buffer.BlockCopy(decoded, decodedAt * 2, buffer, offset + written, samples * 2);
+                decodedAt += samples;
+                written += samples * 2;
+            }
+
+            position += written;
+            return written;
+        }
+
+        /// <summary>A place in bytes on a whole sample of both channels.</summary>
+        private long BlockAligned(double bytes) => (long)bytes / WaveFormat.BlockAlign * WaveFormat.BlockAlign;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                file.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+    }
+
     /// <summary>The file of a sound: just its name in the folder, whatever the id says.</summary>
     private string PathOf(string id) => Path.Combine(folder, Path.GetFileName(id));
 
@@ -387,7 +538,7 @@ internal sealed class FileSoundStore : ISoundStore
             return null;
         }
 
-        if (path.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".opus", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".oga", StringComparison.OrdinalIgnoreCase))
+        if (IsOggOpus(path))
         {
             using var ogg = File.OpenRead(path);
             if (SoundWave.FromOggOpus(ogg) is { } wave)

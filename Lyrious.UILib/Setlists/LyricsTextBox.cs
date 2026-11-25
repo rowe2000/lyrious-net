@@ -35,6 +35,8 @@ namespace Lyrious.UILib.Setlists
 			ActualThemeVariantChanged += (_, _) => ShowColored();
 			// The chord colour as the member chooses it (Settings › Colors) too.
 			this.GetResourceObservable(LyriousTheme.ChordBrush).Subscribe(new ResourceWatch(ShowColored));
+			// The bar and time marks follow the highlight colour (chosen in Settings).
+			this.GetResourceObservable("SystemAccentColor").Subscribe(new ResourceWatch(ShowColored));
 		}
 
 		protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
@@ -97,7 +99,7 @@ namespace Lyrious.UILib.Setlists
 			}, DispatcherPriority.Input);
 		}
 
-		/// <summary>The text again, its tags dimmed: as runs of words and tags.</summary>
+		/// <summary>The text again, as runs of words and tags: chords in the chord colour (their brackets dimmed), bar and time marks in the highlight colour.</summary>
 		private void ShowColored()
 		{
 			var text = Text ?? "";
@@ -107,6 +109,7 @@ namespace Lyrious.UILib.Setlists
 			var words = new SolidColorBrush(color);
 			var tags = new SolidColorBrush(color, TagOpacity);
 			var chords = this.TryFindResource(LyriousTheme.ChordBrush, ActualThemeVariant, out var chord) && chord is IBrush chordBrush ? chordBrush : words;
+			var marks = this.TryFindResource("SystemAccentColor", ActualThemeVariant, out var accent) && accent is Color accentColor ? new SolidColorBrush(accentColor) : tags;
 			var inlines = new InlineCollection();
 			var at = 0;
 			foreach (Match tag in Tag().Matches(text))
@@ -116,7 +119,7 @@ namespace Lyrious.UILib.Setlists
 					inlines.Add(new Run(text[at..tag.Index]) { Foreground = words });
 				}
 
-				// A chord: its name in the chord colour, the brackets dimmed. Other tags (bars, times) dimmed.
+				// A chord: its name in the chord colour, the brackets dimmed. Bar and time marks in the highlight colour.
 				var inside = tag.Value[1..^1];
 				if (ChordPro.IsChord(inside))
 				{
@@ -126,7 +129,7 @@ namespace Lyrious.UILib.Setlists
 				}
 				else
 				{
-					inlines.Add(new Run(tag.Value) { Foreground = tags });
+					inlines.Add(new Run(tag.Value) { Foreground = marks });
 				}
 				at = tag.Index + tag.Length;
 			}

@@ -628,12 +628,6 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			if (IsSongbookSetlist(setlist))
-			{
-				ShowNotice(L.T("Band sync on; the songbook shown as a setlist isn't saved, so it can't be sent"));
-				return;
-			}
-
 			try
 			{
 				if (currentEntryId is { } entryId && await service.GetEntryAsync(entryId) is { } entry)
@@ -667,12 +661,11 @@ namespace Lyrious.UILib.Setlists
 
 			try
 			{
-				// A song played from outside the band's setlist (the songbook, a search, or the songbook shown
-				// as the setlist here): the band's current song first, so the others open it before it plays.
-				if (playing && currentGroup is { } group && currentSongId is { } songId
-				    && (currentEntryId == null || currentSetlist is { } shown && IsSongbookSetlist(shown)))
+				// A song played from outside the band's setlist (the songbook, or a search): the band's
+				// current song first, so the others open it before it plays.
+				if (playing && currentGroup is { } group && currentSongId is { } songId && currentEntryId == null)
 				{
-					var bandSetlist = currentSetlist is { } setlist && !IsSongbookSetlist(setlist) ? setlist.Id : group.CurrentSetlistId;
+					var bandSetlist = currentSetlist?.Id ?? group.CurrentSetlistId;
 					await service.SelectOutsideSongAsync(group.Id, bandSetlist, songId);
 				}
 
@@ -953,6 +946,29 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
+			// On any other page, a list (not the right drawer's) takes up and down, to go through its
+			// items, and the space bar, to check one; typing in a box keeps the space bar, and up and
+			// down in a box of more than one line, or in a dropdown (see ListKeys).
+			if (e.KeyModifiers == Avalonia.Input.KeyModifiers.None && (upOrDown || e.Key == Avalonia.Input.Key.Space)
+			    && page.Content is Control shownPage and not LyricScrollView
+			    && !(e.Source is TextBox typing && (e.Key == Avalonia.Input.Key.Space || typing.AcceptsReturn))
+			    && e.Source is not (ComboBox or Slider or NumericUpDown or ListBox)
+			    && !(e.Source is Visual source && (setlistDrawer.Pane as Visual)?.IsVisualAncestorOf(source) == true)
+			    && ListKeys.Find(shownPage, keyWindow?.FocusManager?.GetFocusedElement()) is { } list)
+			{
+				if (upOrDown)
+				{
+					e.Handled = true;
+					list.Step(e.Key == Avalonia.Input.Key.Down ? 1 : -1);
+				}
+				else if (list.ToggleCheck())
+				{
+					e.Handled = true;
+				}
+
+				return;
+			}
+
 			// Typing in a box keeps its keys, but for up and down in the setlist drawer's search box
 			// (a single line, they do nothing there): those nudge the lyrics as well.
 			if (e.KeyModifiers != Avalonia.Input.KeyModifiers.None || page.Content is not LyricScrollView { IsEditing: false } lyrics
@@ -1151,7 +1167,7 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			// The setlist it's played from goes with it, for the sessions (not the songbook shown as a setlist: no setlist).
+			// The setlist it's played from goes with it, for the sessions (not the songbook shown as a setlist, which sessions don't show).
 			var setlistId = currentSetlist is { } setlist && !IsSongbookSetlist(setlist) ? setlist.Id : (Guid?)null;
 			var play = AddPlayAsync(group.Id, songId, setlistId);
 			timedPlay = (lyrics, play, DateTime.Now);
@@ -1627,6 +1643,31 @@ namespace Lyrious.UILib.Setlists
 			clearHistoryOnNextPage = true;
 		}
 
+		/// <summary>
+		/// The current setlist (the right drawer's) on its page, to edit it. The songbook shown as a setlist
+		/// opens the songbook instead, with the setlist's songs checked when they aren't all its songs (all
+		/// of them: none checked, as the setlist tool then uses them all).
+		/// </summary>
+		private async Task OpenCurrentSetlistAsync()
+		{
+			if (currentGroup is not { } group || currentSetlist is not { } setlist)
+			{
+				return;
+			}
+
+			CloseUnlessPinned(setlistDrawer);
+			if (IsSongbookSetlist(setlist))
+			{
+				var songbook = await service.GetSongbookSongsAsync(group.Id);
+				var inSetlist = (await service.GetEntriesAsync(setlist.Id)).Select(entry => entry.Song.Id).ToHashSet();
+				SongsView.CheckOnly(songbook.Select(song => song.Id), songbook.All(song => inSetlist.Contains(song.Id)) ? [] : inSetlist);
+				await ShowSongsAsync(group);
+				return;
+			}
+
+			ShowSetlists(group, await service.GetSetlistsAsync(group.Id), selectedSetlistId: setlist.Id);
+		}
+
 		/// <summary>Closes the drawer after an action, unless it's pinned.</summary>
 		private static void CloseUnlessPinned(SplitView drawer)
 		{
@@ -1691,40 +1732,40 @@ namespace Lyrious.UILib.Setlists
 		{
 			currentSetlist = setlist;
 			ShowSetlistName(setlist.Name);
-			// Songs can't be added to the songbook shown as a setlist: it isn't saved.
+			// Songs aren't added to the songbook shown as a setlist: it holds the songbook's songs.
 			addSongsButton.IsEnabled = !IsSongbookSetlist(setlist);
 		}
 
-		// The songbook's songs shown as the setlist (see ShowSongbookAsSetlist): only here, never saved.
-		private IReadOnlyList<SetlistEntry> songbookEntries = [];
+		/// <summary>
+		/// Whether the setlist is the songbook shown as a setlist: the band's hidden setlist, never listed
+		/// with its setlists (see <see cref="ISetlistService.ShowSongbookAsSetlistAsync"/>).
+		/// </summary>
+		private static bool IsSongbookSetlist(SetlistSummary setlist) => setlist.IsHidden;
+
+		/// <summary>The setlist's songs.</summary>
+		private Task<IReadOnlyList<SetlistEntry>> EntriesAsync(SetlistSummary setlist) => service.GetEntriesAsync(setlist.Id);
+
+		/// <summary>A setlist entry by its id.</summary>
+		private Task<SetlistEntry?> EntryAsync(Guid entryId) => service.GetEntryAsync(entryId);
 
 		/// <summary>
-		/// Whether the setlist is the songbook shown as a setlist: one that isn't saved, known by its
-		/// id, which is its band's (no saved setlist has that).
+		/// Shows the songs as the setlist in the right drawer: the band's hidden songbook setlist, holding
+		/// just these songs (never listed with the band's setlists, nor in its sessions). With band sync on,
+		/// the band follows it, as any setlist made the current one. The current song stays current when
+		/// it's among them; the next and previous song go through them in their order.
 		/// </summary>
-		private static bool IsSongbookSetlist(SetlistSummary setlist) => setlist.Id == setlist.GroupId;
-
-		/// <summary>The setlist's songs: from the service, or those of the songbook shown as a setlist.</summary>
-		private Task<IReadOnlyList<SetlistEntry>> EntriesAsync(SetlistSummary setlist)
-			=> IsSongbookSetlist(setlist) ? Task.FromResult(songbookEntries) : service.GetEntriesAsync(setlist.Id);
-
-		/// <summary>A setlist entry by its id, also one of the songbook shown as a setlist.</summary>
-		private async Task<SetlistEntry?> EntryAsync(Guid entryId)
-			=> songbookEntries.FirstOrDefault(entry => entry.Id == entryId) ?? await service.GetEntryAsync(entryId);
-
-		/// <summary>
-		/// Shows the songs as the setlist in the right drawer, just here: nothing is saved, and the
-		/// band's setlist stays as it is. The current song stays current when it's among them; the
-		/// next and previous song go through them in their order.
-		/// </summary>
-		private void ShowSongbookAsSetlist(GroupSummary group, IReadOnlyList<SongDetails> songs)
+		private async Task ShowSongbookAsSetlistAsync(GroupSummary group, IReadOnlyList<SongDetails> songs)
 		{
-			var setlist = new SetlistSummary(group.Id, L.T("Songbook · {0}", group.Name), group.Id);
-			// Each song's entry has the song's id, so the current song is found in it.
-			songbookEntries = songs.Select((song, index) => new SetlistEntry(song.Id, setlist.Id, index, song)).ToArray();
+			var setlist = await service.ShowSongbookAsSetlistAsync(group.Id, songs.Select(song => song.Id).ToList());
+			var entries = await service.GetEntriesAsync(setlist.Id);
+			if (bandSync)
+			{
+				await service.SelectSetlistAsync(group.Id, setlist.Id);
+			}
+
 			SetCurrentSetlist(setlist);
-			playbackEntries = songbookEntries;
-			if (currentSongId is { } songId && songbookEntries.FirstOrDefault(entry => entry.Song.Id == songId) is { } current)
+			playbackEntries = entries;
+			if (currentSongId is { } songId && entries.FirstOrDefault(entry => entry.Song.Id == songId) is { } current)
 			{
 				currentEntryId = current.Id;
 			}
@@ -1737,7 +1778,7 @@ namespace Lyrious.UILib.Setlists
 			RefreshSetlistDrawer(reload: true);
 			setlistDrawer.IsPaneOpen = true;
 			_ = LoadSetlistDrawerAsync(centerSong: true);
-			ShowNotice(L.Plural(songs.Count, "The songbook is the setlist here ({0} song); it isn't saved", "The songbook is the setlist here ({0} songs); it isn't saved"));
+			ShowNotice(L.Plural(songs.Count, "The songbook is the setlist ({0} song)", "The songbook is the setlist ({0} songs)"));
 		}
 
 		/// <summary>Records the song the app is showing (and its setlist entry, if it's shown from a setlist), for the Song button and the highlights.</summary>
@@ -2180,6 +2221,12 @@ namespace Lyrious.UILib.Setlists
 			};
 			// The tools are back when the drawer opens again.
 			setlistDrawer.PaneClosed += (_, _) => ShowTools();
+			// A double click (or tap) on the name opens the setlist to edit it (see OpenCurrentSetlistAsync).
+			setlistTitle.DoubleTapped += (_, e) =>
+			{
+				e.Handled = true;
+				_ = RunAsync(OpenCurrentSetlistAsync);
+			};
 
 			Grid.SetColumn(buttons, 1);
 			Grid.SetColumn(endSearchButton, 1);
@@ -3413,12 +3460,12 @@ namespace Lyrious.UILib.Setlists
 				await service.AddSongsAsync(setlist.Id, chosen.Select(song => song.Id).ToList());
 				ShowNotice(L.Plural(chosen.Count, "Saved the setlist {1} ({0} song)", "Saved the setlist {1} ({0} songs)", name));
 			});
-			view.ShowAsSetlistRequested += shown =>
+			view.ShowAsSetlistRequested += shown => _ = RunAsync(async () =>
 			{
-				ShowSongbookAsSetlist(group, shown);
+				await ShowSongbookAsSetlistAsync(group, shown);
 				// Again in its place, now with the note on this songbook's button (the search and tags stay).
-				_ = RunAsync(() => ShowSongsAsync(group, replace: true));
-			};
+				await ShowSongsAsync(group, replace: true);
+			});
 			view.SongSelected += song => _ = RunAsync(async () =>
 			{
 				if (currentSetlist is { } setlist
@@ -3465,9 +3512,6 @@ namespace Lyrious.UILib.Setlists
 					SetCurrentSong(null, null);
 				}
 
-				// The songbook played as the setlist holds its own copy of the songs.
-				var deleted = songs.Select(song => song.Id).ToHashSet();
-				songbookEntries = songbookEntries.Where(entry => !deleted.Contains(entry.Song.Id)).ToArray();
 				playbackEntries = [];
 				RefreshSetlistDrawer(reload: true);
 				ShowNotice(L.Plural(songs.Count, "Deleted {0} song", "Deleted {0} songs"));
@@ -3520,13 +3564,6 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>A song was edited: its name, key, tempo and beat show in the menu and the setlists too.</summary>
 		private void SongEdited(SongDetails saved)
 		{
-			// The songbook shown as a setlist holds its own copy of the song.
-			songbookEntries = songbookEntries.Select(entry => entry.Song.Id == saved.Id ? entry with { Song = saved } : entry).ToArray();
-			if (playbackEntries.Count > 0 && currentSetlist is { } shown && IsSongbookSetlist(shown))
-			{
-				playbackEntries = songbookEntries;
-			}
-
 			if (saved.Id == currentSongId)
 			{
 				SetCurrentSong(saved, currentEntryId);
@@ -3577,7 +3614,9 @@ namespace Lyrious.UILib.Setlists
 			var addText = addToSetlist == null ? L.T("Add to songbook") : L.T("Add to {0}", addToSetlist.Name);
 			var view = new InternetSongView(query => service.SearchInternetAsync(query), names, addText,
 				service.CanSearchUltimateGuitar ? query => service.SearchUltimateGuitarAsync(query) : null,
-				link => service.GetUltimateGuitarTabAsync(link));
+				link => service.GetUltimateGuitarTabAsync(link),
+				service.CanSearchUltimateGuitar ? query => service.SearchLyricsComAsync(query) : null,
+				link => service.GetLyricsComLyricsAsync(link));
 			view.AddRequested += found => _ = RunAsync(async () =>
 			{
 				var song = await service.CreateSongAsync(group.Id, found.Title, found.Lyrics, found.Duration);
@@ -4859,7 +4898,9 @@ namespace Lyrious.UILib.Setlists
 			var names = (await service.GetSongbookSongsAsync(groupId)).Select(song => song.Name).ToHashSet(StringComparer.CurrentCultureIgnoreCase);
 			var view = new InternetSongView(query => service.SearchInternetAsync(query), names, L.T("Add to this song"),
 				service.CanSearchUltimateGuitar ? query => service.SearchUltimateGuitarAsync(query) : null,
-				link => service.GetUltimateGuitarTabAsync(link));
+				link => service.GetUltimateGuitarTabAsync(link),
+				service.CanSearchUltimateGuitar ? query => service.SearchLyricsComAsync(query) : null,
+				link => service.GetLyricsComLyricsAsync(link));
 			view.AddRequested += found =>
 			{
 				page.Content = lyrics;
@@ -5204,8 +5245,8 @@ namespace Lyrious.UILib.Setlists
 
 		private async Task SaveSongSelectionAsync(GroupSummary group, SetlistEntry entry)
 		{
-			// Band sync off, or a song of the songbook shown as a setlist (not saved, so the band can't have it).
-			if (!bandSync || entry.SetlistId == group.Id)
+			// Band sync off: the band's current song stays as it is.
+			if (!bandSync)
 			{
 				return; // The band's current song stays as it is.
 			}
