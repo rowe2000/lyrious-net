@@ -3797,6 +3797,14 @@ namespace Lyrious.UILib.Setlists
 				}
 			};
 			view.SetFocusMode(focusMode);
+			// A line clicked to go there: with band sync, the band goes there too (those following the place in the song).
+			view.PlayPositionChosen += () =>
+			{
+				if (page.Content == view)
+				{
+					_ = SendPlaybackPositionAsync();
+				}
+			};
 			// The song's media file playing or stopping starts or stops the scrolling too, as play/pause
 			// does (band sync, the playlog and the band's MIDI included).
 			// The media player on or off (or another sound picked): the toolbar shows its progress or not.

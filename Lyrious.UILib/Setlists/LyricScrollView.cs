@@ -814,6 +814,9 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised when the user taps the lyrics, to turn focus mode on or off.</summary>
 		public event Action? FocusModeToggled;
 
+		/// <summary>Raised when the member clicked (or tapped) a line to go there in the song (see GoToLine), e.g. so the band goes there too.</summary>
+		public event Action? PlayPositionChosen;
+
 		// The transpose button's chord colour while hovered and pressed (see ShowMySettingButtons).
 		private Avalonia.Styling.Style? chordHoverStyle;
 		private Avalonia.Styling.Style? chordPressedStyle;
@@ -2192,6 +2195,11 @@ namespace Lyrious.UILib.Setlists
 					if (inFocusMode || lyricsContent == null || !GoToLine(e.GetPosition(lyricsContent)))
 					{
 						FocusModeToggled?.Invoke();
+					}
+					else
+					{
+						// Once the view is there (after this layout pass), so the place sent is the new one.
+						Dispatcher.UIThread.Post(() => PlayPositionChosen?.Invoke(), DispatcherPriority.Background);
 					}
 				};
 				body.Content = scroller;

@@ -571,39 +571,40 @@ namespace Lyrious.UILib.Setlists
 		}
 
 		/// <summary>
-		/// A song's row as the songbook shows it: its name, and at the right its tags, then its key, tempo
-		/// and beat at the right, after <paramref name="note"/> (e.g. "in setlist") when there is one;
-		/// the current song has a check at the very right. The tags, media and details always go on two
-		/// lines (see <see cref="SongLinePanel"/>), so the name has room and the rows look alike.
+		/// A song's row as the songbook and the setlists show it: its name alone on the first line (the
+		/// whole width, trimmed with "…" when it doesn't fit); on the second, its media icons and tags at
+		/// the left, and its tempo, beat, key and capo at the right, after <paramref name="note"/> (e.g.
+		/// "in setlist") when there is one. The current song has a check at the very right, over both lines.
 		/// </summary>
-		/// <param name="oneLineExtraHeight">Added to the row's height on one line, as its least height (see <see cref="SongLinePanel.OneLineExtraHeight"/>).</param>
+		/// <param name="oneLineExtraHeight">Added to the row's least height (rows in lists with less room above and below them).</param>
 		internal static Control SongRow(SongDetails song, string? note, bool isCurrent = false, double oneLineExtraHeight = 0)
 		{
-			// The name, then at the right the tags, the media icons, and the key, tempo and beat; the name
-			// is trimmed with "…" when it doesn't fit even with those on two lines.
-			var line = new SongLinePanel { OneLineExtraHeight = oneLineExtraHeight, AlwaysTwoLines = true };
-			line.Children.Add(new TextBlock { Text = song.Name, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+			var name = new TextBlock { Text = song.Name, FontSize = 16, TextTrimming = TextTrimming.CharacterEllipsis };
+
+			// The second line: the media icons, then the tags, at the left; the details at the right.
+			var info = new SongInfoLine(song, note) { Margin = new Avalonia.Thickness(12, 0, 0, 0) };
+			DockPanel.SetDock(info, Dock.Right);
+			var left = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 10, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, ClipToBounds = true };
+			if (MediaIcons(song) is { } media)
+			{
+				left.Children.Add(media);
+			}
 
 			var tags = SongTags.Sorted(song.Tags);
 			if (tags.Count > 0)
 			{
 				var chips = PageLayout.TagChips(tags);
-				chips.Margin = new Avalonia.Thickness(10, 0, 0, 0);
 				chips.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
-				line.Children.Add(chips);
+				left.Children.Add(chips);
 			}
 
-			// The media icons between the tags and the key, tempo and beat.
-			if (MediaIcons(song) is { } media)
+			var second = new DockPanel { Margin = new Avalonia.Thickness(0, 2, 0, 0), Children = { info, left } };
+			var line = new StackPanel
 			{
-				media.Margin = new Avalonia.Thickness(10, 0, 0, 0);
-				line.Children.Add(media);
-			}
-
-			// The key moved by the member's own transpose, with its value beside it.
-			var info = new SongInfoLine(song, note);
-			info.Margin = new Avalonia.Thickness(12, 0, 0, 0);
-			line.Children.Add(info);
+				VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+				MinHeight = oneLineExtraHeight > 0 ? name.FontSize * 1.33 + oneLineExtraHeight : 0,
+				Children = { name, second },
+			};
 
 			var row = new DockPanel();
 			if (isCurrent)
