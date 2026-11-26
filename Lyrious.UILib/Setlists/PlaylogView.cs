@@ -48,7 +48,8 @@ namespace Lyrious.UILib.Setlists
 						detail += " · " + string.Join(", ", setlists);
 					}
 
-					var row = PageLayout.ListRow(CompactDate(playlog.CreatedAt), detail, () => Show(playlog));
+					var row = PageLayout.ListRow(CompactDate(playlog.CreatedAt), null, () => Show(playlog));
+					row.Content = SessionRowContent(CompactDate(playlog.CreatedAt), detail);
 					rows.Add((playlog, row));
 					list.Children.Add(row);
 				}
@@ -106,6 +107,28 @@ namespace Lyrious.UILib.Setlists
 					row.Classes.Remove("accent");
 				}
 			}
+		}
+
+		/// <summary>
+		/// A session's row in the list: its date always in full at the left, and the number of songs
+		/// with the setlists used at the right, cut short with "…" when they don't fit.
+		/// </summary>
+		private static Control SessionRowContent(string date, string detail)
+		{
+			var dateText = new TextBlock { Text = date, FontSize = 16, VerticalAlignment = VerticalAlignment.Center };
+			DockPanel.SetDock(dateText, Dock.Left);
+			var detailText = new TextBlock
+			{
+				Text = detail,
+				Opacity = 0.7,
+				Margin = new Thickness(12, 0, 0, 0),
+				TextTrimming = TextTrimming.CharacterEllipsis,
+				TextAlignment = TextAlignment.Right,
+				VerticalAlignment = VerticalAlignment.Center,
+			};
+			// The whole list of setlists, for when it's cut short.
+			ToolTip.SetTip(detailText, detail);
+			return new DockPanel { Children = { dateText, detailText } };
 		}
 
 		/// <summary>One song played: the song, then tempo · key · length · conductor's initials.</summary>

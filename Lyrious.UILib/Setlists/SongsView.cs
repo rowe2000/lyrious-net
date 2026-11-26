@@ -254,7 +254,7 @@ namespace Lyrious.UILib.Setlists
 				var popup = new Flyout { Placement = PlacementMode.BottomEdgeAlignedRight };
 
 				// Play: shown as the setlist in the right drawer, not saved.
-				var play = PopupItem(L.T("Just play them"), PlayIcon);
+				var play = PopupItem(L.T("Just play them"), NoteIcon);
 				play.IsEnabled = chosen.Count > 0;
 				play.Click += (_, _) =>
 				{
@@ -1064,9 +1064,9 @@ namespace Lyrious.UILib.Setlists
 			return icon;
 		}
 
-		// The setlist popup's icons: play (a triangle), a new setlist (a list with a plus), delete (a
+		// The setlist popup's icons: play (notes), a new setlist (a list with a plus), delete (a
 		// trash can); and the magnifying glass in the search box.
-		private const string PlayIcon = "M7,4.5 L19,12 L7,19.5 Z";
+		private const string NoteIcon = "M9,18 V5 L19,3 V16 M9,18 A3,3 0 1 1 3,18 A3,3 0 1 1 9,18 M19,16 A3,3 0 1 1 13,16 A3,3 0 1 1 19,16";
 		private const string NewSetlistIcon = "M4,7 H15 M4,12 H12 M4,17 H10 M17,13 V21 M13,17 H21";
 		private const string TrashIcon = "M5,7 H19 M10,7 V5 H14 V7 M7,7 L8,20 H16 L17,7 M10,11 V16 M14,11 V16";
 		// An empty check box (a rounded square), for clearing the checks.

@@ -33,9 +33,6 @@ namespace Lyrious.UILib.Setlists
 		/// <summary>Raised with a setlist's songs in their new order when the member moved one (see <see cref="SetlistMoveList"/>).</summary>
 		public event Action<SetlistSummary, IReadOnlyList<SetlistEntry>>? SongsMoved;
 
-		// A play triangle, for Play (making the setlist the current one).
-		private const string PlayIcon = "M7,4.5 L19,12 L7,19.5 Z";
-
 		// What a selected song's toolbar does (as in the songbook); none, no toolbar.
 		private readonly SongsView.SongToolActions? songTools;
 
@@ -166,9 +163,10 @@ namespace Lyrious.UILib.Setlists
 			var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
 			if (!isCurrent)
 			{
-				// "▶ Play": makes it the band's current setlist, to play from. The triangle in the button's text colour.
-				var playIcon = new Avalonia.Controls.Shapes.Path { Data = Geometry.Parse(PlayIcon), Width = 16, Height = 16, Stretch = Stretch.Uniform, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
-				playIcon.Bind(Avalonia.Controls.Shapes.Shape.FillProperty, playIcon.GetObservable(Avalonia.Controls.Documents.TextElement.ForegroundProperty));
+				// "♩ Play": makes it the band's current setlist, to play from. The note of the current one (as
+				// on the current setlist's row), in the button's text colour.
+				var playIcon = PageLayout.Note();
+				playIcon.Margin = new Thickness(-4, -4, 4, -4);
 				var makeCurrent = new Button
 				{
 					Content = new StackPanel { Orientation = Orientation.Horizontal, Children = { playIcon, new TextBlock { Text = L.T("Play"), VerticalAlignment = VerticalAlignment.Center } } },

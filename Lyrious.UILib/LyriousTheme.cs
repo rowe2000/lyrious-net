@@ -66,10 +66,11 @@ namespace Lyrious.UILib
 			};
 			DisabledButtons(light, Color.Parse("#1B1B1B"));
 			DisabledButtons(dark, Color.Parse("#FFFFFF"));
-			// Pointed at and pressed, a button gets darker in the dark theme (a shade of black over it) and
-			// lighter in the light one (white): as highlighted buttons do (see ColorSettings).
-			PointedAtButtons(light, Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF));
-			PointedAtButtons(dark, Color.FromArgb(0x40, 0, 0, 0), Color.FromArgb(0x66, 0, 0, 0));
+			// Pointed at and pressed, a button stands out more from the page, never less: lighter in the dark
+			// theme (more white) and darker in the light one (more black). Darkening it in the dark theme, or
+			// making it white in the light one, gave it the page's own colour, so it seemed to vanish.
+			PointedAtButtons(light, Color.FromArgb(0x4D, 0, 0, 0), Color.FromArgb(0x66, 0, 0, 0));
+			PointedAtButtons(dark, Color.FromArgb(0x4D, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF));
 			resources.ThemeDictionaries[ThemeVariant.Light] = light;
 			resources.ThemeDictionaries[ThemeVariant.Dark] = dark;
 		}

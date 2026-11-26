@@ -662,9 +662,6 @@ namespace Lyrious.UILib.Setlists
 			return row;
 		}
 
-		// A check: "make this the current one".
-		private const string OpenIcon = "M5,12 L10,17 L19,7";
-
 		/// <summary>
 		/// A list row's text with a check at the right when it's the current one (e.g. the band's
 		/// current setlist). The check has the colour of the row's text.
@@ -733,10 +730,16 @@ namespace Lyrious.UILib.Setlists
 			return button;
 		}
 
-		/// <summary>A toolbar button that opens (makes current) the selected item, like a double click does.</summary>
+		/// <summary>
+		/// A toolbar button with the quarter note (♩) that opens (makes current) the selected song, like
+		/// a double click does.
+		/// </summary>
 		public static Button OpenButton(string description, Action open)
 		{
-			var button = HomeView.IconButton(OpenIcon, description);
+			// The icon button's look and tooltip, with the same note that marks the current song as its
+			// icon, so the button says "make this the current one".
+			var button = HomeView.IconButton("M0,0", description);
+			button.Content = Note();
 			button.Click += (_, _) => open();
 			return button;
 		}

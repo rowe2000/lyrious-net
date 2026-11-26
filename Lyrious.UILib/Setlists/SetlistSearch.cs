@@ -19,7 +19,8 @@ namespace Lyrious.UILib.Setlists
 	/// </summary>
 	internal sealed class SetlistSearch
 	{
-		private readonly TextBox box = PageLayout.WithClearButton(new TextBox { PlaceholderText = L.T("Search songs and tags"), VerticalAlignment = VerticalAlignment.Center, IsVisible = false });
+		// As tall as the setlist's name box (see PageLayout.EditableTitle), whose place it takes.
+		private readonly TextBox box = PageLayout.WithClearButton(new TextBox { PlaceholderText = L.T("Search songs and tags"), Height = 40, VerticalAlignment = VerticalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, IsVisible = false });
 		private readonly Button glass;
 		private readonly Button end;
 		private SelectableList<SetlistEntry>? list;
