@@ -58,6 +58,12 @@ namespace Lyrious.UILib
 		public static IAudioRecorder? AudioRecorder { get; set; }
 
 		/// <summary>
+		/// Whether the pointer input being handled now comes from a touchpad (which reaches the app as a
+		/// mouse): hosts that can tell set it (Windows). Null where it can't be told: a mouse it is.
+		/// </summary>
+		public static System.Func<bool>? IsTouchpadInput { get; set; }
+
+		/// <summary>
 		/// Whether the app runs on an iPhone (the iOS app, or a browser on one; not an iPad), where the
 		/// screen is narrow upright. Hosts set it before starting the app; false by default.
 		/// </summary>

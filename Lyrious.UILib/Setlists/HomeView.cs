@@ -3954,6 +3954,9 @@ namespace Lyrious.UILib.Setlists
 			public int Edge { get; } = edge;
 			// An open drawer this swipe may close: -1 the menu (by a swipe to the left), 1 the setlist (to the right), 0 none.
 			public int Close { get; } = close;
+			// A drawer this swipe opened or closed already, still held: -1 the menu, 1 the setlist, 0 none. Back
+			// the other way far enough, it closes (or opens) it again, as often as the finger goes to and fro.
+			public int Toggle { get; init; }
 			public bool Sideways { get; set; }
 			public double Dx { get; set; }
 			public ulong Time { get; set; } = time;
@@ -4050,15 +4053,28 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			var start = e.GetPosition(topRow);
+			// The drawers are swiped with a finger, a pen or a mouse, and on a touchpad with two fingers (see
+			// OnSwipeWheel), not one: a drag with one finger there reaches the app as a mouse's, but the
+			// host can tell (see App.IsTouchpadInput).
+			var byTouchpad = e.Pointer.Type == Avalonia.Input.PointerType.Mouse && App.IsTouchpadInput?.Invoke() == true;
+
+			// From the edge of a closed drawer while the other one slides over the page: a swipe in opens
+			// it, and the open one closes at once (as a press on its button does, see OnDrawerSwitchPressed).
+			if (!byTouchpad && SwitchEdge(start) is var switchEdge and not 0)
+			{
+				swipe = new SwipeState(e.Pointer, start, switchEdge, e.Timestamp);
+				return;
+			}
+
 			// An open drawer: a swipe towards its side closes it, from the drawer itself, or from anywhere
 			// while it slides over the page.
-			if (ClosableBy(e, menuDrawer))
+			if (!byTouchpad && ClosableBy(e, menuDrawer))
 			{
 				swipe = new SwipeState(e.Pointer, start, 0, e.Timestamp, close: -1);
 				return;
 			}
 
-			if (ClosableBy(e, setlistDrawer))
+			if (!byTouchpad && ClosableBy(e, setlistDrawer))
 			{
 				swipe = new SwipeState(e.Pointer, start, 0, e.Timestamp, close: 1);
 				return;
@@ -4077,13 +4093,40 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			// From the edges, the drawers (on every page); elsewhere another song (only on the lyrics page).
-			var edge = start.X <= SwipeEdge - topRow.Margin.Left ? -1 : start.X >= width - (SwipeEdge - topRow.Margin.Right) ? 1 : 0;
+			var edge = byTouchpad ? 0 : start.X <= SwipeEdge - topRow.Margin.Left ? -1 : start.X >= width - (SwipeEdge - topRow.Margin.Right) ? 1 : 0;
 			if (edge == 0 && page.Content is not LyricScrollView { IsEditing: false })
 			{
 				return;
 			}
 
 			swipe = new SwipeState(e.Pointer, start, edge, e.Timestamp);
+		}
+
+		/// <summary>
+		/// The edge (-1 left, 1 right) of a closed drawer the press is at while the other drawer slides over
+		/// the page (open, not pinned), so a swipe from there switches drawers; 0 when it isn't so.
+		/// </summary>
+		private int SwitchEdge(Point start)
+		{
+			var width = topRow.Bounds.Width;
+			var edge = start.X <= SwipeEdge - topRow.Margin.Left ? -1 : start.X >= width - (SwipeEdge - topRow.Margin.Right) ? 1 : 0;
+			if (edge == 0)
+			{
+				return 0;
+			}
+
+			var (drawer, other) = edge < 0 ? (menuDrawer, setlistDrawer) : (setlistDrawer, menuDrawer);
+			return !drawer.IsPaneOpen && other.IsPaneOpen && !IsPinned(other) ? edge : 0;
+		}
+
+		/// <summary>The drawer on the other side of <paramref name="edge"/> (-1 left, 1 right) closes, if it slides over the page: the one at this edge opens.</summary>
+		private void CloseOtherDrawer(int edge)
+		{
+			var other = edge < 0 ? setlistDrawer : menuDrawer;
+			if (other.IsPaneOpen && !IsPinned(other))
+			{
+				other.IsPaneOpen = false;
+			}
 		}
 
 		/// <summary>Whether a press may swipe the drawer closed: it's open (and showing), and the press is on it or it slides over the page.</summary>
@@ -4115,6 +4158,15 @@ namespace Lyrious.UILib.Setlists
 		{
 			if (swipe is not { } current || current.Pointer != e.Pointer)
 			{
+				return;
+			}
+
+			// A mouse moving without its button: the release was missed (e.g. let go outside the window),
+			// so the swipe is over.
+			if (e.Pointer.Type == Avalonia.Input.PointerType.Mouse && !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+			{
+				drawerSwipe = null;
+				EndSwipe(e.Pointer);
 				return;
 			}
 
@@ -4150,13 +4202,46 @@ namespace Lyrious.UILib.Setlists
 			}
 
 			current.Dx = dx;
+			if (current.Toggle != 0)
+			{
+				// The drawer this swipe opened or closed: back the other way, it closes or opens again.
+				var drawer = current.Toggle < 0 ? menuDrawer : setlistDrawer;
+				// Further the way it went (in while it's open, out while it's closed): the way back counts from here.
+				if (dx != 0 && Math.Sign(dx) == (drawer.IsPaneOpen ? -current.Toggle : current.Toggle))
+				{
+					KeepToggling(current, now, e.Timestamp);
+					return;
+				}
+
+				if (Math.Abs(dx) < SwipeDistance)
+				{
+					return;
+				}
+
+				if (drawer.IsPaneOpen && Math.Sign(dx) == current.Toggle)
+				{
+					// (No longer kept open for this swipe, see KeepSwipedDrawerOpen.)
+					drawerSwipe = null;
+					drawer.IsPaneOpen = false;
+					KeepToggling(current, now, e.Timestamp);
+				}
+				else if (!drawer.IsPaneOpen && Math.Sign(dx) == -current.Toggle)
+				{
+					Swiped(current.Toggle, dx);
+					drawerSwipe = (current.Pointer, drawer);
+					KeepToggling(current, now, e.Timestamp);
+				}
+
+				return;
+			}
+
 			if (current.Close != 0)
 			{
-				// Far enough towards the drawer's side: it closes.
+				// Far enough towards the drawer's side: it closes (and opens again if the swipe comes back).
 				if (Math.Abs(dx) >= SwipeDistance && Math.Sign(dx) == current.Close)
 				{
-					swipe = null;
 					(current.Close < 0 ? menuDrawer : setlistDrawer).IsPaneOpen = false;
+					KeepToggling(current, now, e.Timestamp, current.Close);
 				}
 
 				return;
@@ -4166,10 +4251,12 @@ namespace Lyrious.UILib.Setlists
 			{
 				if (Math.Abs(dx) >= SwipeDistance && Math.Sign(dx) == -current.Edge)
 				{
-					swipe = null; // Once per swipe.
+					CloseOtherDrawer(current.Edge);
 					Swiped(current.Edge, dx);
-					// The drawer is opened while the finger is still down; see OnSwipeReleased.
+					// The drawer is opened while the finger is still down; see OnSwipeReleased. Swiped back
+					// before it's let go, it closes again (see KeepToggling).
 					drawerSwipe = (current.Pointer, current.Edge < 0 ? menuDrawer : setlistDrawer);
+					KeepToggling(current, now, e.Timestamp, current.Edge);
 				}
 
 				return;
@@ -4191,14 +4278,44 @@ namespace Lyrious.UILib.Setlists
 			}
 		}
 
+		/// <summary>The swipe of this pointer is over (let go): forgotten, and the pointer no longer held for it.</summary>
+		private void EndSwipe(Avalonia.Input.IPointer pointer)
+		{
+			if (swipe?.Pointer == pointer)
+			{
+				swipe = null;
+			}
+
+			if (pointer.Captured == this)
+			{
+				pointer.Capture(null);
+			}
+		}
+
+		/// <summary>
+		/// A swipe that opened or closed a drawer goes on while it's held: from here, back the other way far
+		/// enough, it closes or opens the drawer again (<paramref name="side"/>: -1 the menu, 1 the setlist;
+		/// 0 the same drawer as before).
+		/// </summary>
+		private void KeepToggling(SwipeState current, Point from, ulong time, int side = 0)
+		{
+			swipe = new SwipeState(current.Pointer, from, 0, time)
+			{
+				Sideways = true,
+				Toggle = side != 0 ? side : current.Toggle,
+			};
+		}
+
 		/// <summary>The swipe let go: far or fast enough, the song slides the rest of the way and is shown; else it slides back.</summary>
 		private void OnSwipeReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
 		{
 			// The swipe that opened a drawer is let go: the drawer has seen the release already (it
-			// listens on the whole window) and was kept open (see KeepSwipedDrawerOpen).
+			// listens on the whole window) and was kept open (see KeepSwipedDrawerOpen). The swipe ends
+			// here: a mouse is the same pointer on its next press, and moves without its button between.
 			if (drawerSwipe is var (pointer, _) && pointer == e.Pointer)
 			{
 				drawerSwipe = null;
+				EndSwipe(e.Pointer);
 				e.Handled = true;
 				return;
 			}
@@ -4208,7 +4325,7 @@ namespace Lyrious.UILib.Setlists
 				return;
 			}
 
-			swipe = null;
+			EndSwipe(e.Pointer);
 			if (slidePreview == null || slideTimer != null)
 			{
 				return;
@@ -4387,6 +4504,8 @@ namespace Lyrious.UILib.Setlists
 		private ulong wheelSwipeLast;
 		private int wheelSwipeEdge;
 		private int wheelSwipeClose;
+		// Whether the gesture began at a closed drawer's edge while the other one slid over the page (it switches drawers).
+		private bool wheelSwipeSwitch;
 		private bool wheelSwiped;
 
 		// Until when (Environment.TickCount64) the touchpad can't swipe again.
@@ -4438,14 +4557,16 @@ namespace Lyrious.UILib.Setlists
 				var at = e.GetPosition(topRow);
 				var width = topRow.Bounds.Width;
 				wheelSwipeEdge = at.X <= SwipeEdge - topRow.Margin.Left ? -1 : at.X >= width - (SwipeEdge - topRow.Margin.Right) ? 1 : 0;
-				// An open drawer under the pointer (or sliding over the page): this gesture may close it.
-				wheelSwipeClose = ClosableBy(e, menuDrawer) ? -1 : ClosableBy(e, setlistDrawer) ? 1 : 0;
+				// At the edge of a closed drawer while the other slides over the page: this gesture switches
+				// drawers. Else an open drawer under the pointer (or sliding over the page): it may close it.
+				wheelSwipeSwitch = SwitchEdge(at) != 0;
+				wheelSwipeClose = wheelSwipeSwitch ? 0 : ClosableBy(e, menuDrawer) ? -1 : ClosableBy(e, setlistDrawer) ? 1 : 0;
 			}
 
 			wheelSwipeLast = e.Timestamp;
 			if (wheelSwiped || Environment.TickCount64 < wheelSwipeBlockedUntil || slideTimer != null
 			    || e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control) || e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Meta)
-			    || wheelSwipeClose == 0 && (menuDrawer.IsPaneOpen && !IsPinned(menuDrawer) || setlistDrawer.IsPaneOpen && !IsPinned(setlistDrawer)))
+			    || wheelSwipeClose == 0 && !wheelSwipeSwitch && (menuDrawer.IsPaneOpen && !IsPinned(menuDrawer) || setlistDrawer.IsPaneOpen && !IsPinned(setlistDrawer)))
 			{
 				return;
 			}
@@ -4469,6 +4590,12 @@ namespace Lyrious.UILib.Setlists
 				}
 				else
 				{
+					// Into the page from the edge: switching drawers, the open one closes first.
+					if (wheelSwipeSwitch && Math.Sign(wheelSwipeX) == -wheelSwipeEdge)
+					{
+						CloseOtherDrawer(wheelSwipeEdge);
+					}
+
 					Swiped(wheelSwipeEdge, wheelSwipeX);
 				}
 			}

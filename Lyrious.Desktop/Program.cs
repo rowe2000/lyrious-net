@@ -34,6 +34,8 @@ internal class Program
         if (OperatingSystem.IsWindows())
         {
             App.AudioRecorder = new WindowsAudioRecorder();
+            // A touchpad told from a mouse: one finger on it doesn't swipe the drawers (two do).
+            App.IsTouchpadInput = WindowsInput.IsTouchpad;
         }
         else if (OperatingSystem.IsMacOS())
         {
