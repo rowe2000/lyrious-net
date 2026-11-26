@@ -201,6 +201,12 @@ namespace Lyrious.UILib.Setlists
 		/// </summary>
 		Task<SetlistSummary> ShowSongbookAsSetlistAsync(Guid groupId, IReadOnlyList<Guid> songIds, CancellationToken cancellationToken = default);
 
+		/// <summary>
+		/// The song of a setlist entry, also of one removed since (e.g. the band's current song, when its
+		/// entry went with the songbook shown as a setlist); null when the entry isn't known here.
+		/// </summary>
+		Task<Guid?> GetEntrySongIdAsync(Guid setlistItemId, CancellationToken cancellationToken = default) => Task.FromResult<Guid?>(null);
+
 		/// <summary>The setlist, or null if it doesn't exist (any more).</summary>
 		Task<SetlistSummary?> GetSetlistAsync(Guid setlistId, CancellationToken cancellationToken = default);
 

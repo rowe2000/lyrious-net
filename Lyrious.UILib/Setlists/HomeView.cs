@@ -2913,11 +2913,34 @@ namespace Lyrious.UILib.Setlists
 				{
 					SetCurrentSong(start.Entry!.Song, start.Entry.Id);
 				}
+				else if (start.Kind == StartPageKind.Song)
+				{
+					SetCurrentSong(start.Song!, null);
+				}
 			}
 			else switch (start.Kind)
 			{
 				case StartPageKind.Lyrics:
 					ShowLyrics(start.Group!, start.Setlist!, start.Entry!);
+					break;
+				case StartPageKind.Song:
+					// The band's song from outside its setlist (the songbook, a search), with the band's
+					// setlist in the right drawer. Opened as the band's, so it isn't sent back to the band.
+					if (start.Setlist is { } songSetlist)
+					{
+						SetCurrentSetlist(songSetlist);
+					}
+
+					openingBandSong = true;
+					try
+					{
+						ShowSongbookLyrics(start.Group!, start.Song!);
+					}
+					finally
+					{
+						openingBandSong = false;
+					}
+
 					break;
 				case StartPageKind.Setlist:
 					// No song yet: the band's setlist is the current one (in the right drawer), and

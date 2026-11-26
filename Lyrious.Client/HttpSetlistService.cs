@@ -637,11 +637,14 @@ public sealed class HttpSetlistService : ISetlistService
         var hidden = Live(current, "setlist", ClientJsonContext.Default.SetlistDto)
             .Where(setlist => setlist.GroupId == groupId && setlist.IsHidden)
             .ToList();
+        // The entries removed, by id, with their songs: the band's current song may be one of them.
+        var removed = new Dictionary<Guid, Guid>();
         foreach (var other in hidden.Where(setlist => setlist.Id != id))
         {
             foreach (var item in Live(current, "setlistitem", ClientJsonContext.Default.SetlistItemDto).Where(item => item.SetlistId == other.Id))
             {
                 current.Delete("setlistitem", item.Id);
+                removed[item.Id] = item.SongId;
             }
 
             current.Delete("setlist", other.Id);
@@ -667,8 +670,12 @@ public sealed class HttpSetlistService : ISetlistService
             if (!kept.TryAdd(item.SongId, item))
             {
                 current.Delete("setlistitem", item.Id);
+                removed[item.Id] = item.SongId;
             }
         }
+
+        // Each song's entry in it now (kept or new).
+        var entries = new Dictionary<Guid, Guid>();
 
         var wanted = new HashSet<Guid>();
         for (var i = 0; i < songIds.Count; i++)
@@ -680,6 +687,7 @@ public sealed class HttpSetlistService : ISetlistService
 
             if (kept.TryGetValue(songIds[i], out var item))
             {
+                entries[item.SongId] = item.Id;
                 if (item.Position != i)
                 {
                     current.Update("setlistitem", item.Id, new JsonObject { ["position"] = i });
@@ -687,7 +695,9 @@ public sealed class HttpSetlistService : ISetlistService
             }
             else
             {
-                current.Create("setlistitem", Node(new SetlistItemDto(Guid.NewGuid(), i, songIds[i], setlist.Id, Removed: false), ClientJsonContext.Default.SetlistItemDto));
+                var entryId = Guid.NewGuid();
+                entries[songIds[i]] = entryId;
+                current.Create("setlistitem", Node(new SetlistItemDto(entryId, i, songIds[i], setlist.Id, Removed: false), ClientJsonContext.Default.SetlistItemDto));
             }
         }
 
@@ -696,11 +706,30 @@ public sealed class HttpSetlistService : ISetlistService
             if (!wanted.Contains(songId))
             {
                 current.Delete("setlistitem", item.Id);
+                removed[item.Id] = item.SongId;
             }
+        }
+
+        // The band's current song was a removed entry: it stays the band's current song, as the
+        // entry of the same song in it, else as a song from outside the setlist (so the band, and the
+        // app's next start, still have it).
+        if (Find(current, "group", groupId, ClientJsonContext.Default.GroupDto) is { CurrentSetlistItemId: { } currentItem }
+            && removed.TryGetValue(currentItem, out var currentSong))
+        {
+            current.Update("group", groupId, entries.TryGetValue(currentSong, out var entry)
+                ? SelectionFields(setlist.Id, entry)
+                : SelectionFields(setlist.Id, null, currentSong));
         }
 
         Queued(current);
         return ToSummary(setlist);
+    }
+
+    /// <summary>The song of a setlist entry, also of one removed since (the cache keeps removed entities, marked so).</summary>
+    public async Task<Guid?> GetEntrySongIdAsync(Guid setlistItemId, CancellationToken cancellationToken = default)
+    {
+        var current = await CacheAsync();
+        return current.Find("setlistitem", setlistItemId) is { } item ? As(item, ClientJsonContext.Default.SetlistItemDto)?.SongId : null;
     }
 
     /// <summary>The name of the band's songbook as a setlist (see ShowSongbookAsSetlistAsync).</summary>
